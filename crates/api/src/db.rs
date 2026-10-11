@@ -139,8 +139,13 @@ struct MessageRow {
     content: String,
     edited_at: Option<i64>,
     reply_to: Option<i64>,
+    emotes: Option<String>,
     #[sqlx(flatten)]
     author: UserRow,
+}
+
+fn emote_snapshot(json: Option<&str>) -> Vec<Emote> {
+    json.and_then(|j| serde_json::from_str(j).ok()).unwrap_or_default()
 }
 
 const USER_COLS: &str = "u.id, u.username, u.display_name, u.avatar_url";
@@ -232,6 +237,30 @@ pub async fn emotes(db: &SqlitePool, guild: Id) -> sqlx::Result<Vec<Emote>> {
     Ok(rows.into_iter().map(Into::into).collect())
 }
 
+/// Emotes by id. With `member`, only those from guilds that user belongs to.
+pub async fn emotes_by_ids(db: &SqlitePool, ids: &[i64], member: Option<Id>) -> sqlx::Result<Vec<Emote>> {
+    if ids.is_empty() {
+        return Ok(vec![]);
+    }
+    // Ids are integers, so inlining them is injection-safe.
+    let list = ids.iter().map(i64::to_string).collect::<Vec<_>>().join(",");
+    let sql = match member {
+        Some(_) => format!(
+            "SELECT e.id, e.guild_id, e.name, e.provider, e.provider_id, e.animated, e.width, e.height
+             FROM emotes e JOIN members m ON m.guild_id = e.guild_id AND m.user_id = ?1 WHERE e.id IN ({list})"
+        ),
+        None => format!(
+            "SELECT id, guild_id, name, provider, provider_id, animated, width, height FROM emotes WHERE id IN ({list})"
+        ),
+    };
+    let q = sqlx::query_as::<_, EmoteRow>(AssertSqlSafe(sql));
+    let q = match member {
+        Some(u) => q.bind(u.0),
+        None => q,
+    };
+    Ok(q.fetch_all(db).await?.into_iter().map(Into::into).collect())
+}
+
 pub async fn emote(db: &SqlitePool, id: Id) -> sqlx::Result<Emote> {
     sqlx::query_as::<_, EmoteRow>(
         "SELECT id, guild_id, name, provider, provider_id, animated, width, height FROM emotes WHERE id = ?",
@@ -252,7 +281,7 @@ pub async fn messages(
     viewer: Id,
 ) -> sqlx::Result<Vec<Message>> {
     let rows = sqlx::query_as::<_, MessageRow>(AssertSqlSafe(format!(
-        "SELECT m.id AS mid, m.channel_id, m.content, m.edited_at, m.reply_to, {USER_COLS}
+        "SELECT m.id AS mid, m.channel_id, m.content, m.edited_at, m.reply_to, m.emotes, {USER_COLS}
          FROM messages m JOIN users u ON u.id = m.author_id
          WHERE m.channel_id = ?1 AND m.id < ?2 AND m.id > ?3
          ORDER BY m.id {} LIMIT ?4",
@@ -278,6 +307,7 @@ pub async fn messages(
             reply_to: r.reply_to.map(Id),
             reactions: reactions.remove(&r.id).unwrap_or_default(),
             attachments: attachments.remove(&r.id).unwrap_or_default(),
+            emotes: emote_snapshot(r.emotes.as_deref()),
             nonce: None,
         })
         .collect();
@@ -289,7 +319,7 @@ pub async fn messages(
 
 pub async fn message(db: &SqlitePool, id: Id, viewer: Id) -> sqlx::Result<Message> {
     let r = sqlx::query_as::<_, MessageRow>(AssertSqlSafe(format!(
-        "SELECT m.id AS mid, m.channel_id, m.content, m.edited_at, m.reply_to, {USER_COLS}
+        "SELECT m.id AS mid, m.channel_id, m.content, m.edited_at, m.reply_to, m.emotes, {USER_COLS}
          FROM messages m JOIN users u ON u.id = m.author_id WHERE m.id = ?"
     )))
     .bind(id.0)
@@ -306,6 +336,7 @@ pub async fn message(db: &SqlitePool, id: Id, viewer: Id) -> sqlx::Result<Messag
         reply_to: r.reply_to.map(Id),
         reactions: reactions.remove(&r.id).unwrap_or_default(),
         attachments: attachments.remove(&r.id).unwrap_or_default(),
+        emotes: emote_snapshot(r.emotes.as_deref()),
         nonce: None,
     })
 }

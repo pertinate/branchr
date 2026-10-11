@@ -45,3 +45,60 @@ test("emotes: add from 7TV, FFZ and BetterTTV, render for other members", async 
     await expect.poll(() => img.evaluate((i: HTMLImageElement) => i.naturalWidth)).toBeGreaterThan(0);
   }
 });
+
+test("emotes: usable across servers, with source shown and no forging", async ({ browser }) => {
+  const alice = await register(browser, "xg_a");
+  await createServer(alice, "Emote Home");
+  // Alice adds an emote to her first server.
+  await alice.getByRole("button", { name: "Emote Home" }).click();
+  await alice.getByRole("menuitem", { name: "Emotes" }).click();
+  await alice.getByLabel("Emote link").fill("https://www.frankerfacez.com/emoticon/128054-OMEGALUL");
+  await alice.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(alice.getByTestId("server-emotes").locator('img[alt="OMEGALUL"]')).toHaveCount(1);
+  await alice.keyboard.press("Escape");
+
+  // A second server that Bob joins (he is not in Emote Home).
+  const code = await createServer(alice, "Hangout");
+  const bob = await register(browser, "xg_b");
+  await joinServer(bob, code);
+
+  // Autocomplete offers the other server's emote, labelled with its server.
+  const box = alice.getByPlaceholder("Message #general");
+  await box.fill("look :OMEGA");
+  await expect(alice.getByRole("button", { name: /OMEGALUL.*Emote Home/ })).toBeVisible();
+  await box.press("Tab");
+  await expect(box).toHaveValue(/^look <:OMEGALUL:\d+> $/);
+  await box.press("Enter");
+
+  // Bob renders it from the message's snapshot, and the card hides its source.
+  const bobImg = bob.locator('img[alt="OMEGALUL"]');
+  await expect(bobImg).toBeVisible();
+  expect(await bobImg.getAttribute("src")).toContain("cdn.frankerfacez.com/emote/128054/");
+  await bobImg.click();
+  await expect(bob.getByRole("dialog", { name: "Emote OMEGALUL" })).toContainText("A server you're not in");
+  await bob.keyboard.press("Escape");
+
+  // Alice's card names the source server.
+  await alice.locator('img[alt="OMEGALUL"]').last().click();
+  const card = alice.getByRole("dialog", { name: "Emote OMEGALUL" });
+  await expect(card.getByTestId("emote-card-guild")).toContainText("Emote Home");
+  await expect(card).toContainText("FrankerFaceZ");
+  await alice.keyboard.press("Escape");
+
+  // Bob can't use it by forging a token: the server turns it into plain text.
+  const id = await alice.locator('img[alt="OMEGALUL"]').last().getAttribute("data-emote-id");
+  await bob.getByPlaceholder("Message #general").fill(`forged <:OMEGALUL:${id}>`);
+  await bob.keyboard.press("Enter");
+  await expect(alice.getByText("forged :OMEGALUL:")).toBeVisible();
+
+  // Alice reacts with it from the picker (grouped by server); Bob sees it via lookup.
+  const msg = alice.getByText("look").first();
+  await msg.hover();
+  await alice.getByTitle("Add Reaction").first().click();
+  await alice.getByRole("region", { name: "Emote Home emotes" }).getByRole("button").first().click();
+  const reaction = bob.locator("button", { has: bob.locator('img[alt="OMEGALUL"]') }).filter({ hasText: "1" });
+  await expect(reaction).toBeVisible();
+  // ...and can +1 an existing reaction even though he isn't in Emote Home.
+  await reaction.click();
+  await expect(alice.locator("button", { has: alice.locator('img[alt="OMEGALUL"]') }).filter({ hasText: "2" })).toBeVisible();
+});

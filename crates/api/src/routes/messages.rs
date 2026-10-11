@@ -12,6 +12,75 @@ use crate::error::{AppError, AppResult, bad};
 use crate::state::AppState;
 
 const MAX_LEN: usize = 4000;
+/// Distinct `<:name:id>` emotes resolved per message.
+const MAX_EMOTE_REFS: usize = 50;
+
+/// `<:name:id>` tokens in `content`: (byte range, name, emote id).
+fn emote_tokens(content: &str) -> Vec<(std::ops::Range<usize>, &str, i64)> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    while let Some(off) = content[i..].find("<:") {
+        let start = i + off;
+        let rest = &content[start + 2..];
+        let name_len = rest.find(|c: char| !(c.is_alphanumeric() || matches!(c, '_' | '-' | '!' | '?'))).unwrap_or(rest.len());
+        let after = &rest[name_len..];
+        if (1..=64).contains(&name_len) && after.starts_with(':') {
+            let digits = after[1..].find(|c: char| !c.is_ascii_digit()).unwrap_or(after.len() - 1);
+            if (1..=20).contains(&digits) && after[1 + digits..].starts_with('>') {
+                if let Ok(id) = after[1..1 + digits].parse() {
+                    let end = start + 2 + name_len + 1 + digits + 1;
+                    out.push((start..end, &rest[..name_len], id));
+                    i = end;
+                    continue;
+                }
+            }
+        }
+        i = start + 2;
+    }
+    out
+}
+
+/// Resolves `<:name:id>` emote references: the author may use emotes from any server
+/// they're in. Usable ones are snapshotted (as are ones already in `keep`, so editing a
+/// message doesn't break emotes that were removed since); the rest become plain `:name:`.
+async fn resolve_emotes(state: &AppState, user: Id, content: &str, keep: &[Emote]) -> AppResult<(String, Vec<Emote>)> {
+    let tokens = emote_tokens(content);
+    if tokens.is_empty() {
+        return Ok((content.to_string(), vec![]));
+    }
+    let mut ids: Vec<i64> = tokens.iter().map(|t| t.2).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    ids.truncate(MAX_EMOTE_REFS);
+    let mut usable = db::emotes_by_ids(&state.db, &ids, Some(user)).await?;
+    for e in keep {
+        if ids.contains(&e.id.0) && !usable.iter().any(|u| u.id == e.id) {
+            usable.push(e.clone());
+        }
+    }
+    let mut out = String::with_capacity(content.len());
+    let mut used: Vec<Emote> = Vec::new();
+    let mut last = 0;
+    for (range, name, id) in tokens {
+        out.push_str(&content[last..range.start]);
+        match usable.iter().find(|e| e.id.0 == id) {
+            Some(e) => {
+                out.push_str(&content[range.clone()]);
+                if !used.iter().any(|u| u.id == e.id) {
+                    used.push(e.clone());
+                }
+            }
+            None => {
+                out.push(':');
+                out.push_str(name);
+                out.push(':');
+            }
+        }
+        last = range.end;
+    }
+    out.push_str(&content[last..]);
+    Ok((out, used))
+}
 
 #[derive(Deserialize)]
 pub struct ListQuery {
@@ -62,14 +131,16 @@ pub async fn create(
     if body.nonce.as_ref().is_some_and(|n| n.len() > 64) {
         return Err(bad("nonce too long"));
     }
+    let (content, emotes) = resolve_emotes(&state, user, content, &[]).await?;
     let id = state.ids.next();
     let mut tx = state.db.begin().await?;
-    sqlx::query("INSERT INTO messages (id, channel_id, author_id, content, reply_to) VALUES (?, ?, ?, ?, ?)")
+    sqlx::query("INSERT INTO messages (id, channel_id, author_id, content, reply_to, emotes) VALUES (?1, ?2, ?3, ?4, ?5, ?6)")
         .bind(id.0)
         .bind(cid.0)
         .bind(user.0)
-        .bind(content)
+        .bind(&content)
         .bind(body.reply_to.map(|r| r.0))
+        .bind(snapshot_json(&emotes))
         .execute(&mut *tx)
         .await?;
     sqlx::query("UPDATE channels SET last_message_id = ? WHERE id = ?").bind(id.0).bind(cid.0).execute(&mut *tx).await?;
@@ -92,11 +163,12 @@ pub async fn create(
         id,
         channel_id: cid,
         author: db::user(&state.db, user).await?,
-        content: content.to_string(),
+        content,
         edited_at: None,
         reply_to: body.reply_to,
         reactions: vec![],
         attachments: db::attachments_for(&state.db, std::iter::once(id.0)).await?.remove(&id.0).unwrap_or_default(),
+        emotes,
         nonce: body.nonce,
     };
     state.hub.to_guild(guild, &ServerEvent::MessageCreate(msg.clone()));
@@ -119,14 +191,22 @@ pub async fn edit(
     if content.is_empty() || content.chars().count() > MAX_LEN {
         return Err(bad(format!("message must be 1-{MAX_LEN} characters")));
     }
-    let r = sqlx::query("UPDATE messages SET content = ?, edited_at = ? WHERE id = ? AND channel_id = ? AND author_id = ?")
-        .bind(content)
-        .bind(db::now_ms())
-        .bind(mid.0)
-        .bind(cid.0)
-        .bind(user.0)
-        .execute(&state.db)
-        .await?;
+    let prev = db::message(&state.db, mid, user).await?;
+    if prev.channel_id != cid || prev.author.id != user {
+        return Err(AppError::NotFound);
+    }
+    let (content, emotes) = resolve_emotes(&state, user, content, &prev.emotes).await?;
+    let r = sqlx::query(
+        "UPDATE messages SET content = ?1, emotes = ?2, edited_at = ?3 WHERE id = ?4 AND channel_id = ?5 AND author_id = ?6",
+    )
+    .bind(&content)
+    .bind(snapshot_json(&emotes))
+    .bind(db::now_ms())
+    .bind(mid.0)
+    .bind(cid.0)
+    .bind(user.0)
+    .execute(&state.db)
+    .await?;
     if r.rows_affected() == 0 {
         return Err(AppError::NotFound);
     }
@@ -157,6 +237,10 @@ pub async fn delete(
     Ok(())
 }
 
+fn snapshot_json(emotes: &[Emote]) -> Option<String> {
+    (!emotes.is_empty()).then(|| serde_json::to_string(emotes).expect("emotes serialize"))
+}
+
 fn valid_emoji(e: &str) -> bool {
     // Either `e:<emote id>` or a short unicode sequence.
     if let Some(id) = e.strip_prefix("e:") {
@@ -173,6 +257,20 @@ pub async fn react(
     let guild = channel_access(&state, cid, user).await?;
     if !valid_emoji(&emoji) {
         return Err(bad("invalid emoji"));
+    }
+    if let Some(eid) = emoji.strip_prefix("e:").and_then(|id| id.parse::<i64>().ok()) {
+        // Emotes from any server the user is in, or joining a reaction someone already
+        // added (so non-members can +1 it, like on Discord).
+        let usable = !db::emotes_by_ids(&state.db, &[eid], Some(user)).await?.is_empty()
+            || sqlx::query("SELECT 1 FROM reactions WHERE message_id = ?1 AND emoji = ?2 LIMIT 1")
+                .bind(mid.0)
+                .bind(&emoji)
+                .fetch_optional(&state.db)
+                .await?
+                .is_some();
+        if !usable {
+            return Err(AppError::Forbidden);
+        }
     }
     let r = sqlx::query(
         "INSERT OR IGNORE INTO reactions (message_id, emoji, user_id, created_at)
@@ -209,4 +307,18 @@ pub async fn unreact(
         state.hub.to_guild(guild, &ServerEvent::ReactionRemove(ev));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::emote_tokens;
+
+    #[test]
+    fn tokens() {
+        let s = "hi <:catJAM:123> and <:a:b> <:x:9>< <:bad name:1> <::2> <:ok-1!:42>";
+        let t: Vec<_> = emote_tokens(s).into_iter().map(|(r, n, id)| (&s[r], n, id)).collect();
+        assert_eq!(t, vec![("<:catJAM:123>", "catJAM", 123), ("<:x:9>", "x", 9), ("<:ok-1!:42>", "ok-1!", 42)]);
+        assert!(emote_tokens("<:").is_empty());
+        assert!(emote_tokens("<:é:1").is_empty());
+    }
 }

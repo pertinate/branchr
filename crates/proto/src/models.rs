@@ -61,6 +61,10 @@ wire! {
         pub reactions: Vec<Reaction>,
         #[serde(default)]
         pub attachments: Vec<Attachment>,
+        /// Emotes referenced as `<:name:id>` in `content` (typically from other servers),
+        /// snapshotted when sent so any reader can render them.
+        #[serde(default)]
+        pub emotes: Vec<Emote>,
         /// Client-generated id echoed back so optimistic sends can be reconciled.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub nonce: Option<String>,

@@ -1,25 +1,32 @@
 import type { Emote } from "@app/protocol";
-import { Fragment, type ReactNode, memo } from "react";
+import { Fragment, type ReactNode, memo, useMemo } from "react";
 
-import { emoteSource, emoteSrcSet, emoteUrl } from "@/lib/emotes";
+import { EMOTE_TOKEN, emoteSource, emoteSrcSet, emoteUrl } from "@/lib/emotes";
+import { cn } from "@/lib/utils";
+import { useEmoteCard } from "@/stores/emotes";
 
 /**
  * Discord-flavoured markdown subset: ```code blocks```, `inline code`, **bold**, *italic*,
- * _italic_, __underline__, ~~strike~~, ||spoiler||, links, and 7TV emotes (as whole words
- * like on Twitch, or as :name:).
+ * _italic_, __underline__, ~~strike~~, ||spoiler||, links, and emotes: this server's as whole
+ * words like on Twitch (or :name:), any server's as <:name:id> tokens resolved from the
+ * message's emote snapshot.
  */
 
 type Inline = { re: RegExp; render: (m: RegExpExecArray, ctx: Ctx, key: number) => ReactNode };
 
 interface Ctx {
   emotes: Map<string, Emote>;
+  /** Emotes referenced by id (<:name:id>). */
+  byId: Map<string, Emote>;
   jumbo: boolean;
 }
 
-export function EmoteImage({ emote, size, className }: { emote: Emote; size: number; className?: string }) {
+export function EmoteImage({ emote, size, className, interactive }: { emote: Emote; size: number; className?: string; interactive?: boolean }) {
   const width = Math.round((emote.width / emote.height) * size);
   return (
     <img
+      onClick={interactive ? (e) => useEmoteCard.getState().open(emote, e.currentTarget) : undefined}
+      data-emote-id={emote.id}
       src={emoteUrl(emoteSource(emote), 1)}
       srcSet={emoteSrcSet(emoteSource(emote))}
       alt={emote.name}
@@ -29,13 +36,24 @@ export function EmoteImage({ emote, size, className }: { emote: Emote; size: num
       decoding="async"
       width={width}
       height={size}
-      className={className ?? "inline-block align-middle"}
+      className={cn(className ?? "inline-block align-middle", interactive && "cursor-pointer")}
       style={{ height: size, width }}
     />
   );
 }
 
+function emoteEl(e: Emote, ctx: Ctx, key: string | number) {
+  return <EmoteImage key={key} emote={e} size={ctx.jumbo ? 48 : 28} interactive className="mx-px inline-block align-middle" />;
+}
+
 const INLINE: Inline[] = [
+  {
+    re: new RegExp(EMOTE_TOKEN.source),
+    render: (m, c, k) => {
+      const e = c.byId.get(m[2]);
+      return e ? emoteEl(e, c, k) : `:${m[1]}:`;
+    },
+  },
   { re: /`([^`\n]+)`/, render: (m, _c, k) => <code key={k} className="rounded bg-muted px-1 py-0.5 font-mono text-[0.85em]">{m[1]}</code> },
   { re: /\|\|([\s\S]+?)\|\|/, render: (m, c, k) => <Spoiler key={k}>{inline(m[1], c)}</Spoiler> },
   { re: /\*\*([\s\S]+?)\*\*/, render: (m, c, k) => <strong key={k}>{inline(m[1], c)}</strong> },
@@ -76,7 +94,7 @@ function emotify(text: string, ctx: Ctx, keyBase: string): ReactNode[] {
     if (e) {
       if (buf) out.push(buf);
       buf = "";
-      out.push(<EmoteImage key={`${keyBase}-${i}`} emote={e} size={ctx.jumbo ? 48 : 28} className="mx-px inline-block align-middle" />);
+      out.push(emoteEl(e, ctx, `${keyBase}-${i}`));
     } else {
       buf += p;
     }
@@ -102,13 +120,21 @@ function inline(text: string, ctx: Ctx): ReactNode[] {
 
 const EMOTE_ONLY = /^\s*(\S+\s*){1,27}$/;
 
-export const Markup = memo(function Markup({ content, emotes }: { content: string; emotes: Map<string, Emote> }) {
+const WHOLE_TOKEN = new RegExp(`^${EMOTE_TOKEN.source}$`);
+
+export const Markup = memo(function Markup({ content, emotes, refs }: { content: string; emotes: Map<string, Emote>; refs?: Emote[] }) {
+  const byId = useMemo(() => new Map((refs ?? []).map((e) => [e.id, e])), [refs]);
   // A message made only of emotes renders them large.
   const words = content.trim().split(/\s+/);
   const jumbo =
     EMOTE_ONLY.test(content) &&
-    words.every((w) => emotes.has(w) || (w.startsWith(":") && w.endsWith(":") && emotes.has(w.slice(1, -1))));
-  const ctx: Ctx = { emotes, jumbo };
+    words.every(
+      (w) =>
+        emotes.has(w) ||
+        (w.startsWith(":") && w.endsWith(":") && emotes.has(w.slice(1, -1))) ||
+        byId.has(WHOLE_TOKEN.exec(w)?.[2] ?? ""),
+    );
+  const ctx: Ctx = { emotes, byId, jumbo };
 
   const blocks = content.split(/```(?:([\w+-]+)\n)?([\s\S]*?)```/);
   // split with 2 capture groups yields [text, lang, code, text, lang, code, ...]

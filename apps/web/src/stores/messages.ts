@@ -1,8 +1,10 @@
-import type { Attachment, Message, ReactionEvent } from "@app/protocol";
+import type { Attachment, Emote, Message, ReactionEvent } from "@app/protocol";
 import { create } from "zustand";
 
 import { api } from "@/lib/api";
+import { EMOTE_TOKEN } from "@/lib/emotes";
 import { compareIds, nonce } from "@/lib/ids";
+import { useApp } from "@/stores/app";
 import { useAuth } from "@/stores/auth";
 
 export type UiMessage = Message & { pending?: boolean; failed?: boolean };
@@ -30,6 +32,19 @@ interface MessagesState {
   onUpdate: (m: Message) => void;
   onDelete: (channelId: string, id: string) => void;
   onReaction: (r: ReactionEvent, add: boolean, me: string | undefined) => void;
+}
+
+/** Best-effort emote snapshot for an optimistic message, from the user's own servers. */
+function localEmoteRefs(content: string): Emote[] {
+  const all = useApp.getState().emotes;
+  const out: Emote[] = [];
+  for (const m of content.matchAll(new RegExp(EMOTE_TOKEN.source, "g"))) {
+    for (const list of Object.values(all)) {
+      const e = list.find((x) => x.id === m[2]);
+      if (e && !out.includes(e)) out.push(e);
+    }
+  }
+  return out;
 }
 
 const empty: ChannelMessages = { items: [], hasMore: true, loading: false, loaded: false };
@@ -118,6 +133,7 @@ export const useMessages = create<MessagesState>()((set, get) => {
         replyTo,
         reactions: [],
         attachments,
+        emotes: localEmoteRefs(content),
         nonce: n,
         pending: true,
       };

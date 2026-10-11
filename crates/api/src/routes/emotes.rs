@@ -177,3 +177,25 @@ pub async fn remove(
     state.hub.to_guild(gid, &ServerEvent::EmoteDelete(EmoteRef { id: eid, guild_id: gid }));
     Ok(())
 }
+
+#[derive(Deserialize)]
+pub struct LookupQuery {
+    /// Comma-separated emote ids.
+    ids: String,
+}
+
+/// Emotes by id, from any server. Lets clients render reactions with emotes from servers
+/// they aren't in. Only the emote itself is returned, not which server it belongs to.
+pub async fn lookup(
+    State(state): State<AppState>,
+    Auth(_): Auth,
+    Query(q): Query<LookupQuery>,
+) -> AppResult<Json<Vec<Emote>>> {
+    let mut ids: Vec<i64> = q.ids.split(',').filter_map(|s| s.trim().parse().ok()).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    if ids.len() > 100 {
+        return Err(bad("at most 100 ids"));
+    }
+    Ok(Json(db::emotes_by_ids(&state.db, &ids, None).await?))
+}

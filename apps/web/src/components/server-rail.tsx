@@ -4,6 +4,7 @@ import { Plus, Volume2 } from "lucide-react";
 import { memo, useState } from "react";
 import { toast } from "sonner";
 
+import { guildInitials } from "@/components/guild/guild-badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -28,13 +29,6 @@ export function parseInvite(input: string): { code: string; server: string | nul
   }
 }
 
-function initials(name: string) {
-  return name
-    .split(/\s+/)
-    .map((w) => w[0])
-    .join("")
-    .slice(0, 3);
-}
 
 const GuildIcon = memo(function GuildIcon({ guildId, active }: { guildId: string; active: boolean }) {
   const guild = useApp((s) => s.guilds[guildId]);
@@ -65,7 +59,7 @@ const GuildIcon = memo(function GuildIcon({ guildId, active }: { guildId: string
               active ? "rounded-2xl bg-primary text-white" : "rounded-3xl bg-background group-hover:rounded-2xl group-hover:bg-primary group-hover:text-white",
             )}
           >
-            {guild.iconUrl ? <img src={guild.iconUrl} alt="" className="size-full object-cover" /> : initials(guild.name)}
+            {guild.iconUrl ? <img src={guild.iconUrl} alt="" className="size-full object-cover" /> : guildInitials(guild.name)}
           </div>
           {inVoice && (
             <span className="absolute -right-0 bottom-0 grid size-5 place-items-center rounded-full border-4 border-rail bg-online">

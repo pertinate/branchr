@@ -9,7 +9,9 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { gateway } from "@/lib/gateway";
 import { formatBytes, uploadAttachment } from "@/lib/upload";
 import { cn } from "@/lib/utils";
+import { emoteToken } from "@/lib/emotes";
 import { useApp } from "@/stores/app";
+import { useEmoteGroups } from "@/stores/emotes";
 import { type UiMessage, useMessages } from "@/stores/messages";
 
 const TYPING_INTERVAL = 6000;
@@ -27,7 +29,8 @@ const drafts = new Map<string, string>();
 
 export function Composer({ channelId, guildId, replyTo, clearReply }: { channelId: string; guildId: string; replyTo: UiMessage | null; clearReply: () => void }) {
   const channelName = useApp((s) => s.channels[channelId]?.name);
-  const emotes = useApp(useShallow((s) => s.emotes[guildId] ?? []));
+  const groups = useEmoteGroups(guildId);
+  const guildNames = useMemo(() => new Map(groups.map((g) => [g.guild.id, g.guild.name])), [groups]);
   const [value, setValue] = useState(() => drafts.get(channelId) ?? "");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [sel, setSel] = useState(0);
@@ -93,9 +96,14 @@ export function Composer({ channelId, guildId, replyTo, clearReply }: { channelI
     const m = /(?:^|\s):([\w!?-]{2,})$/.exec(value.slice(0, caret));
     if (!m) return null;
     const q = m[1].toLowerCase();
-    const matches = emotes.filter((e) => e.name.toLowerCase().includes(q)).sort((a, b) => Number(!a.name.toLowerCase().startsWith(q)) - Number(!b.name.toLowerCase().startsWith(q)) || a.name.length - b.name.length).slice(0, 8);
+    // This server's emotes rank first, then prefix matches, then shorter names.
+    const rank = (e: Emote) => (e.guildId === guildId ? 0 : 2) + Number(!e.name.toLowerCase().startsWith(q));
+    const matches = groups
+      .flatMap((g) => g.emotes.filter((e) => e.name.toLowerCase().includes(q)))
+      .sort((a, b) => rank(a) - rank(b) || a.name.length - b.name.length)
+      .slice(0, 8);
     return matches.length ? { start: caret - m[1].length - 1, end: caret, matches } : null;
-  }, [value, emotes]);
+  }, [value, groups, guildId]);
 
   useEffect(() => setSel(0), [suggestion?.matches.length]);
 
@@ -105,10 +113,12 @@ export function Composer({ channelId, guildId, replyTo, clearReply }: { channelI
     const end = range?.end ?? el?.selectionEnd ?? value.length;
     const before = value.slice(0, start);
     const pad = before && !/\s$/.test(before) ? " " : "";
-    const next = `${before}${pad}${e.name} ${value.slice(end)}`;
+    // This server's emotes work by name; other servers' need an explicit reference.
+    const text = e.guildId === guildId ? e.name : emoteToken(e);
+    const next = `${before}${pad}${text} ${value.slice(end)}`;
     setValue(next);
     requestAnimationFrame(() => {
-      const pos = before.length + pad.length + e.name.length + 1;
+      const pos = before.length + pad.length + text.length + 1;
       el?.setSelectionRange(pos, pos);
       el?.focus();
     });
@@ -175,6 +185,7 @@ export function Composer({ channelId, guildId, replyTo, clearReply }: { channelI
             >
               <EmoteImage emote={e} size={24} />
               <span>{e.name}</span>
+              {e.guildId !== guildId && <span className="ml-auto truncate text-xs text-muted-foreground">{guildNames.get(e.guildId)}</span>}
             </button>
           ))}
         </div>

@@ -69,6 +69,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/channels/{cid}/messages/{mid}", patch(messages::edit).delete(messages::delete))
         .route("/channels/{cid}/messages/{mid}/reactions/{emoji}", put(messages::react).delete(messages::unreact))
         .route("/emotes/search", get(emotes::search))
+        .route("/emotes/lookup", get(emotes::lookup))
         .route("/channels/{cid}/attachments", post(attachments::upload))
         .route("/attachments/{id}/{token}/{name}", get(attachments::serve))
         .route("/health", get(|| async { "ok" }));

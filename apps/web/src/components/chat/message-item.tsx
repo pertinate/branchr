@@ -13,6 +13,7 @@ import { api } from "@/lib/api";
 import { snowflakeTime } from "@/lib/ids";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/stores/app";
+import { useEmote } from "@/stores/emotes";
 import { type UiMessage, useMessages } from "@/stores/messages";
 
 const timeFmt = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
@@ -123,7 +124,7 @@ export const MessageItem = memo(function MessageItem({
             <EditBox message={m} onDone={() => setEditing(null)} />
           ) : (
             <div className={cn("selectable leading-[1.375rem] break-words whitespace-pre-wrap", m.pending && "opacity-50", m.failed && "text-destructive")}>
-              {m.content && <Markup content={m.content} emotes={emotes} />}
+              {m.content && <Markup content={m.content} emotes={emotes} refs={m.emotes} />}
               {m.editedAt && <span className="ml-1 text-[10px] text-muted-foreground">(edited)</span>}
             </div>
           )}
@@ -136,7 +137,6 @@ export const MessageItem = memo(function MessageItem({
           {m.reactions.length > 0 && (
             <div className="mt-1 flex flex-wrap gap-1">
               {m.reactions.map((r) => {
-                const emote = r.emoji.startsWith("e:") ? emoteById.get(r.emoji.slice(2)) : undefined;
                 return (
                   <button
                     key={r.emoji}
@@ -146,7 +146,7 @@ export const MessageItem = memo(function MessageItem({
                       r.me ? "border-primary bg-primary/15" : "border-transparent bg-muted hover:border-border",
                     )}
                   >
-                    {emote ? <EmoteImage emote={emote} size={16} /> : r.emoji.startsWith("e:") ? "❔" : r.emoji}
+                    {r.emoji.startsWith("e:") ? <ReactionEmote id={r.emoji.slice(2)} known={emoteById} /> : r.emoji}
                     <span className="text-xs font-semibold">{r.count}</span>
                   </button>
                 );
@@ -222,4 +222,10 @@ function EditBox({ message, onDone }: { message: UiMessage; onDone: () => void }
       <div className="mt-1 text-xs text-muted-foreground">escape to cancel • enter to save</div>
     </div>
   );
+}
+
+/** A reaction's emote, which may be from a server the viewer isn't in. */
+function ReactionEmote({ id, known }: { id: string; known: Map<string, Emote> }) {
+  const emote = useEmote(id, known);
+  return emote ? <EmoteImage emote={emote} size={16} /> : <>❔</>;
 }

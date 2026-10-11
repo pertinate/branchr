@@ -36,3 +36,22 @@ export function emoteMap(emotes: Emote[] | undefined): Map<string, Emote> {
   for (const e of emotes ?? []) m.set(e.name, e);
   return m;
 }
+
+/** How an emote from another server is written in a message (resolved by the server). */
+export function emoteToken(e: Emote) {
+  return `<:${e.name}:${e.id}>`;
+}
+
+export const EMOTE_TOKEN = /<:([\w!?-]+):(\d+)>/;
+
+/** The emote's page on its provider's site. */
+export function emotePage(e: Emote) {
+  switch (e.provider) {
+    case "bttv":
+      return `https://betterttv.com/emotes/${e.providerId}`;
+    case "ffz":
+      return `https://www.frankerfacez.com/emoticon/${e.providerId}`;
+    default:
+      return `https://7tv.app/emotes/${e.providerId}`;
+  }
+}
