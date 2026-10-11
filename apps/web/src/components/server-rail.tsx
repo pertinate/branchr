@@ -13,7 +13,20 @@ import { api } from "@/lib/api";
 import { compareIds } from "@/lib/ids";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/stores/app";
+import { useAuth } from "@/stores/auth";
 import { useVoice } from "@/stores/voice";
+
+/** Accepts a bare code or a link like `https://host/#/invite/CODE`. */
+export function parseInvite(input: string): { code: string; server: string | null } {
+  const raw = input.trim();
+  try {
+    const url = new URL(raw);
+    const code = raw.split("/").filter(Boolean).pop() ?? "";
+    return { code, server: url.origin };
+  } catch {
+    return { code: raw.split("/").pop() ?? raw, server: null };
+  }
+}
 
 function initials(name: string) {
   return name
@@ -121,12 +134,22 @@ function AddServerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
 
   const join = async (e: React.FormEvent) => {
     e.preventDefault();
-    const code = invite.trim().split("/").pop() ?? "";
+    const { serverUrl } = useAuth.getState();
+    const parsed = parseInvite(invite);
+    if (parsed.server && parsed.server !== serverUrl) {
+      toast.error(`That invite is for ${parsed.server}, but you're logged in to ${serverUrl}. Log out and sign in to that server to join.`, { duration: 10_000 });
+      return;
+    }
     setBusy(true);
     try {
-      done(await api<ReadyGuild>("POST", `/invites/${encodeURIComponent(code)}`));
+      done(await api<ReadyGuild>("POST", `/invites/${encodeURIComponent(parsed.code)}`));
     } catch (err) {
-      toast.error((err as Error).message === "not found" ? "Invite is invalid or expired" : (err as Error).message);
+      toast.error(
+        (err as Error).message === "not found"
+          ? `No invite "${parsed.code}" on ${serverUrl}. Invites only work on the server that created them.`
+          : (err as Error).message,
+        { duration: 10_000 },
+      );
     } finally {
       setBusy(false);
     }

@@ -17,6 +17,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import { useApp } from "@/stores/app";
+import { useAuth } from "@/stores/auth";
 
 export function GuildMenu({ guildId, onCreateChannel }: { guildId: string; onCreateChannel: () => void }) {
   const guild = useApp((s) => s.guilds[guildId]);
@@ -83,17 +84,19 @@ export function GuildMenu({ guildId, onCreateChannel }: { guildId: string; onCre
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Invite friends to {guild.name}</DialogTitle>
-            <DialogDescription>Share this code. Friends paste it in "Add a Server → Join".</DialogDescription>
+            <DialogDescription>
+              Friends paste this in "Add a Server → Join". Invites only work on this server, so the link includes it.
+            </DialogDescription>
           </DialogHeader>
           <div className="flex gap-2">
-            <Input readOnly value={invite?.code ?? ""} className="font-mono" />
+            <Input readOnly value={invite?.code ?? ""} className="font-mono" aria-label="Invite code" />
             <Button
               onClick={() => {
-                void navigator.clipboard.writeText(invite?.code ?? "");
-                toast.success("Copied invite code");
+                void navigator.clipboard.writeText(`${useAuth.getState().serverUrl}/#/invite/${invite?.code ?? ""}`);
+                toast.success("Copied invite link");
               }}
             >
-              <Copy /> Copy
+              <Copy /> Copy link
             </Button>
           </div>
         </DialogContent>

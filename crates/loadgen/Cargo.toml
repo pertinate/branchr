@@ -1,0 +1,15 @@
+[package]
+name = "loadgen"
+edition.workspace = true
+version.workspace = true
+description = "Synthetic publisher + N viewers to benchmark the SFU"
+
+[dependencies]
+proto = { workspace = true, features = ["token"] }
+str0m = { version = "0.24", default-features = false, features = ["aws-lc-rs"] }
+tokio.workspace = true
+tokio-tungstenite = "0.30"
+futures.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+rand.workspace = true
