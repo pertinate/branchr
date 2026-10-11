@@ -1,0 +1,95 @@
+# Discord Clone
+
+A self-hostable, Discord-style chat app focused on **uncapped, low-latency game and desktop streaming**. It includes a Linux desktop client.
+
+- **Backend (Rust)**: `api`, an axum REST API and realtime gateway on SQLite; `sfu`, a str0m-based selective forwarding unit for voice, video and streams.
+- **Client**: Vite, React, TanStack Router, shadcn/ui and Tailwind v4. It ships as an **Electron AppImage** for Linux and also works as a web app served by the API.
+- **Emotes** come from [7TV](https://7tv.app/emotes). You can search them, add single emotes, or import whole emote sets.
+
+```
+apps/web        React client (also bundled into the desktop app)
+apps/desktop    Electron shell: VA-API, PipeWire capture, Linux stream audio, AppImage
+crates/api      REST + WebSocket gateway + SQLite + 7TV proxy, serves the web build
+crates/sfu      Media relay (WebRTC SFU)
+crates/proto    Wire types shared by Rust services and TypeScript (generated via ts-rs)
+packages/protocol  Generated TypeScript types
+tests/e2e       Playwright end-to-end tests (chat, voice, streaming, relay, desktop)
+```
+
+## Streaming design
+
+Streams go through the SFU relay. The streamer **uploads each quality layer once**, whatever the number of viewers, and the SFU fans frames out. `tests/e2e/relay.spec.ts` checks this: upload is ~1.0 Mbps with 0 viewers and still ~1.0 Mbps with 4.
+
+| Concern | How it's handled |
+|---|---|
+| No caps | Up to 4K or source resolution, 15–240 fps, any bitrate (default bits-per-pixel heuristic, or custom up to 200 Mbps). |
+| CPU on the streamer | Chromium silently drops to **software** encoding for RID simulcast. Instead, each quality layer is its own transceiver, so each gets its own **hardware encoder** (VA-API). Codec "Auto" picks the best hardware-encodable codec. |
+| CPU on the server | No transcoding. Frames are forwarded as reference-counted buffers, so per-viewer cost is a pointer copy plus packetization. |
+| Viewers on weak links | The SFU runs per-viewer TWCC bandwidth estimation and picks the best layer that fits. Screen shares get budget before cameras. Switching only happens on keyframes and timestamps are rebased, so there are no decoder glitches. Viewers can also pin Source/Medium/Low. |
+| Latency | Receivers set `jitterBufferTarget = 0`. The start bitrate is raised so streams start sharp instead of ramping up from 300 kbps. In tests the jitter buffer runs at 12–27 ms on LAN. |
+| Scaling cores | The SFU shards rooms across worker threads, one UDP port each. A room's forwarding is lock-free on one thread, and packets are demuxed by source address in O(1). |
+| Stream audio on Linux | Chromium can't capture app audio on Linux. The desktop app uses [venmic](https://github.com/Vencord/venmic) to route one app (e.g. the game), or everything except the client itself, into a PipeWire virtual mic. |
+| Background throttling | Electron disables renderer backgrounding and timer throttling, so a minimized client keeps encoding. |
+
+Streams are opt-in ("Watch Stream"), so nobody downloads a stream they aren't watching. The **stats overlay** on a stream shows resolution, fps, bitrate, codec, encoder/decoder (HW or SW), jitter buffer, loss, current layer and the bandwidth estimate.
+
+## Self-hosting
+
+You need Docker and one public IP with UDP reachable.
+
+```sh
+cp .env.example .env        # set PUBLIC_HOST, PUBLIC_IP, VOICE_SECRET (openssl rand -hex 32)
+docker compose up -d --build
+```
+
+Without the compose plugin (e.g. Unraid), deploy over SSH:
+
+```sh
+PUBLIC_IP=203.0.113.10 scripts/deploy-docker.sh root@your-server
+```
+
+Ports: API `8080` (or `8740` via the script), SFU signaling `8090`/`8741`, and media **UDP** with one port per SFU worker (`50000+` / `51000+`).
+
+**HTTPS.** Browsers only allow microphone, camera and screen capture on `https://` (or localhost). Put the API and SFU behind a TLS reverse proxy (Caddy, nginx, Traefik) and set `SFU_URLS=wss://…`. The desktop app works against plain `http://` instances.
+
+Configuration is all through the environment:
+
+| Variable | Service | Default | |
+|---|---|---|---|
+| `DATABASE_URL` | api | `sqlite://data/discord.db` | SQLite file (WAL mode). |
+| `VOICE_SECRET` | both | dev secret | HMAC key for voice tokens; must match. |
+| `SFU_URLS` | api | `ws://localhost:8090/ws` | Comma-separated. Channels are spread across SFUs by hash. |
+| `WEB_DIR` | api | unset | Serve the web client (set in the Docker image). |
+| `OPEN_REGISTRATION` | api | `true` | |
+| `SFU_PUBLIC_IP` | sfu | autodetected | IP put in ICE candidates. |
+| `SFU_UDP_PORT` / `SFU_WORKERS` | sfu | `50000` / #cores | Worker *i* uses `SFU_UDP_PORT + i`. |
+| `SFU_INITIAL_BWE` | sfu | `5000000` | Starting per-viewer estimate (bps). |
+
+## Desktop app (Linux)
+
+```sh
+pnpm install
+pnpm appimage               # → apps/desktop/release/discord-clone-<version>-x86_64.AppImage
+```
+
+The app enables VA-API encode/decode, PipeWire capture (Wayland portal picker), Ozone/Wayland and zero-copy. **User Settings → Streaming & Performance** shows which codecs your GPU encodes and decodes in hardware. For example, an RX 6950 XT hardware-encodes H.264 and hardware-decodes AV1, HEVC, VP9 and H.264.
+
+## Development
+
+```sh
+pnpm install
+cargo run -p api            # :8080
+cargo run -p sfu            # :8090 + UDP 50000+
+pnpm dev                    # Electron + Vite with HMR   (or: pnpm dev:web → http://localhost:5173)
+
+pnpm gen:protocol           # regenerate TS types after changing crates/proto
+pnpm test:e2e               # Playwright: starts api, sfu and vite automatically
+cargo test --workspace
+```
+
+E2E against a deployed instance: media needs a secure origin, so tunnel to localhost first.
+
+```sh
+ssh -NL 18740:localhost:8740 root@your-server &
+E2E_BASE_URL=http://localhost:18740 pnpm test:e2e
+```

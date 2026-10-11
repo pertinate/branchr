@@ -17,6 +17,7 @@ services:
       - "8080:8080"
 
   sfu:
+    build: .
     image: discord-clone
     command: ["sfu"]
     restart: unless-stopped
