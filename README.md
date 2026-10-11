@@ -61,6 +61,14 @@ cp .env.example .env        # set PUBLIC_HOST, PUBLIC_IP, VOICE_SECRET (openssl 
 docker compose up -d --build
 ```
 
+On a VPS (e.g. a DigitalOcean droplet) with automatic HTTPS from Caddy on one hostname, provision and deploy in one step. First point the domain's A record at the VPS (DNS only, not proxied):
+
+```sh
+DOMAIN=chat.example.com scripts/deploy-vps.sh root@your-vps
+```
+
+This installs Docker, opens 80/443 and the SFU's UDP ports in `ufw`, and serves the client, API and gateway at `https://DOMAIN`, with SFU signaling at `wss://DOMAIN/sfu/ws`.
+
 Without the compose plugin (e.g. Unraid), deploy over SSH:
 
 ```sh

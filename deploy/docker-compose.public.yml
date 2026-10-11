@@ -1,0 +1,28 @@
+# Public single-host deployment (e.g. a VPS) with automatic HTTPS.
+#   DOMAIN=dc.example.com PUBLIC_IP=203.0.113.10 VOICE_SECRET=... \
+#     docker compose -f docker-compose.yml -f deploy/docker-compose.public.yml up -d --build
+services:
+  api:
+    environment:
+      SFU_URLS: wss://${DOMAIN:?set DOMAIN}/sfu/ws
+    ports: !reset []
+  sfu:
+    ports: !override
+      - "50000-50001:50000-50001/udp"
+    environment:
+      SFU_WORKERS: ${SFU_WORKERS:-2}
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on: [api, sfu]
+    environment:
+      DOMAIN: ${DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+volumes:
+  caddy-data:
