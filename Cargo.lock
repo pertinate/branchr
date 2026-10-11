@@ -2242,6 +2242,7 @@ dependencies = [
  "anyhow",
  "axum",
  "futures",
+ "libc",
  "proto",
  "serde",
  "serde_json",

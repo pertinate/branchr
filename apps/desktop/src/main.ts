@@ -18,6 +18,13 @@ import { venmic } from "./venmic";
 const isWayland = process.platform === "linux" && (process.env.XDG_SESSION_TYPE === "wayland" || !!process.env.WAYLAND_DISPLAY);
 const devUrl = process.env.DEV_URL;
 
+/** Test mode: synthetic camera/mic/screen instead of real devices and the portal picker. */
+const fakeMedia = process.env.DISCORD_CLONE_FAKE_MEDIA === "1";
+if (fakeMedia) {
+  app.commandLine.appendSwitch("use-fake-device-for-media-stream");
+  app.commandLine.appendSwitch("use-fake-ui-for-media-stream");
+}
+
 // --- Chromium tuning -----------------------------------------------------------------------
 // Must run before `app.ready`.
 {
@@ -52,6 +59,8 @@ const devUrl = process.env.DEV_URL;
 }
 
 app.setName("Discord Clone");
+// Separate profile (and single-instance lock) for tests or multiple accounts.
+if (process.env.DISCORD_CLONE_PROFILE) app.setPath("userData", process.env.DISCORD_CLONE_PROFILE);
 if (!app.requestSingleInstanceLock()) app.quit();
 
 let win: BrowserWindow | null = null;
@@ -116,6 +125,7 @@ function setupSession() {
   ses.setPermissionRequestHandler((_wc, permission, cb) => cb(allowed.has(permission)));
   ses.setPermissionCheckHandler((_wc, permission) => allowed.has(permission));
 
+  if (fakeMedia) return; // Chromium's fake capture handles getDisplayMedia.
   ses.setDisplayMediaRequestHandler(
     async (request, callback) => {
       try {

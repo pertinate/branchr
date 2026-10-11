@@ -5,6 +5,7 @@
 //! the only practical limits are the publisher's encoder and the viewers' bandwidth.
 
 mod config;
+mod h264;
 mod signaling;
 mod worker;
 
@@ -18,6 +19,11 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("sfu=info")))
         .init();
     str0m::crypto::from_feature_flags().install_process_default();
+    // A panicking worker takes its rooms down; make sure that's loud in the logs.
+    std::panic::set_hook(Box::new(|info| {
+        let thread = std::thread::current();
+        tracing::error!(thread = thread.name().unwrap_or("?"), "panic: {info}");
+    }));
 
     let config = config::Config::from_env()?;
     let mut workers = Vec::with_capacity(config.workers);

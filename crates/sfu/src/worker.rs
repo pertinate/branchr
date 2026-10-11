@@ -17,7 +17,10 @@ use std::time::{Duration, Instant};
 
 use proto::Id;
 use proto::voice::{LayerPref, MediaKind as WireKind, PublishTrack, TrackInfo, TrackSource, VoiceClientMsg, VoiceServerMsg};
+use std::sync::Arc;
+
 use str0m::bwe::{Bitrate, BweKind};
+use str0m::format::Codec;
 use str0m::change::SdpOffer;
 use str0m::media::{Direction, KeyframeRequestKind, MediaData, MediaKind, MediaTime, Mid, Rid};
 use str0m::net::{Protocol, Receive};
@@ -79,11 +82,83 @@ const SPEAK_DBOV: i32 = 50;
 const UPGRADE_HEADROOM: f64 = 1.25;
 /// After backing off, wait this long before trying a better layer again.
 const UPGRADE_COOLDOWN: Duration = Duration::from_secs(4);
+/// How long ICE may stay Disconnected before the peer is dropped.
+const ICE_GRACE: Duration = Duration::from_secs(15);
 
 /// Layer names from highest to lowest quality; clients publish these names.
 const LAYER_ORDER: [&str; 3] = ["h", "m", "l"];
 
 type LayerKey = (Mid, Option<Rid>);
+
+/// Where worker time goes; logged every few seconds when `SFU_PROFILE=1`.
+#[derive(Default)]
+struct Prof {
+    enabled: bool,
+    since: Option<Instant>,
+    input: Duration,
+    poll: Duration,
+    write: Duration,
+    send: Duration,
+    events: Duration,
+    cpu_at_start: Duration,
+    loops: u64,
+    packets_in: u64,
+    packets_out: u64,
+    drives: u64,
+    writes: u64,
+}
+
+impl Prof {
+    fn report(&mut self) {
+        let Some(since) = self.since else {
+            self.since = Some(Instant::now());
+            self.cpu_at_start = thread_cpu_time();
+            return;
+        };
+        let wall = since.elapsed();
+        if wall < Duration::from_secs(5) {
+            return;
+        }
+        let pct = |d: Duration| d.as_secs_f64() / wall.as_secs_f64() * 100.0;
+        tracing::info!(
+            "profile {:.0}s: cpu {:.1}% ({} loops/s) input {:.1}% poll {:.1}% write {:.1}% send {:.1}% events {:.1}% | in {}/s out {}/s drives {}/s writes {}/s",
+            wall.as_secs_f64(),
+            pct(thread_cpu_time().saturating_sub(self.cpu_at_start)),
+            self.loops / wall.as_secs(),
+            pct(self.input),
+            pct(self.poll),
+            pct(self.write),
+            pct(self.send),
+            pct(self.events),
+            self.packets_in / wall.as_secs(),
+            self.packets_out / wall.as_secs(),
+            self.drives / wall.as_secs(),
+            self.writes / wall.as_secs(),
+        );
+        *self = Prof { enabled: true, since: Some(Instant::now()), cpu_at_start: thread_cpu_time(), ..Default::default() };
+    }
+}
+
+/// CPU time consumed by the calling thread (user + system).
+fn thread_cpu_time() -> Duration {
+    let mut ts = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+    // SAFETY: valid out-pointer; CLOCK_THREAD_CPUTIME_ID is always supported on Linux.
+    unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut ts) };
+    Duration::new(ts.tv_sec as u64, ts.tv_nsec as u32)
+}
+
+macro_rules! timed {
+    ($prof:expr, $field:ident, $e:expr) => {{
+        if $prof.enabled {
+            let t = Instant::now();
+            let r = $e;
+            $prof.$field += t.elapsed();
+            r
+        } else {
+            $e
+        }
+    }};
+}
 
 struct RateMeter {
     bytes: u64,
@@ -190,6 +265,8 @@ struct Peer {
     last_loud: Option<Instant>,
     speaking: bool,
     addrs: Vec<SocketAddr>,
+    /// When ICE went Disconnected, if it hasn't recovered yet.
+    ice_lost: Option<Instant>,
 }
 
 impl Peer {
@@ -217,6 +294,7 @@ struct Worker {
     fanout: HashMap<(PeerId, Mid), Vec<(PeerId, Mid)>>,
     dirty: HashSet<PeerId>,
     buf: Vec<u8>,
+    prof: Prof,
 }
 
 impl Worker {
@@ -231,6 +309,7 @@ impl Worker {
             fanout: HashMap::new(),
             dirty: HashSet::new(),
             buf: vec![0; 2000],
+            prof: Prof { enabled: std::env::var("SFU_PROFILE").is_ok_and(|v| v == "1"), ..Default::default() },
         }
     }
 
@@ -261,6 +340,10 @@ impl Worker {
             }
             self.drive_timeouts();
             self.drive_dirty();
+            if self.prof.enabled {
+                self.prof.loops += 1;
+                self.prof.report();
+            }
         }
     }
 
@@ -284,7 +367,8 @@ impl Worker {
                         self.addrs.insert(source, peer_id);
                         peer.addrs.push(source);
                     }
-                    if let Err(e) = peer.rtc.handle_input(input) {
+                    self.prof.packets_in += 1;
+                    if let Err(e) = timed!(self.prof, input, peer.rtc.handle_input(input)) {
                         tracing::debug!(peer = peer_id.0, "input error: {e:?}");
                     }
                     self.dirty.insert(peer_id);
@@ -324,18 +408,20 @@ impl Worker {
         let mut events = Vec::new();
         {
             let Some(peer) = self.peers.get_mut(&id) else { return };
-            let _ = peer.rtc.handle_input(Input::Timeout(Instant::now()));
+            self.prof.drives += 1;
+            let _ = timed!(self.prof, poll, peer.rtc.handle_input(Input::Timeout(Instant::now())));
             loop {
                 if !peer.rtc.is_alive() {
                     break;
                 }
-                match peer.rtc.poll_output() {
+                match timed!(self.prof, poll, peer.rtc.poll_output()) {
                     Ok(Output::Timeout(t)) => {
                         peer.next_timeout = t;
                         break;
                     }
                     Ok(Output::Transmit(t)) => {
-                        if let Err(e) = self.socket.try_send_to(&t.contents, t.destination)
+                        self.prof.packets_out += 1;
+                        if let Err(e) = timed!(self.prof, send, self.socket.try_send_to(&t.contents, t.destination))
                             && e.kind() != ErrorKind::WouldBlock
                         {
                             tracing::trace!("udp send error: {e}");
@@ -355,20 +441,27 @@ impl Worker {
                 return;
             }
         }
+        let t = Instant::now();
         for e in events {
             self.handle_event(id, e);
+        }
+        if self.prof.enabled {
+            self.prof.events += t.elapsed();
         }
     }
 
     fn handle_event(&mut self, id: PeerId, e: Event) {
         match e {
             Event::IceConnectionStateChange(s) => {
-                tracing::debug!(peer = id.0, "ice {s:?}");
-                if s == IceConnectionState::Disconnected
-                    && let Some(p) = self.peers.get_mut(&id)
-                {
-                    p.rtc.disconnect();
-                    self.dirty.insert(id);
+                tracing::info!(peer = id.0, "ice {s:?}");
+                // Disconnected is transient by design (e.g. consent checks delayed behind a
+                // burst of stream upload); only give up if it doesn't recover.
+                if let Some(p) = self.peers.get_mut(&id) {
+                    if s == IceConnectionState::Disconnected {
+                        p.ice_lost.get_or_insert(Instant::now());
+                    } else if s.is_connected() {
+                        p.ice_lost = None;
+                    }
                 }
             }
             Event::Connected => {
@@ -500,6 +593,7 @@ impl Worker {
                 last_loud: None,
                 speaking: false,
                 addrs: Vec::new(),
+                ice_lost: None,
             },
         );
         tracing::info!(peer = id.0, user = %user, room = %room_id, "peer joined");
@@ -741,6 +835,7 @@ impl Worker {
             return;
         }
         track.last_keyframe_req.insert(key, now);
+        tracing::debug!(publisher = pid.0, ?key, force, "keyframe request");
         if let Some(mut w) = peer.rtc.writer(key.0) {
             let _ = w.request_keyframe(key.1, KeyframeRequestKind::Pli);
             self.dirty.insert(pid);
@@ -770,6 +865,14 @@ impl Worker {
 
         let Some(subs) = self.fanout.get(&(id, d.mid)) else { return };
         let is_keyframe = d.is_keyframe();
+        // One fixup per frame, shared by every subscriber.
+        let data = match (is_keyframe, d.params.spec().codec) {
+            (true, Codec::H264) => match crate::h264::reorder_parameter_sets(&d.data) {
+                Some(fixed) => Arc::<[u8]>::from(fixed),
+                None => d.data.clone(),
+            },
+            _ => d.data.clone(),
+        };
         let mut switched = Vec::new();
         for &(sp, smid) in subs {
             let Some(sp_peer) = self.peers.get_mut(&sp) else { continue };
@@ -777,6 +880,7 @@ impl Worker {
 
             // Switch layers only on a keyframe of the target so the decoder never breaks.
             if sub.target == Some(key) && sub.current != Some(key) && (is_keyframe || audio) {
+                tracing::debug!(viewer = sp.0, from = ?sub.current, to = ?key, "layer switch");
                 sub.current = Some(key);
                 sub.rebase = true;
                 if layer_name.is_some() {
@@ -805,7 +909,8 @@ impl Worker {
                 Some(level) => writer.audio_level(level, d.ext_vals.voice_activity.unwrap_or(false)),
                 None => writer,
             };
-            if let Err(e) = writer.write(pt, d.network_time, out_time, d.data.clone()) {
+            self.prof.writes += 1;
+            if let Err(e) = timed!(self.prof, write, writer.write(pt, d.network_time, out_time, data.clone())) {
                 tracing::debug!(peer = sp.0, "write failed: {e:?}");
             }
             self.dirty.insert(sp);
@@ -818,6 +923,19 @@ impl Worker {
     }
 
     fn select_layers(&mut self) {
+        let dead: Vec<PeerId> = self
+            .peers
+            .iter()
+            .filter(|(_, p)| p.ice_lost.is_some_and(|t| t.elapsed() > ICE_GRACE))
+            .map(|(id, _)| *id)
+            .collect();
+        for id in dead {
+            tracing::warn!(peer = id.0, "ice did not recover, dropping peer");
+            if let Some(p) = self.peers.get(&id) {
+                p.send(VoiceServerMsg::Error { message: "media connection lost".into() });
+            }
+            self.remove_peer(id);
+        }
         let ids: Vec<PeerId> = self.peers.keys().copied().collect();
         for id in ids {
             self.select_layers_for(id);
