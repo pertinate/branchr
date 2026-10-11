@@ -135,6 +135,7 @@ pub async fn create(
     let (content, emotes) = resolve_emotes(&state, user, content, &[]).await?;
     let replied = replied_author(&state, cid, body.reply_to, user).await?;
     let mut mentions = mentions::resolve(&state.db, guild, &content, replied).await?;
+    restrict_everyone(&state, guild, user, &mut mentions).await?;
     let content = std::mem::take(&mut mentions.content);
     let id = state.ids.next();
     let mut tx = state.db.begin().await?;
@@ -209,7 +210,8 @@ pub async fn edit(
     }
     let (content, emotes) = resolve_emotes(&state, user, content, &prev.emotes).await?;
     let replied = replied_author(&state, cid, prev.reply_to, user).await?;
-    let mentions = mentions::resolve(&state.db, guild, &content, replied).await?;
+    let mut mentions = mentions::resolve(&state.db, guild, &content, replied).await?;
+    restrict_everyone(&state, guild, user, &mut mentions).await?;
     let content = mentions.content;
     let r = sqlx::query(
         "UPDATE messages SET content = ?1, emotes = ?2, mentions = ?3, mention_everyone = ?4, edited_at = ?5
@@ -257,6 +259,19 @@ pub async fn delete(
 
 fn snapshot_json<T: serde::Serialize>(items: &[T]) -> Option<String> {
     (!items.is_empty()).then(|| serde_json::to_string(items).expect("snapshot serializes"))
+}
+
+/// @everyone / @here only ping when the guild lets everyone use them, or from the owner.
+/// Otherwise they stay as plain text.
+async fn restrict_everyone(state: &AppState, guild: Id, user: Id, m: &mut mentions::Mentions) -> AppResult<()> {
+    if m.everyone || m.here {
+        let g = db::guild(&state.db, guild).await?;
+        if !g.everyone_mentions && g.owner_id != user {
+            m.everyone = false;
+            m.here = false;
+        }
+    }
+    Ok(())
 }
 
 /// Counts the mentions toward each pinged member's unread badge, which is what makes a

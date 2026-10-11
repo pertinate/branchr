@@ -83,6 +83,7 @@ pub async fn create(
 pub struct PatchGuild {
     name: Option<String>,
     icon_url: Option<Option<String>>,
+    everyone_mentions: Option<bool>,
 }
 
 pub async fn patch(
@@ -98,6 +99,9 @@ pub async fn patch(
     }
     if let Some(icon) = body.icon_url {
         sqlx::query("UPDATE guilds SET icon_url = ? WHERE id = ?").bind(icon).bind(gid.0).execute(&state.db).await?;
+    }
+    if let Some(on) = body.everyone_mentions {
+        sqlx::query("UPDATE guilds SET everyone_mentions = ? WHERE id = ?").bind(on).bind(gid.0).execute(&state.db).await?;
     }
     let g = db::guild(&state.db, gid).await?;
     state.hub.to_guild(gid, &ServerEvent::GuildUpdate(g.clone()));

@@ -24,6 +24,8 @@ interface Ctx {
   guildId?: string;
   /** Users the message mentions, snapshotted when sent. */
   mentions: Map<string, User>;
+  /** Whether @everyone / @here actually pinged (the author may not be allowed to). */
+  everyone: boolean;
 }
 
 const PILL = "rounded-sm bg-primary/25 px-0.5 font-medium text-[oklch(0.86_0.08_265)] hover:bg-primary/60 hover:text-white";
@@ -76,7 +78,17 @@ const INLINE: Inline[] = [
   },
   { re: USER_MENTION, render: (m, c, k) => <Mention key={k} id={m[1]} ctx={c} /> },
   { re: ROLE_MENTION, render: (_m, _c, k) => <span key={k} className={PILL}>@unknown-role</span> },
-  { re: EVERYONE_MENTION, render: (m, _c, k) => <span key={k} data-mention={m[1]} className={PILL}>@{m[1]}</span> },
+  {
+    re: EVERYONE_MENTION,
+    render: (m, c, k) =>
+      c.everyone ? (
+        <span key={k} data-mention={m[1]} className={PILL}>
+          @{m[1]}
+        </span>
+      ) : (
+        m[0]
+      ),
+  },
   { re: /`([^`\n]+)`/, render: (m, _c, k) => <code key={k} className="rounded bg-muted px-1 py-0.5 font-mono text-[0.85em]">{m[1]}</code> },
   { re: /\|\|([\s\S]+?)\|\|/, render: (m, c, k) => <Spoiler key={k}>{inline(m[1], c)}</Spoiler> },
   { re: /\*\*([\s\S]+?)\*\*/, render: (m, c, k) => <strong key={k}>{inline(m[1], c)}</strong> },
@@ -148,12 +160,14 @@ export const Markup = memo(function Markup({
   refs,
   guildId,
   mentions: mentioned,
+  everyone = false,
 }: {
   content: string;
   emotes: Map<string, Emote>;
   refs?: Emote[];
   guildId?: string;
   mentions?: User[];
+  everyone?: boolean;
 }) {
   const byId = useMemo(() => new Map((refs ?? []).map((e) => [e.id, e])), [refs]);
   const mentions = useMemo(() => new Map((mentioned ?? []).map((u) => [u.id, u])), [mentioned]);
@@ -166,7 +180,7 @@ export const Markup = memo(function Markup({
         (w.startsWith(":") && w.endsWith(":") && emotes.has(w.slice(1, -1))) ||
         byId.has(WHOLE_TOKEN.exec(w)?.[2] ?? ""),
     );
-  const ctx: Ctx = { emotes, byId, jumbo, guildId, mentions };
+  const ctx: Ctx = { emotes, byId, jumbo, guildId, mentions, everyone };
 
   const blocks = content.split(/```(?:([\w+-]+)\n)?([\s\S]*?)```/);
   // split with 2 capture groups yields [text, lang, code, text, lang, code, ...]

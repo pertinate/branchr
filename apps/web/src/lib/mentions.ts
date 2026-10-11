@@ -17,6 +17,13 @@ export function mentionName(guildId: string | undefined, id: string, snapshot?: 
   return member?.nick ?? member?.user.displayName ?? snapshot?.displayName ?? "unknown-user";
 }
 
+/** Whether we may ping @everyone / @here in `guildId`. */
+export function canMentionEveryone(guildId: string | undefined): boolean {
+  const s = useApp.getState();
+  const g = guildId ? s.guilds[guildId] : undefined;
+  return !g || g.everyoneMentions || g.ownerId === s.me?.id;
+}
+
 /** Whether `m` should ping `me`. Your own messages never do. */
 export function mentionsMe(m: Pick<Message, "author" | "mentions" | "mentionEveryone">, me: string | undefined): boolean {
   if (!me || m.author.id === me) return false;
@@ -36,7 +43,7 @@ export function localMentions(content: string, guildId: string | undefined): { c
     if (!mentions.some((x) => x.id === u.id)) mentions.push(u);
     return `<@${u.id}>${raw.slice(u.username.length)}`;
   });
-  return { content: out, mentions, mentionEveryone: EVERYONE_MENTION.test(content) };
+  return { content: out, mentions, mentionEveryone: EVERYONE_MENTION.test(content) && canMentionEveryone(guildId) };
 }
 
 /** `<@id>` → `@username`, for editing a message as it was typed. */

@@ -104,3 +104,37 @@ test("mentions: replies ping the author; edits keep mentions editable", async ({
   await edit.press("Enter");
   await expect(bob.locator("[data-pinged]").filter({ hasText: "again!" })).toBeVisible();
 });
+
+test("mentions: the owner can stop members from pinging @everyone", async ({ browser }) => {
+  const alice = await register(browser, "evr_a");
+  const code = await createServer(alice, "Quiet");
+  const bob = await register(browser, "evr_b");
+  await joinServer(bob, code);
+
+  // On by default: members can ping everyone.
+  await bob.getByPlaceholder("Message #general").fill("@everyone first");
+  await bob.keyboard.press("Enter");
+  await expect(alice.locator("[data-pinged]").filter({ hasText: "first" })).toBeVisible();
+  await expect(alice.locator("[data-mention='everyone']")).toHaveCount(1);
+
+  await alice.getByRole("button", { name: "Quiet" }).click();
+  await alice.getByRole("menuitem", { name: "Server Settings" }).click();
+  await alice.getByLabel("Anyone can mention @everyone and @here").click();
+  await expect(alice.getByLabel("Anyone can mention @everyone and @here")).not.toBeChecked();
+  await alice.keyboard.press("Escape");
+
+  // Off: Bob's @here is plain text, isn't suggested, and pings nobody.
+  const box = bob.getByPlaceholder("Message #general");
+  await box.fill("@he");
+  await expect(bob.getByText("Notifies everyone online")).toHaveCount(0);
+  await box.fill("@here second");
+  await box.press("Enter");
+  await expect(alice.getByText("@here second")).toBeVisible();
+  await expect(alice.locator("[data-pinged]")).toHaveCount(1);
+  await expect(alice.locator("[data-mention='here']")).toHaveCount(0);
+
+  // The owner still can.
+  await alice.getByPlaceholder("Message #general").fill("@here third");
+  await alice.keyboard.press("Enter");
+  await expect(bob.locator("[data-pinged]").filter({ hasText: "third" })).toBeVisible();
+});

@@ -26,6 +26,9 @@ wire! {
         pub name: String,
         pub icon_url: Option<String>,
         pub owner_id: Id,
+        /// Whether every member may ping @everyone / @here; otherwise only the owner can.
+        /// (A placeholder for the role permission.)
+        pub everyone_mentions: bool,
     }
 
     pub struct Channel {

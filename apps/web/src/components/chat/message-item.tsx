@@ -135,7 +135,7 @@ export const MessageItem = memo(function MessageItem({
             <EditBox message={m} onDone={() => setEditing(null)} />
           ) : (
             <div className={cn("selectable leading-[1.375rem] break-words whitespace-pre-wrap", m.pending && "opacity-50", m.failed && "text-destructive")}>
-              {m.content && <Markup content={m.content} emotes={emotes} refs={m.emotes} guildId={guildId} mentions={m.mentions} />}
+              {m.content && <Markup content={m.content} emotes={emotes} refs={m.emotes} guildId={guildId} mentions={m.mentions} everyone={m.mentionEveryone} />}
               {m.editedAt && <span className="ml-1 text-[10px] text-muted-foreground">(edited)</span>}
             </div>
           )}

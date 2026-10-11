@@ -12,6 +12,7 @@ import { gateway } from "@/lib/gateway";
 import { formatBytes, uploadAttachment } from "@/lib/upload";
 import { cn } from "@/lib/utils";
 import { emoteToken } from "@/lib/emotes";
+import { canMentionEveryone } from "@/lib/mentions";
 import { useApp } from "@/stores/app";
 import { useEmoteGroups } from "@/stores/emotes";
 import { type UiMessage, useMessages } from "@/stores/messages";
@@ -128,7 +129,7 @@ export function Composer({ channelId, guildId, replyTo, clearReply }: { channelI
         if (names.some((n) => n.toLowerCase().startsWith(q))) return 0;
         return names.some((n) => n.toLowerCase().includes(q)) ? 1 : -1;
       };
-      const matches = [...people.sort((a, b) => a.name.localeCompare(b.name)), ...EVERYONE]
+      const matches = [...people.sort((a, b) => a.name.localeCompare(b.name)), ...(canMentionEveryone(guildId) ? EVERYONE : [])]
         .map((x) => [x, score(x)] as const)
         .filter(([, s]) => s >= 0)
         .sort((a, b) => a[1] - b[1])

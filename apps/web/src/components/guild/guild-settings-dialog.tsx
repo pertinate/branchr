@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useDebounced } from "@/hooks/use-debounced";
 import { api } from "@/lib/api";
@@ -47,6 +48,14 @@ function Overview({ guildId }: { guildId: string }) {
   const guild = useApp((s) => s.guilds[guildId]);
   const [name, setName] = useState(guild?.name ?? "");
   const [icon, setIcon] = useState(guild?.iconUrl ?? "");
+  const setEveryone = async (everyoneMentions: boolean) => {
+    try {
+      const g = await api<Guild>("PATCH", `/guilds/${guildId}`, { everyoneMentions });
+      useApp.getState().apply({ t: "GUILD_UPDATE", d: g });
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  };
   const save = async () => {
     try {
       const g = await api<Guild>("PATCH", `/guilds/${guildId}`, { name, iconUrl: icon.trim() || null });
@@ -67,6 +76,13 @@ function Overview({ guildId }: { guildId: string }) {
         <Input value={icon} onChange={(e) => setIcon(e.target.value)} placeholder="https://…" />
       </div>
       <Button onClick={save}>Save Changes</Button>
+      <div className="flex items-start justify-between gap-4 border-t border-border pt-4">
+        <div>
+          <Label htmlFor="everyone-mentions">Anyone can mention @everyone and @here</Label>
+          <p className="mt-1 text-xs text-muted-foreground">When off, only you (the owner) can ping the whole server. Others' @everyone shows as plain text.</p>
+        </div>
+        <Switch id="everyone-mentions" checked={guild?.everyoneMentions ?? true} onCheckedChange={setEveryone} />
+      </div>
     </div>
   );
 }
