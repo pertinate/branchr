@@ -1,9 +1,11 @@
 import type { Attachment } from "@app/protocol";
-import { ChevronLeft, ChevronRight, Copy, Download, ExternalLink, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Copy, Download, ExternalLink, Image as ImageIcon, X } from "lucide-react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
+import { copy as copyText, copyImage, saveFile } from "@/lib/actions";
 import { attachmentUrl, formatBytes } from "@/lib/upload";
 
 /**
@@ -67,15 +69,33 @@ export function ImageViewer({ images, index, onIndex, onClose }: { images: Attac
                 // A click on the backdrop (not the image) closes, like Discord.
                 onClick={(e) => e.target === e.currentTarget && onClose()}
               >
-                <img
-                  key={a.id}
-                  src={url}
-                  alt={a.filename}
-                  decoding="async"
-                  draggable={false}
-                  onClick={() => setZoom((z) => !z)}
-                  className={zoom ? "m-auto block max-w-none cursor-zoom-out" : "max-h-full max-w-full cursor-zoom-in object-contain"}
-                />
+                <ContextMenu>
+                  <ContextMenuTrigger asChild>
+                    <img
+                      key={a.id}
+                      src={url}
+                      alt={a.filename}
+                      decoding="async"
+                      draggable={false}
+                      onClick={() => setZoom((z) => !z)}
+                      className={zoom ? "m-auto block max-w-none cursor-zoom-out" : "max-h-full max-w-full cursor-zoom-in object-contain"}
+                    />
+                  </ContextMenuTrigger>
+                  <ContextMenuContent className="z-[60] w-52">
+                    <ContextMenuItem onSelect={() => void copyImage(url)}>
+                      Copy Image <ImageIcon className="ml-auto" />
+                    </ContextMenuItem>
+                    <ContextMenuItem onSelect={() => void saveFile(url, a.filename)}>
+                      Save Image <Download className="ml-auto" />
+                    </ContextMenuItem>
+                    <ContextMenuItem onSelect={() => void copyText(url, "Copied link")}>
+                      Copy Image Link <Copy className="ml-auto" />
+                    </ContextMenuItem>
+                    <ContextMenuItem onSelect={() => window.open(url, "_blank", "noopener")}>
+                      Open Original <ExternalLink className="ml-auto" />
+                    </ContextMenuItem>
+                  </ContextMenuContent>
+                </ContextMenu>
                 {many && !zoom && (
                   <>
                     <NavButton side="left" onClick={() => step(-1)} />

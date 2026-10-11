@@ -18,6 +18,7 @@ import { gateway } from "@/lib/gateway";
 import { instanceInfo, linkToBranchr } from "@/lib/server-login";
 import { useApp } from "@/stores/app";
 import { useAuth } from "@/stores/auth";
+import { usePrefs } from "@/stores/ui";
 import { useVoice, useVoiceSettings } from "@/stores/voice";
 import { type NoiseSuppression, noiseSuppressionModes } from "@/voice/mic";
 
@@ -33,6 +34,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
             <TabsTrigger value="account">My Account</TabsTrigger>
             <TabsTrigger value="voice">Voice & Audio</TabsTrigger>
             <TabsTrigger value="perf">Streaming & Performance</TabsTrigger>
+            <TabsTrigger value="advanced">Advanced</TabsTrigger>
           </TabsList>
           <TabsContent value="account" className="overflow-y-auto">
             <Account />
@@ -42,6 +44,9 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
           </TabsContent>
           <TabsContent value="perf" className="overflow-y-auto">
             <Performance />
+          </TabsContent>
+          <TabsContent value="advanced" className="overflow-y-auto">
+            <Advanced />
           </TabsContent>
         </Tabs>
       </DialogContent>
@@ -339,6 +344,21 @@ function Performance() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function Advanced() {
+  const devMode = usePrefs((s) => s.devMode);
+  return (
+    <div className="max-w-md space-y-4 pt-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <Label htmlFor="dev-mode">Developer Mode</Label>
+          <p className="mt-1 text-xs text-muted-foreground">Adds "Copy ID" to right-click menus, for bots and bug reports.</p>
+        </div>
+        <Switch id="dev-mode" checked={devMode} onCheckedChange={(v) => usePrefs.getState().set({ devMode: v })} />
+      </div>
     </div>
   );
 }

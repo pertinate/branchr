@@ -7,6 +7,7 @@ import { useShallow } from "zustand/react/shallow";
 import { EmojiPicker } from "@/components/chat/emoji-picker";
 import { EmoteImage } from "@/components/chat/markup";
 import { UserAvatar } from "@/components/user-avatar";
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { gateway } from "@/lib/gateway";
 import { formatBytes, uploadAttachment } from "@/lib/upload";
@@ -78,6 +79,13 @@ export function Composer({ channelId, guildId, replyTo, clearReply }: { channelI
       if (up?.preview) URL.revokeObjectURL(up.preview);
       return u.filter((x) => x.key !== key);
     });
+
+  // Text from menus elsewhere ("Mention"), typed at the caret.
+  useEffect(() => {
+    const onInsert = (e: Event) => insert((e as CustomEvent<string>).detail.trimEnd());
+    window.addEventListener("composer-insert", onInsert);
+    return () => window.removeEventListener("composer-insert", onInsert);
+  });
 
   // Files dropped anywhere on the chat view land here.
   useEffect(() => {
@@ -281,7 +289,9 @@ export function Composer({ channelId, guildId, replyTo, clearReply }: { channelI
       {uploads.length > 0 && (
         <div className={cn("flex gap-2 overflow-x-auto bg-[oklch(0.335_0.009_264)] p-3", !replyTo && "rounded-t-lg")}>
           {uploads.map((u) => (
-            <div key={u.key} data-upload={u.error ? "error" : u.attachment ? "done" : "uploading"} className="relative w-40 shrink-0 rounded-md bg-muted p-2">
+            <ContextMenu key={u.key}>
+            <ContextMenuTrigger asChild>
+            <div data-upload={u.error ? "error" : u.attachment ? "done" : "uploading"} className="relative w-40 shrink-0 rounded-md bg-muted p-2">
               <button className="absolute top-1 right-1 rounded bg-black/60 p-0.5" onClick={() => removeUpload(u.key)} aria-label={`Remove ${u.file.name}`}>
                 <X className="size-3.5" />
               </button>
@@ -300,6 +310,13 @@ export function Composer({ channelId, guildId, replyTo, clearReply }: { channelI
               )}
               <div className="text-[10px] text-muted-foreground">{formatBytes(u.file.size)}</div>
             </div>
+            </ContextMenuTrigger>
+            <ContextMenuContent>
+              <ContextMenuItem variant="destructive" onSelect={() => removeUpload(u.key)}>
+                Remove Attachment
+              </ContextMenuItem>
+            </ContextMenuContent>
+            </ContextMenu>
           ))}
         </div>
       )}

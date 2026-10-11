@@ -2,6 +2,7 @@ import { Outlet, createFileRoute, redirect } from "@tanstack/react-router";
 import { useEffect } from "react";
 
 import { EmoteCard } from "@/components/chat/emote-card";
+import { GlobalDialogs } from "@/components/global-dialogs";
 import { AudioRenderer } from "@/components/voice/audio-renderer";
 import { ServerRail } from "@/components/server-rail";
 import { gateway } from "@/lib/gateway";
@@ -56,6 +57,7 @@ function AppLayout() {
       </div>
       <AudioRenderer />
       <EmoteCard />
+      <GlobalDialogs />
     </div>
   );
 }

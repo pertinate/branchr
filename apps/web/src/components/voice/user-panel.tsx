@@ -4,6 +4,7 @@ import { toast } from "sonner";
 
 import { SettingsDialog } from "@/components/settings-dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Menu, SelfMenuItems } from "@/components/menus";
 import { UserAvatar } from "@/components/user-avatar";
 import { StreamDialog } from "@/components/voice/stream-dialog";
 import { cn } from "@/lib/utils";
@@ -79,7 +80,11 @@ export function UserPanel() {
         </div>
       )}
       <div className="flex items-center gap-2 px-2 py-1.5">
-        <UserAvatar user={me} size={32} status={status} speaking={speaking} />
+        <Menu items={<SelfMenuItems />}>
+          <span className="block cursor-pointer" aria-label="Your account">
+            <UserAvatar user={me} size={32} status={status} speaking={speaking} />
+          </span>
+        </Menu>
         <div className="min-w-0 flex-1 leading-tight">
           <div className="truncate text-sm font-semibold">{me.displayName}</div>
           <div className="truncate text-xs text-muted-foreground">@{me.username}</div>

@@ -4,9 +4,11 @@ import path from "node:path";
 import {
   BrowserWindow,
   Menu,
+  type MenuItemConstructorOptions,
   Notification,
   Tray,
   app,
+  clipboard,
   desktopCapturer,
   ipcMain,
   nativeImage,
@@ -135,6 +137,40 @@ function createWindow() {
       e.preventDefault();
       if (/^https?:/.test(url)) void shell.openExternal(url);
     }
+  });
+
+  // The app shows its own menus for messages, people, channels…; anything it leaves alone
+  // (text boxes, selected text, plain links) gets the usual native one.
+  win.webContents.on("context-menu", (_e, p) => {
+    const items: MenuItemConstructorOptions[] = [];
+    if (p.misspelledWord) {
+      for (const s of p.dictionarySuggestions.slice(0, 5)) items.push({ label: s, click: () => win?.webContents.replaceMisspelling(s) });
+      if (!p.dictionarySuggestions.length) items.push({ label: "No suggestions", enabled: false });
+      items.push(
+        { label: "Add to Dictionary", click: () => win?.webContents.session.addWordToSpellCheckerDictionary(p.misspelledWord) },
+        { type: "separator" },
+      );
+    }
+    if (p.linkURL && /^https?:/.test(p.linkURL)) {
+      items.push(
+        { label: "Open Link", click: () => void shell.openExternal(p.linkURL) },
+        { label: "Copy Link", click: () => clipboard.writeText(p.linkURL) },
+        { type: "separator" },
+      );
+    }
+    if (p.isEditable) {
+      items.push(
+        { role: "cut", enabled: p.editFlags.canCut },
+        { role: "copy", enabled: p.editFlags.canCopy },
+        { role: "paste", enabled: p.editFlags.canPaste },
+        { type: "separator" },
+        { role: "selectAll" },
+      );
+    } else if (p.selectionText.trim()) {
+      items.push({ role: "copy" });
+    }
+    while (items.at(-1)?.type === "separator") items.pop();
+    if (items.length) Menu.buildFromTemplate(items).popup({ window: win ?? undefined });
   });
 
   if (devUrl) void win.loadURL(devUrl);

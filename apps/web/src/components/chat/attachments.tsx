@@ -31,6 +31,8 @@ export const Attachments = memo(function Attachments({ items }: { items: Attachm
           const s = fit(a);
           return (
             <button
+              data-attachment-url={url}
+              data-attachment-name={a.filename}
               key={a.id}
               type="button"
               onClick={() => setViewing(images.indexOf(a))}
@@ -44,7 +46,7 @@ export const Attachments = memo(function Attachments({ items }: { items: Attachm
         }
         if (type.startsWith("video/")) {
           const s = fit(a);
-          return <video key={a.id} src={url} controls preload="metadata" className="rounded-md bg-black" style={s} />;
+          return <video key={a.id} data-attachment-url={url} data-attachment-name={a.filename} data-attachment-video src={url} controls preload="metadata" className="rounded-md bg-black" style={s} />;
         }
         if (type.startsWith("audio/")) {
           return (

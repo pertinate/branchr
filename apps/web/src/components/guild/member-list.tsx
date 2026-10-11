@@ -3,6 +3,7 @@ import { memo, useMemo } from "react";
 import { VList } from "virtua";
 import { useShallow } from "zustand/react/shallow";
 
+import { Menu, UserMenuItems } from "@/components/menus";
 import { UserAvatar } from "@/components/user-avatar";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/stores/app";
@@ -51,10 +52,12 @@ export function MemberList({ guildId }: { guildId: string }) {
 
 const MemberRow = memo(function MemberRow({ member, status, owner }: { member: Member; status: Status; owner: boolean }) {
   return (
+    <Menu items={<UserMenuItems guildId={member.guildId} userId={member.user.id} />}>
     <div className={cn("flex items-center gap-3 rounded px-2 py-1.5 hover:bg-sidebar-accent/60", status === "offline" && "opacity-40")}>
       <UserAvatar user={member.user} size={32} status={status === "offline" ? undefined : status} />
       <span className="truncate text-[15px] font-medium text-sidebar-foreground">{member.nick ?? member.user.displayName}</span>
       {owner && <span title="Server Owner" className="text-idle">♛</span>}
     </div>
+    </Menu>
   );
 });

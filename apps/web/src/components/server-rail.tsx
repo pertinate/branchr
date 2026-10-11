@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { guildInitials } from "@/components/guild/guild-badge";
 import { MentionBadge } from "@/components/mention-badge";
+import { GuildMenuItems, Menu } from "@/components/menus";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -51,6 +52,7 @@ const GuildIcon = memo(function GuildIcon({ guildId, active }: { guildId: string
   if (!guild) return null;
   return (
     <Tooltip>
+      <Menu items={<GuildMenuItems guildId={guildId} />}>
       <TooltipTrigger asChild>
         <Link to="/$guildId" params={{ guildId }} aria-label={guild.name} className="group relative flex w-full justify-center">
           <span
@@ -75,6 +77,7 @@ const GuildIcon = memo(function GuildIcon({ guildId, active }: { guildId: string
           )}
         </Link>
       </TooltipTrigger>
+      </Menu>
       <TooltipContent side="right">{guild.name}</TooltipContent>
     </Tooltip>
   );

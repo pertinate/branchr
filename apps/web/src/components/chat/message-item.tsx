@@ -1,21 +1,48 @@
 import type { Emote } from "@app/protocol";
-import { CornerUpLeft, Pencil, RotateCw, SmilePlus, Trash2 } from "lucide-react";
-import { memo, useState } from "react";
+import { Copy, CornerUpLeft, Download, ExternalLink, Image as ImageIcon, Link2, Pencil, RotateCw, SmilePlus, Sparkles, Trash2 } from "lucide-react";
+import { memo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Attachments } from "@/components/chat/attachments";
 import { EmojiPicker } from "@/components/chat/emoji-picker";
 import { EmoteImage, Markup } from "@/components/chat/markup";
+import { Menu, UserMenuItems } from "@/components/menus";
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import { UserAvatar, userColor } from "@/components/user-avatar";
+import { copy, copyImage, saveFile } from "@/lib/actions";
 import { api } from "@/lib/api";
+import { emotePage, providerNames } from "@/lib/emotes";
 import { snowflakeTime } from "@/lib/ids";
 import { editableMentions, mentionsMe, plainText } from "@/lib/mentions";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/stores/app";
-import { useEmote } from "@/stores/emotes";
+import { useEmote, useEmoteCard } from "@/stores/emotes";
 import { type UiMessage, useMessages } from "@/stores/messages";
+import { usePrefs } from "@/stores/ui";
+
+/** Quick reactions at the top of a message's menu. */
+const QUICK_REACTIONS = ["👍", "❤️", "😂", "🔥"];
+
+/** What was under the pointer when the message's menu opened. */
+interface MenuTarget {
+  link?: string;
+  image?: { url: string; name: string };
+  emote?: { emote: Emote; el: HTMLElement };
+}
+
+function menuTarget(el: HTMLElement, emotes: (id: string) => Emote | undefined): MenuTarget {
+  const t: MenuTarget = {};
+  const media = el.closest<HTMLElement>("[data-attachment-url]");
+  if (media && !media.hasAttribute("data-attachment-video")) t.image = { url: media.dataset.attachmentUrl!, name: media.dataset.attachmentName! };
+  const a = el.closest<HTMLAnchorElement>("a[href]");
+  if (a && /^https?:/.test(a.href)) t.link = a.href;
+  const em = el.closest<HTMLElement>("[data-emote-id]");
+  const emote = em && emotes(em.dataset.emoteId!);
+  if (em && emote) t.emote = { emote, el: em };
+  return t;
+}
 
 const timeFmt = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
 const dateFmt = new Intl.DateTimeFormat(undefined, { dateStyle: "short", timeStyle: "short" });
@@ -70,6 +97,10 @@ export const MessageItem = memo(function MessageItem({
   const replyNick = useApp((s) => (reply ? s.members[guildId]?.[reply.author.id]?.nick : undefined));
   const [pickerOpen, setPickerOpen] = useState(false);
   const real = !m.pending && !m.failed;
+  const devMode = usePrefs((s) => s.devMode);
+  const [target, setTarget] = useState<MenuTarget>({});
+  // "Add Reaction" from the menu opens the picker once the menu is gone (see onCloseAutoFocus).
+  const pickerAfterMenu = useRef(false);
   const pinged = useApp((s) => mentionsMe(m, s.me?.id));
 
   const toggleReaction = async (emoji: string, me: boolean) => {
@@ -88,8 +119,102 @@ export const MessageItem = memo(function MessageItem({
     }
   };
 
+  const react = (emoji: string) => void toggleReaction(emoji, !!m.reactions.find((r) => r.emoji === emoji)?.me);
+  const items = (
+    <>
+      {target.link && (
+        <>
+          <ContextMenuItem onSelect={() => window.open(target.link, "_blank", "noopener")}>
+            Open Link <ExternalLink className="ml-auto" />
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => void copy(target.link!, "Copied link")}>
+            Copy Link <Link2 className="ml-auto" />
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+        </>
+      )}
+      {target.image && (
+        <>
+          <ContextMenuItem onSelect={() => window.open(target.image!.url, "_blank", "noopener")}>
+            Open Original <ExternalLink className="ml-auto" />
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => void copyImage(target.image!.url)}>
+            Copy Image <ImageIcon className="ml-auto" />
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => void saveFile(target.image!.url, target.image!.name)}>
+            Save Image <Download className="ml-auto" />
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => void copy(target.image!.url, "Copied link")}>
+            Copy Image Link <Link2 className="ml-auto" />
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+        </>
+      )}
+      {target.emote && (
+        <>
+          <ContextMenuItem onSelect={() => useEmoteCard.getState().open(target.emote!.emote, target.emote!.el)}>
+            About :{target.emote.emote.name}: <Sparkles className="ml-auto" />
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => void copy(target.emote!.emote.name, "Copied emote name")}>
+            Copy Emote Name <Copy className="ml-auto" />
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => window.open(emotePage(target.emote!.emote), "_blank", "noopener")}>
+            Open on {providerNames[target.emote.emote.provider]} <ExternalLink className="ml-auto" />
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+        </>
+      )}
+      {real && (
+        <>
+          <div className="flex gap-1 px-1 pb-1">
+            {QUICK_REACTIONS.map((e) => (
+              <ContextMenuItem key={e} aria-label={`React ${e}`} className="size-9 justify-center rounded-full bg-muted text-xl" onSelect={() => react(e)}>
+                {e}
+              </ContextMenuItem>
+            ))}
+          </div>
+          <ContextMenuItem onSelect={() => (pickerAfterMenu.current = true)}>
+            Add Reaction <SmilePlus className="ml-auto" />
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => onReply(m)}>
+            Reply <CornerUpLeft className="ml-auto" />
+          </ContextMenuItem>
+          {isMine && (
+            <ContextMenuItem onSelect={() => setEditing(m.id)}>
+              Edit Message <Pencil className="ml-auto" />
+            </ContextMenuItem>
+          )}
+        </>
+      )}
+      {m.content && (
+        <ContextMenuItem onSelect={() => void copy(plainText(m, guildId), "Copied text")}>
+          Copy Text <Copy className="ml-auto" />
+        </ContextMenuItem>
+      )}
+      {real && (isMine || canManage) && (
+        <>
+          <ContextMenuSeparator />
+          <ContextMenuItem variant="destructive" onSelect={() => void remove()}>
+            Delete Message <Trash2 className="ml-auto" />
+          </ContextMenuItem>
+        </>
+      )}
+      {real && devMode && (
+        <>
+          <ContextMenuSeparator />
+          <ContextMenuItem onSelect={() => void copy(m.id, "Copied message ID")}>
+            Copy Message ID <Copy className="ml-auto" />
+          </ContextMenuItem>
+        </>
+      )}
+    </>
+  );
+
   return (
+    <ContextMenu>
+    <ContextMenuTrigger asChild>
     <div
+      onContextMenu={(e) => setTarget(menuTarget(e.target as HTMLElement, (id) => emoteById.get(id) ?? m.emotes.find((x) => x.id === id)))}
       data-pinged={pinged || undefined}
       className={cn(
         "group relative px-4",
@@ -119,15 +244,21 @@ export const MessageItem = memo(function MessageItem({
           {grouped ? (
             <span className="hidden pt-1 text-[10px] text-muted-foreground group-hover:block">{timeFmt.format(new Date(msgTime(m)))}</span>
           ) : (
-            <UserAvatar user={m.author} size={40} className="mt-0.5" />
+            <Menu items={<UserMenuItems guildId={guildId} userId={m.author.id} />}>
+              <span className="block cursor-pointer">
+                <UserAvatar user={m.author} size={40} className="mt-0.5" />
+              </span>
+            </Menu>
           )}
         </div>
         <div className="min-w-0 flex-1">
           {!grouped && (
             <div className="flex items-baseline gap-2">
-              <span className="font-medium hover:underline" style={{ color: userColor(m.author.id) }}>
-                {nick ?? m.author.displayName}
-              </span>
+              <Menu items={<UserMenuItems guildId={guildId} userId={m.author.id} />}>
+                <span className="cursor-pointer font-medium hover:underline" style={{ color: userColor(m.author.id) }}>
+                  {nick ?? m.author.displayName}
+                </span>
+              </Menu>
               <span className="text-xs text-muted-foreground">{formatTime(msgTime(m))}</span>
             </div>
           )}
@@ -167,7 +298,12 @@ export const MessageItem = memo(function MessageItem({
         </div>
       </div>
       {real && !editing && (
-        <div className={cn("absolute -top-4 right-4 hidden rounded-md border border-border bg-card shadow-md group-hover:flex", pickerOpen && "flex")}>
+        <div
+          className={cn(
+            "pointer-events-none absolute -top-4 right-4 flex rounded-md border border-border bg-card opacity-0 shadow-md group-hover:pointer-events-auto group-hover:opacity-100",
+            pickerOpen && "pointer-events-auto opacity-100",
+          )}
+        >
           <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
             <PopoverTrigger asChild>
               <button className="grid size-8 place-items-center text-muted-foreground hover:text-foreground" title="Add Reaction">
@@ -201,6 +337,20 @@ export const MessageItem = memo(function MessageItem({
         </div>
       )}
     </div>
+    </ContextMenuTrigger>
+    <ContextMenuContent
+      className="w-56"
+      onCloseAutoFocus={(e) => {
+        if (!pickerAfterMenu.current) return;
+        // Focus going back to the message would count as "outside" and close the picker.
+        e.preventDefault();
+        pickerAfterMenu.current = false;
+        setPickerOpen(true);
+      }}
+    >
+      {items}
+    </ContextMenuContent>
+    </ContextMenu>
   );
 });
 

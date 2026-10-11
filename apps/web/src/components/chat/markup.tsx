@@ -2,6 +2,7 @@ import type { Emote, User } from "@app/protocol";
 import { Fragment, type ReactNode, memo, useMemo } from "react";
 
 import { EMOTE_TOKEN, emoteSource, emoteSrcSet, emoteUrl } from "@/lib/emotes";
+import { Menu, UserMenuItems } from "@/components/menus";
 import { EVERYONE_MENTION, ROLE_MENTION, USER_MENTION } from "@/lib/mentions";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/stores/app";
@@ -36,11 +37,12 @@ function Mention({ id, ctx }: { id: string; ctx: Ctx }) {
     const m = ctx.guildId ? s.members[ctx.guildId]?.[id] : undefined;
     return m?.nick ?? m?.user.displayName ?? ctx.mentions.get(id)?.displayName ?? "unknown-user";
   });
-  return (
+  const pill = (
     <span data-mention={id} className={cn(PILL, "cursor-default")}>
       @{name}
     </span>
   );
+  return ctx.guildId ? <Menu items={<UserMenuItems guildId={ctx.guildId} userId={id} />}>{pill}</Menu> : pill;
 }
 
 export function EmoteImage({ emote, size, className, interactive }: { emote: Emote; size: number; className?: string; interactive?: boolean }) {

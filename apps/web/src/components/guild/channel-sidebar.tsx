@@ -4,20 +4,21 @@ import { ChevronDown, Hash, MicOff, Plus, Video, Volume2, HeadphoneOff } from "l
 import { memo, useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 
-import { CreateChannelDialog } from "@/components/guild/create-channel-dialog";
 import { GuildMenu } from "@/components/guild/guild-menu";
 import { MentionBadge } from "@/components/mention-badge";
+import { ChannelMenuItems, Menu, UserMenuItems } from "@/components/menus";
 import { UserAvatar } from "@/components/user-avatar";
 import { UserPanel } from "@/components/voice/user-panel";
 import { compareIds } from "@/lib/ids";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/stores/app";
+import { useDialogs } from "@/stores/ui";
 import { useVoice } from "@/stores/voice";
 
 export function ChannelSidebar({ guildId }: { guildId: string }) {
   const channels = useApp(useShallow((s) => Object.values(s.channels).filter((c) => c.guildId === guildId)));
   const isOwner = useApp((s) => s.guilds[guildId]?.ownerId === s.me?.id);
-  const [createIn, setCreateIn] = useState<string | null | undefined>(undefined);
+  const openDialog = useDialogs((s) => s.open);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   const groups = useMemo(() => {
@@ -31,11 +32,12 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
 
   return (
     <aside className="flex w-60 shrink-0 flex-col bg-sidebar">
-      <GuildMenu guildId={guildId} onCreateChannel={() => setCreateIn(null)} />
+      <GuildMenu guildId={guildId} />
       <div className="flex-1 space-y-0.5 overflow-y-auto px-2 pb-2">
         {groups.map(({ cat, items }) => (
           <div key={cat?.id ?? "root"} className={cat ? "pt-4" : "pt-2"}>
             {cat && (
+              <Menu items={<ChannelMenuItems channelId={cat.id} />}>
               <div className="group flex items-center pr-1">
                 <button
                   className="flex flex-1 items-center gap-0.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground"
@@ -45,11 +47,16 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
                   {cat.name}
                 </button>
                 {isOwner && (
-                  <button className="text-muted-foreground opacity-0 hover:text-foreground group-hover:opacity-100" onClick={() => setCreateIn(cat.id)}>
+                  <button
+                    className="text-muted-foreground opacity-0 hover:text-foreground group-hover:opacity-100"
+                    aria-label={`Create channel in ${cat.name}`}
+                    onClick={() => openDialog({ kind: "create-channel", guildId, parentId: cat.id })}
+                  >
                     <Plus className="size-4" />
                   </button>
                 )}
               </div>
+              </Menu>
             )}
             {items.map((c) =>
               c.kind === "voice" ? (
@@ -62,7 +69,6 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
         ))}
       </div>
       <UserPanel />
-      <CreateChannelDialog guildId={guildId} parentId={createIn ?? null} open={createIn !== undefined} onOpenChange={(o) => !o && setCreateIn(undefined)} />
     </aside>
   );
 }
@@ -75,6 +81,7 @@ const TextChannelRow = memo(function TextChannelRow({ channel }: { channel: Chan
   );
   const pings = useApp((s) => s.pings[channel.id] ?? 0);
   return (
+    <Menu items={<ChannelMenuItems channelId={channel.id} />}>
     <Link
       to="/$guildId/$channelId"
       params={{ guildId: channel.guildId, channelId: channel.id }}
@@ -88,6 +95,7 @@ const TextChannelRow = memo(function TextChannelRow({ channel }: { channel: Chan
       <span className="truncate">{channel.name}</span>
       {pings > 0 && !active && <MentionBadge count={pings} className="ml-auto" />}
     </Link>
+    </Menu>
   );
 });
 
@@ -99,6 +107,7 @@ const VoiceChannelRow = memo(function VoiceChannelRow({ channel, hidden }: { cha
   if (hidden && states.length === 0) return null;
   return (
     <div>
+      <Menu items={<ChannelMenuItems channelId={channel.id} />}>
       <Link
         to="/$guildId/$channelId"
         params={{ guildId: channel.guildId, channelId: channel.id }}
@@ -113,6 +122,7 @@ const VoiceChannelRow = memo(function VoiceChannelRow({ channel, hidden }: { cha
         <Volume2 className="size-5 shrink-0 opacity-70" />
         <span className="truncate">{channel.name}</span>
       </Link>
+      </Menu>
       {states.length > 0 && (
         <div className="space-y-0.5 py-0.5 pl-8">
           {states.map((v) => (
@@ -136,6 +146,7 @@ const VoiceParticipant = memo(function VoiceParticipant(p: {
   const speaking = useVoice((s) => !!s.speaking[p.userId]);
   if (!member) return null;
   return (
+    <Menu items={<UserMenuItems guildId={p.guildId} userId={p.userId} />}>
     <div className="flex items-center gap-2 rounded px-1 py-0.5 text-sm text-sidebar-foreground hover:bg-sidebar-accent/60">
       <UserAvatar user={member.user} size={22} speaking={speaking} />
       <span className={cn("flex-1 truncate", speaking && "text-foreground")}>{member.nick ?? member.user.displayName}</span>
@@ -143,5 +154,6 @@ const VoiceParticipant = memo(function VoiceParticipant(p: {
       {p.video && <Video className="size-3.5" />}
       {p.deaf ? <HeadphoneOff className="size-3.5 text-destructive" /> : p.mute && <MicOff className="size-3.5 text-destructive" />}
     </div>
+    </Menu>
   );
 });

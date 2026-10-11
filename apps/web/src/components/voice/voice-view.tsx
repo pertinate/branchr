@@ -3,7 +3,18 @@ import { Activity, Eye, Maximize, MicOff, Minimize2, Monitor, Volume2, X } from 
 import { memo, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 
+import { Menu, UserMenuItems } from "@/components/menus";
 import { Button } from "@/components/ui/button";
+import {
+  ContextMenuCheckboxItem,
+  ContextMenuItem,
+  ContextMenuRadioGroup,
+  ContextMenuRadioItem,
+  ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
+} from "@/components/ui/context-menu";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Slider } from "@/components/ui/slider";
 import { UserAvatar, userColor } from "@/components/user-avatar";
@@ -103,6 +114,7 @@ const UserTile = memo(function UserTile({ userId, guildId, small, onFocus }: { u
   if (!member) return null;
   const hasVideo = !!localCamera || !!camera;
   return (
+    <Menu items={<UserMenuItems guildId={guildId} userId={userId} />}>
     <div
       onDoubleClick={onFocus}
       className={cn("relative grid size-full min-h-32 place-items-center overflow-hidden rounded-lg transition-shadow", speaking && "ring-2 ring-online")}
@@ -115,6 +127,7 @@ const UserTile = memo(function UserTile({ userId, guildId, small, onFocus }: { u
       </div>
       {!small && userId !== meId && <VolumeControl user={member.user} />}
     </div>
+    </Menu>
   );
 });
 
@@ -176,7 +189,35 @@ function StreamTile({ track, guildId, focused, small, onFocus }: { track: TrackI
     );
   }
 
+  const streamItems = (
+    <>
+      <ContextMenuSub>
+        <ContextMenuSubTrigger>Quality</ContextMenuSubTrigger>
+        <ContextMenuSubContent>
+          <ContextMenuRadioGroup value={sub.pref} onValueChange={(v) => useVoice.getState().setLayer(track.id, v as LayerPref)}>
+            {LAYERS.map((l) => (
+              <ContextMenuRadioItem key={l.value} value={l.value} disabled={l.value !== "auto" && track.layers.length === 0}>
+                {l.label}
+              </ContextMenuRadioItem>
+            ))}
+          </ContextMenuRadioGroup>
+        </ContextMenuSubContent>
+      </ContextMenuSub>
+      <ContextMenuCheckboxItem checked={showStats} onCheckedChange={(v) => setShowStats(!!v)}>
+        Stream Stats
+      </ContextMenuCheckboxItem>
+      <ContextMenuItem onSelect={onFocus}>{focused ? "Unfocus" : "Focus"}</ContextMenuItem>
+      <ContextMenuItem onSelect={fs.toggle}>Fullscreen</ContextMenuItem>
+      <ContextMenuItem variant="destructive" onSelect={() => useVoice.getState().unwatch(track.id)}>
+        Stop Watching
+      </ContextMenuItem>
+      <ContextMenuSeparator />
+      <UserMenuItems guildId={guildId} userId={track.userId} />
+    </>
+  );
+
   return (
+    <Menu items={streamItems}>
     <div ref={fs.ref} className="group relative size-full min-h-32 overflow-hidden rounded-lg bg-black" onDoubleClick={fs.toggle} onClick={small ? onFocus : undefined}>
       <Video track={sub.track} />
       {showStats && <StatsOverlay stats={stats} layer={sub.layer} estimateBps={estimate} />}
@@ -215,6 +256,7 @@ function StreamTile({ track, guildId, focused, small, onFocus }: { track: TrackI
         </Button>
       </div>
     </div>
+    </Menu>
   );
 }
 
