@@ -26,8 +26,8 @@ PUBLIC_IP=\$(curl -fsS https://api.ipify.org)
 grep -q '^DOMAIN=' .env && sed -i "s/^DOMAIN=.*/DOMAIN=$DOMAIN/" .env || echo "DOMAIN=$DOMAIN" >> .env
 grep -q '^PUBLIC_IP=' .env && sed -i "s/^PUBLIC_IP=.*/PUBLIC_IP=\$PUBLIC_IP/" .env || echo "PUBLIC_IP=\$PUBLIC_IP" >> .env
 grep -q '^SFU_WORKERS=' .env && sed -i "s/^SFU_WORKERS=.*/SFU_WORKERS=$SFU_WORKERS/" .env || echo "SFU_WORKERS=$SFU_WORKERS" >> .env
+grep -q '^SFU_UDP_END=' .env && sed -i "s/^SFU_UDP_END=.*/SFU_UDP_END=$UDP_END/" .env || echo "SFU_UDP_END=$UDP_END" >> .env
 chmod 600 .env
-sed -i "s/50000-500[0-9][0-9]:50000-500[0-9][0-9]/50000-$UDP_END:50000-$UDP_END/" deploy/docker-compose.public.yml
 if command -v ufw >/dev/null; then
   ufw allow OpenSSH >/dev/null; ufw allow 80/tcp >/dev/null; ufw allow 443 >/dev/null
   ufw allow 50000:$UDP_END/udp >/dev/null; ufw --force enable >/dev/null

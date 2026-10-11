@@ -1,0 +1,12 @@
+# Run a prebuilt image (e.g. from CI) instead of building on the host:
+#   IMAGE=ghcr.io/owner/discord-clone:latest docker compose -f docker-compose.yml \
+#     -f deploy/docker-compose.public.yml -f deploy/docker-compose.image.yml up -d
+services:
+  api:
+    build: !reset null
+    image: ${IMAGE:?set IMAGE}
+    pull_policy: always
+  sfu:
+    build: !reset null
+    image: ${IMAGE:?set IMAGE}
+    pull_policy: always

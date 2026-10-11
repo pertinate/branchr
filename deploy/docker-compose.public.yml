@@ -8,7 +8,8 @@ services:
     ports: !reset []
   sfu:
     ports: !override
-      - "50000-50001:50000-50001/udp"
+      # One port per worker: SFU_UDP_END = 50000 + SFU_WORKERS - 1.
+      - "50000-${SFU_UDP_END:-50001}:50000-${SFU_UDP_END:-50001}/udp"
     environment:
       SFU_WORKERS: ${SFU_WORKERS:-2}
   caddy:

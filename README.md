@@ -101,6 +101,14 @@ Configuration is all through the environment:
 | `SFU_UDP_PORT` / `SFU_WORKERS` | sfu | `50000` / #cores | Worker *i* uses `SFU_UDP_PORT + i`. |
 | `SFU_INITIAL_BWE` | sfu | `5000000` | Starting per-viewer estimate (bps). |
 
+## CI/CD
+
+GitHub Actions (`.github/workflows/`):
+
+- **CI** runs on every push and PR. It runs the Rust tests, checks that the generated TypeScript protocol is current, typechecks, and validates the compose files. On `main` it then builds the server image, publishes it to `ghcr.io/<owner>/<repo>`, and deploys it.
+- **Deploy** runs `scripts/deploy-image.sh`. It copies the compose files to the server, pulls the new image, restarts, and fails unless the API reports healthy. The server's `.env` and data are left alone. It needs a server already provisioned once with `scripts/deploy-vps.sh`, plus three repository secrets: `DEPLOY_HOST` (`root@host`), `DEPLOY_SSH_KEY` (a private key authorized on it) and `DEPLOY_KNOWN_HOSTS` (`ssh-keyscan host`). Without them the job is skipped.
+- **Desktop** builds the Linux AppImage and the Windows installer and attaches them to the run. Pushing a `v*` tag publishes both as a GitHub release.
+
 ## Desktop app (Linux)
 
 ```sh

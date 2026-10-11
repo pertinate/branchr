@@ -32,3 +32,12 @@ linux:
       StartupWMClass: discord-clone
 appImage:
   artifactName: discord-clone-${version}-${arch}.AppImage
+win:
+  target: nsis
+  icon: build/icon.png
+nsis:
+  artifactName: discord-clone-${version}-setup.exe
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  shortcutName: Discord Clone

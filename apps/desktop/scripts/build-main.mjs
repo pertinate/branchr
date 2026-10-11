@@ -2,6 +2,7 @@
 import { build } from "esbuild";
 import { cp, mkdir, rm } from "node:fs/promises";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 const root = path.resolve(import.meta.dirname, "..");
 const watch = process.argv.includes("--watch");
@@ -22,7 +23,7 @@ export async function buildMain() {
   });
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   await buildMain();
   if (!watch) {
     // Bundle the built web client next to the main process.
