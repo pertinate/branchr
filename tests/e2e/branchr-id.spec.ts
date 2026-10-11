@@ -91,3 +91,81 @@ test("federated server: sign in with Discord from the login screen, claim it, co
   expect(local.authMode).toBe("local");
   await ctx.close();
 });
+
+test("federated server: a password account links to branchr and is reached by Discord sign-in", async ({ browser }) => {
+  const run = Date.now().toString(36);
+  // A Discord identity no other test uses.
+  await fetch("http://localhost:8071/next-user", {
+    method: "POST",
+    body: JSON.stringify({ id: `9${Date.now()}`, username: `linker_${run}`, global_name: "Link Tester" }),
+  });
+  await expect.poll(async () => (await (await fetch(`${FED}/api/instance`)).json()).instanceId, { timeout: 30_000 }).toBeTruthy();
+
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  await page.goto("/#/login");
+  await page.getByLabel("Server", { exact: true }).fill(FED);
+  await page.getByRole("button", { name: "Register" }).click();
+  await page.getByLabel("Username").fill(`pw_${run}`);
+  await page.getByLabel("Display name").fill("Password Person");
+  await page.getByLabel("Password").fill("correct horse battery");
+  await page.getByRole("button", { name: "Continue" }).click();
+  await createServer(page, "Linked home");
+  const session = () => page.evaluate(() => JSON.parse(localStorage.getItem("auth") ?? "{}").state);
+  const local = await session();
+
+  // Sign in to branchr from Settings (a full redirect; still logged in to the server after).
+  await page.getByRole("button", { name: "User Settings" }).click();
+  await page.getByTestId("branchr-account").getByRole("button", { name: "Sign in with Discord" }).click();
+  await expect(page.getByText("Signed in to branchr as Link Tester")).toBeVisible();
+  await page.getByRole("button", { name: "User Settings" }).click();
+  await page.getByTestId("branchr-account").getByRole("button", { name: "Link" }).click();
+  await expect(page.getByText("This server account is linked")).toBeVisible();
+
+  // Someone else on this server can't take the same branchr account.
+  const conflict = await page.evaluate(
+    async ({ fed, id, run }) => {
+      const s = JSON.parse(localStorage.getItem("branchr-id") ?? "{}").state;
+      const t = await (await fetch(`${id}/token`, { method: "POST", body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: s.refreshToken }) })).json();
+      localStorage.setItem("branchr-id", JSON.stringify({ state: { ...s, refreshToken: t.refresh_token }, version: 0 }));
+      const info = await (await fetch(`${fed}/api/instance`)).json();
+      const pass = (await (await fetch(`${id}/instances/${info.instanceId}/token`, { method: "POST", headers: { authorization: `Bearer ${t.access_token}` } })).json()).token;
+      const other = await (
+        await fetch(`${fed}/api/auth/register`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ username: `pw2_${run}`, password: "correct horse battery" }),
+        })
+      ).json();
+      const r = await fetch(`${fed}/api/auth/link`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${other.token}` },
+        body: JSON.stringify({ token: pass }),
+      });
+      return r.status;
+    },
+    { fed: FED, id: ID, run },
+  );
+  expect(conflict).toBe(409);
+
+  // Log out of the server; Discord sign-in now reaches the password account.
+  await page.evaluate(() => {
+    const a = JSON.parse(localStorage.getItem("auth") ?? "{}");
+    a.state.token = null;
+    a.state.user = null;
+    localStorage.setItem("auth", JSON.stringify(a));
+  });
+  await page.goto("/#/login");
+  await page.reload();
+  await page.getByLabel("Server", { exact: true }).fill(FED);
+  await page.getByRole("button", { name: "Sign in with Discord" }).click();
+  await expect(page.getByRole("heading", { name: "Welcome to #general!" })).toBeVisible();
+  const back = await session();
+  expect(back.user.id).toBe(local.user.id);
+  expect(back.user.username).toBe(`pw_${run}`);
+  // Now carrying the branchr profile.
+  expect(back.user.displayName).toBe("Link Tester");
+
+  await fetch("http://localhost:8071/next-user", { method: "POST" });
+  await ctx.close();
+});

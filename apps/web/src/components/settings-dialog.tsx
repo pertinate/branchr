@@ -15,6 +15,7 @@ import { api } from "@/lib/api";
 import { claimServer, signOut, startSignIn, useBranchrId } from "@/lib/branchr-id";
 import { desktop } from "@/lib/desktop";
 import { gateway } from "@/lib/gateway";
+import { instanceInfo, linkToBranchr } from "@/lib/server-login";
 import { useApp } from "@/stores/app";
 import { useAuth } from "@/stores/auth";
 import { useVoice, useVoiceSettings } from "@/stores/voice";
@@ -103,7 +104,21 @@ function Account() {
 /** The central branchr account (Discord sign-in), and claiming servers you host. */
 function BranchrAccount() {
   const account = useBranchrId((s) => s.account);
+  const serverUrl = useAuth((s) => s.serverUrl);
   const [busy, setBusy] = useState(false);
+  // On servers that accept branchr accounts, a password user can link theirs.
+  const info = useQuery({ queryKey: ["instance", serverUrl], queryFn: () => instanceInfo(serverUrl) });
+  const federated = !!info.data && info.data.authMode !== "local";
+  const link = useQuery({ queryKey: ["link", serverUrl], queryFn: () => api<{ linked: boolean }>("GET", "/auth/link"), enabled: federated });
+  const doLink = async () => {
+    try {
+      await linkToBranchr();
+      await link.refetch();
+      toast.success("Linked: sign in with Discord to get back to this account");
+    } catch (e) {
+      toast.error("Couldn't link", { description: (e as Error).message });
+    }
+  };
   const [code, setCode] = useState("");
   const claim = async () => {
     try {
@@ -129,6 +144,20 @@ function BranchrAccount() {
           </Button>
         </div>
       ) : null}
+      {account && federated && link.data && (
+        <div className="flex items-center justify-between gap-3 text-sm">
+          {link.data.linked ? (
+            <span className="text-muted-foreground">This server account is linked to your branchr account.</span>
+          ) : (
+            <>
+              <span className="text-muted-foreground">Use your branchr account to log in to this server account from now on.</span>
+              <Button size="sm" variant="outline" onClick={() => void doLink()}>
+                Link
+              </Button>
+            </>
+          )}
+        </div>
+      )}
       {account && (
         <form
           className="space-y-1"

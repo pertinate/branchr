@@ -213,6 +213,41 @@ pub async fn federated(State(state): State<AppState>, Json(body): Json<Federated
     Ok(Json(AuthResponse { token, user: db::user(&state.db, id).await? }))
 }
 
+#[derive(serde::Serialize)]
+pub struct LinkStatus {
+    linked: bool,
+}
+
+/// Whether the logged-in user is tied to a branchr account.
+pub async fn link_status(State(state): State<AppState>, Auth(user): Auth) -> AppResult<Json<LinkStatus>> {
+    let (global,): (Option<String>,) = sqlx::query_as("SELECT global_id FROM users WHERE id = ?").bind(user.0).fetch_one(&state.db).await?;
+    Ok(Json(LinkStatus { linked: global.is_some() }))
+}
+
+/// Ties the logged-in (password) user to a branchr account, so signing in with Discord
+/// reaches this same user from then on.
+pub async fn link(State(state): State<AppState>, Auth(user): Auth, Json(body): Json<FederatedLogin>) -> AppResult<Json<LinkStatus>> {
+    let fed = state.federation.as_ref().ok_or_else(|| bad("this server doesn't accept branchr accounts"))?;
+    let pass = fed.verify(&body.token).await.ok_or(AppError::Unauthorized)?;
+    let owner: Option<(i64,)> = sqlx::query_as("SELECT id FROM users WHERE global_id = ?").bind(&pass.sub).fetch_optional(&state.db).await?;
+    match owner {
+        Some((id,)) if id == user.0 => return Ok(Json(LinkStatus { linked: true })),
+        Some(_) => return Err(AppError::Conflict("that branchr account already has a user on this server".into())),
+        None => {}
+    }
+    let r = sqlx::query("UPDATE users SET global_id = ? WHERE id = ? AND global_id IS NULL").bind(&pass.sub).bind(user.0).execute(&state.db).await;
+    match r {
+        Err(sqlx::Error::Database(e)) if e.is_unique_violation() => {
+            return Err(AppError::Conflict("that branchr account already has a user on this server".into()));
+        }
+        Ok(r) if r.rows_affected() == 0 => return Err(AppError::Conflict("this user is already linked to a branchr account".into())),
+        r => {
+            r?;
+        }
+    }
+    Ok(Json(LinkStatus { linked: true }))
+}
+
 /// Which logins this server offers, for the login screen.
 pub async fn instance_info(State(state): State<AppState>) -> Json<InstanceInfo> {
     let mode = match state.config.auth_mode {

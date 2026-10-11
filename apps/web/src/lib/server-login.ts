@@ -49,3 +49,17 @@ export async function continueServerLogin() {
   localStorage.removeItem(CONTINUE_KEY);
   await loginWithBranchr(base);
 }
+
+/** Ties the logged-in user on the current server to the signed-in branchr account. */
+export async function linkToBranchr() {
+  const { serverUrl, token } = useAuth.getState();
+  const info = await instanceInfo(serverUrl);
+  if (!info.instanceId) throw new Error("This server isn't connected to branchr");
+  const pass = await instancePass(info.instanceId);
+  const r = await fetch(`${serverUrl}/api/auth/link`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+    body: JSON.stringify({ token: pass }),
+  });
+  if (!r.ok) throw new Error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? `linking failed (${r.status})`);
+}

@@ -63,6 +63,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/auth/login", post(auth::login))
         .route("/auth/logout", post(auth::logout))
         .route("/auth/federated", post(auth::federated))
+        .route("/auth/link", get(auth::link_status).post(auth::link))
         .route("/instance", get(auth::instance_info))
         .route("/users/@me", get(users::me).patch(users::patch_me))
         .route("/guilds", post(guilds::create))

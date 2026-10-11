@@ -1,9 +1,10 @@
 // Stands in for Discord's OAuth so branchr ID sign-in can be tested end to end.
-// Authorizing approves at once as one fixed user.
+// Authorizing approves at once, as the default user or one set with POST /next-user.
 import { createServer } from "node:http";
 
 const port = Number(process.env.PORT ?? 8071);
-const user = { id: "424242424242424242", username: "e2e_nelly", global_name: "E2E Nelly", avatar: null };
+const defaultUser = { id: "424242424242424242", username: "e2e_nelly", global_name: "E2E Nelly", avatar: null };
+let user = defaultUser;
 
 createServer((req, res) => {
   const url = new URL(req.url, `http://localhost:${port}`);
@@ -16,6 +17,13 @@ createServer((req, res) => {
     res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ access_token: "mock", token_type: "Bearer" }));
   } else if (url.pathname === "/api/users/@me") {
     res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(user));
+  } else if (url.pathname === "/next-user" && req.method === "POST") {
+    let body = "";
+    req.on("data", (c) => (body += c));
+    req.on("end", () => {
+      user = body ? { avatar: null, ...JSON.parse(body) } : defaultUser;
+      res.end("ok");
+    });
   } else if (url.pathname === "/health") {
     res.end("ok");
   } else {
