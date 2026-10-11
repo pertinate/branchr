@@ -1,7 +1,7 @@
 # Tests every push/PR (unit + browser e2e). On main, also publishes the server image to GHCR and deploys it.
 #
-# Deployment needs these repository secrets (Settings → Secrets and variables → Actions);
-# without them the deploy job is skipped:
+# Deployment needs these secrets on the `production` environment (Settings → Environments),
+# which only `main` may deploy to; without them the deploy job is skipped:
 #   DEPLOY_HOST         user@host of a server provisioned with scripts/deploy-vps.sh
 #   DEPLOY_SSH_KEY      private key authorized on that host
 #   DEPLOY_KNOWN_HOSTS  output of `ssh-keyscan <host>`
