@@ -33,6 +33,25 @@ Streams go through the SFU relay. The streamer **uploads each quality layer once
 
 Streams are opt-in ("Watch Stream"), so nobody downloads a stream they aren't watching. The **stats overlay** on a stream shows resolution, fps, bitrate, codec, encoder/decoder (HW or SW), jitter buffer, loss, current layer and the bandwidth estimate.
 
+## Performance
+
+The SFU is benchmarked with `crates/loadgen`. It runs one synthetic 60 fps publisher and N receive-only WebRTC viewers in a single process, and frames carry their send time, so latency is measured end to end through the relay:
+
+```sh
+cargo run --release -p loadgen -- --sfu ws://host:8090/ws --secret $VOICE_SECRET --viewers 100 --mbps 4 --fps 60 --seconds 30
+```
+
+Results for a single room on one SFU (8 workers, loopback, Ryzen desktop):
+
+| Load | Egress | Delivered | Latency p50 / p99 | SFU CPU |
+|---|---|---|---|---|
+| 100 viewers × 4 Mbps | 408 Mbps | 60 fps all viewers, 0 gaps | 2.3 / 4.9 ms | 0.6 core |
+| 20 viewers × 20 Mbps | 408 Mbps | 60 fps all viewers, 0 gaps | 2.5 / 20 ms | 0.4 core |
+| 10 viewers × 50 Mbps | 510 Mbps | 60 fps all viewers, 0 gaps | 8.2 / 31 ms | 0.5 core |
+| 300 viewers × 4 Mbps | 1.22 Gbps | 60 fps all viewers, 0 gaps | 4.3 / 7.3 ms | 2.2 cores |
+
+Viewers of one room are spread across all worker cores. Outgoing packets go out through `sendmmsg`. The gateway fans a message out to 5,000 connected sessions with p99 under 80 ms (`node tests/load/gateway.mjs http://host:8080 5000`).
+
 ## Self-hosting
 
 You need Docker and one public IP with UDP reachable.

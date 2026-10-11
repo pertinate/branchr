@@ -411,12 +411,22 @@ impl Worker {
             let Some(peer) = self.peers.get_mut(&id) else { return };
             self.prof.drives += 1;
             let _ = timed!(self.prof, poll, peer.rtc.handle_input(Input::Timeout(Instant::now())));
+            let mut spins = 0;
             loop {
                 if !peer.rtc.is_alive() {
                     break;
                 }
                 match timed!(self.prof, poll, peer.rtc.poll_output()) {
                     Ok(Output::Timeout(t)) => {
+                        // The pacer asks for an immediate timeout after every packet. Going
+                        // back to the (1 ms resolution) event loop would cap each viewer at
+                        // one packet per millisecond (~10 Mbps), so service it inline.
+                        let now = Instant::now();
+                        if t <= now && spins < 4096 {
+                            spins += 1;
+                            let _ = timed!(self.prof, poll, peer.rtc.handle_input(Input::Timeout(now)));
+                            continue;
+                        }
                         peer.next_timeout = t;
                         break;
                     }
