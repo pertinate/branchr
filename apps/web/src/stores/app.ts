@@ -12,7 +12,9 @@ import type {
 } from "@app/protocol";
 import { create } from "zustand";
 
+import { gateway } from "@/lib/gateway";
 import { compareIds } from "@/lib/ids";
+import { mentionsMe } from "@/lib/mentions";
 import { useMessages } from "@/stores/messages";
 
 export type ConnectionState = "idle" | "connecting" | "ready" | "reconnecting";
@@ -37,30 +39,37 @@ interface AppState {
   lastRead: Record<string, string>;
   /** Largest attachment the server accepts. */
   maxUploadBytes: number;
+  /** channel id -> unread mentions of us (kept by the server) */
+  pings: Record<string, number>;
+  /** The text channel on screen, if any. */
+  viewing: string | null;
+  setViewing: (channelId: string | null) => void;
   setConnection: (c: ConnectionState) => void;
   markRead: (channelId: string) => void;
   apply: (ev: ServerEvent) => void;
 }
 
-const LAST_READ_KEY = "lastRead";
-function loadLastRead(): Record<string, string> {
+function load<T>(key: string): Record<string, T> {
   try {
-    return JSON.parse(localStorage.getItem(LAST_READ_KEY) ?? "{}");
+    return JSON.parse(localStorage.getItem(key) ?? "{}");
   } catch {
     return {};
   }
 }
-let lastReadTimer: ReturnType<typeof setTimeout> | undefined;
-function saveLastRead(v: Record<string, string>) {
-  clearTimeout(lastReadTimer);
-  lastReadTimer = setTimeout(() => {
+const timers: Record<string, ReturnType<typeof setTimeout>> = {};
+function save(key: string, v: unknown) {
+  clearTimeout(timers[key]);
+  timers[key] = setTimeout(() => {
     try {
-      localStorage.setItem(LAST_READ_KEY, JSON.stringify(v));
+      localStorage.setItem(key, JSON.stringify(v));
     } catch {
       /* storage full or unavailable */
     }
   }, 500);
 }
+const LAST_READ_KEY = "lastRead";
+const saveLastRead = (v: Record<string, string>) => save(LAST_READ_KEY, v);
+const later = (a: string | undefined, b: string | undefined) => (!a ? b : !b ? a : compareIds(a, b) >= 0 ? a : b);
 
 function withGuild(s: AppState, rg: ReadyGuild): Partial<AppState> {
   const gid = rg.guild.id;
@@ -110,15 +119,23 @@ export const useApp = create<AppState>()((set, get) => ({
   emotes: {},
   typing: {},
   voiceServer: null,
-  lastRead: loadLastRead(),
+  lastRead: load(LAST_READ_KEY),
   maxUploadBytes: Infinity,
+  pings: {},
+  viewing: null,
+  setViewing: (viewing) => set({ viewing }),
   setConnection: (connection) => set({ connection }),
   markRead: (channelId) => {
-    const last = get().channels[channelId]?.lastMessageId;
-    if (!last || get().lastRead[channelId] === last) return;
-    const lastRead = { ...get().lastRead, [channelId]: last };
+    // Not while the window is hidden (minimized, in the tray): nobody's reading.
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+    const s = get();
+    const last = s.channels[channelId]?.lastMessageId;
+    if (!last || (s.lastRead[channelId] === last && !s.pings[channelId])) return;
+    const lastRead = { ...s.lastRead, [channelId]: last };
     saveLastRead(lastRead);
-    set({ lastRead });
+    set({ lastRead, pings: without(s.pings, channelId) });
+    // Synced so other devices and the next login agree.
+    gateway.send({ op: "ack", d: { channelId, messageId: last } });
   },
   apply: (ev) => {
     switch (ev.t) {
@@ -138,7 +155,16 @@ export const useApp = create<AppState>()((set, get) => ({
         };
         let acc: AppState = base;
         for (const g of ev.d.guilds) acc = { ...acc, ...withGuild(acc, g) };
-        set({ ...acc, connection: "ready" });
+        // The server's read state wins for mentions; for read position, whichever is further.
+        const lastRead = { ...acc.lastRead };
+        const pings: Record<string, number> = {};
+        for (const r of ev.d.readStates) {
+          const l = later(lastRead[r.channelId], r.lastReadId ?? undefined);
+          if (l) lastRead[r.channelId] = l;
+          if (r.mentionCount > 0) pings[r.channelId] = r.mentionCount;
+        }
+        saveLastRead(lastRead);
+        set({ ...acc, lastRead, pings, connection: "ready" });
         return;
       }
       case "GUILD_CREATE":
@@ -225,6 +251,10 @@ export const useApp = create<AppState>()((set, get) => ({
             patch.lastRead = { ...s.lastRead, [m.channelId]: m.id };
             saveLastRead(patch.lastRead);
           }
+          const seen =
+            (s.lastRead[m.channelId] && compareIds(m.id, s.lastRead[m.channelId]) <= 0) ||
+            (s.viewing === m.channelId && document.visibilityState === "visible");
+          if (mentionsMe(m, s.me?.id) && !seen) patch.pings = { ...s.pings, [m.channelId]: (s.pings[m.channelId] ?? 0) + 1 };
           return patch;
         });
         return;
@@ -234,6 +264,16 @@ export const useApp = create<AppState>()((set, get) => ({
         return;
       case "MESSAGE_DELETE":
         useMessages.getState().onDelete(ev.d.channelId, ev.d.id);
+        return;
+      case "READ_STATE_UPDATE":
+        // Read on another device (or our own ack echoing back).
+        set((s) => {
+          const l = later(s.lastRead[ev.d.channelId], ev.d.lastReadId ?? undefined);
+          const lastRead = l ? { ...s.lastRead, [ev.d.channelId]: l } : s.lastRead;
+          if (l) saveLastRead(lastRead);
+          const pings = ev.d.mentionCount ? { ...s.pings, [ev.d.channelId]: ev.d.mentionCount } : without(s.pings, ev.d.channelId);
+          return { lastRead, pings };
+        });
         return;
       case "REACTION_ADD":
       case "REACTION_REMOVE":

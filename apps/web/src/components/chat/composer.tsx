@@ -1,11 +1,12 @@
-import type { Attachment, Emote } from "@app/protocol";
+import type { Attachment, Emote, User } from "@app/protocol";
 import { FileIcon, Paperclip, Smile, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 
 import { EmojiPicker } from "@/components/chat/emoji-picker";
 import { EmoteImage } from "@/components/chat/markup";
+import { UserAvatar } from "@/components/user-avatar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { gateway } from "@/lib/gateway";
 import { formatBytes, uploadAttachment } from "@/lib/upload";
@@ -16,6 +17,15 @@ import { useEmoteGroups } from "@/stores/emotes";
 import { type UiMessage, useMessages } from "@/stores/messages";
 
 const TYPING_INTERVAL = 6000;
+
+type Mentionable = { kind: "user"; user: User; name: string } | { kind: "everyone"; name: "everyone" | "here"; hint: string };
+const EVERYONE: Mentionable[] = [
+  { kind: "everyone", name: "here", hint: "Notifies everyone online" },
+  { kind: "everyone", name: "everyone", hint: "Notifies everyone in this server" },
+];
+type Suggestion =
+  | { kind: "emote"; start: number; end: number; matches: Emote[] }
+  | { kind: "mention"; start: number; end: number; matches: Mentionable[] };
 
 interface Upload {
   key: string;
@@ -31,6 +41,7 @@ const drafts = new Map<string, string>();
 export function Composer({ channelId, guildId, replyTo, clearReply }: { channelId: string; guildId: string; replyTo: UiMessage | null; clearReply: () => void }) {
   const channelName = useApp((s) => s.channels[channelId]?.name);
   const groups = useEmoteGroups(guildId);
+  const members = useApp((s) => s.members[guildId]);
   const guildNames = useMemo(() => new Map(groups.map((g) => [g.guild.id, g.guild.name])), [groups]);
   const [value, setValue] = useState(() => drafts.get(channelId) ?? "");
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -88,6 +99,15 @@ export function Composer({ channelId, guildId, replyTo, clearReply }: { channelI
     if (replyTo) ta.current?.focus();
   }, [replyTo]);
 
+  // Caret after an insert, placed before paint so fast typing lands after the insert.
+  const caret = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    if (caret.current === null || !ta.current) return;
+    ta.current.setSelectionRange(caret.current, caret.current);
+    ta.current.focus();
+    caret.current = null;
+  }, [value]);
+
   // Autosize.
   useEffect(() => {
     const el = ta.current;
@@ -96,9 +116,26 @@ export function Composer({ channelId, guildId, replyTo, clearReply }: { channelI
     el.style.height = `${Math.min(el.scrollHeight, 400)}px`;
   }, [value]);
 
-  // `:par` -> suggestions for the word under the caret.
-  const suggestion = useMemo(() => {
+  // `:par` -> emotes and `@al` -> people, for the word under the caret.
+  const suggestion = useMemo((): Suggestion | null => {
     const caret = ta.current?.selectionStart ?? value.length;
+    const at = /(?:^|\s)@([\w.]{0,32})$/.exec(value.slice(0, caret));
+    if (at && !/^[\w.]/.test(value.slice(caret))) {
+      const q = at[1].toLowerCase();
+      const people: Mentionable[] = Object.values(members ?? {}).map((m) => ({ kind: "user", user: m.user, name: m.nick ?? m.user.displayName }));
+      const score = (x: Mentionable) => {
+        const names = x.kind === "user" ? [x.user.username, x.name] : [x.name];
+        if (names.some((n) => n.toLowerCase().startsWith(q))) return 0;
+        return names.some((n) => n.toLowerCase().includes(q)) ? 1 : -1;
+      };
+      const matches = [...people.sort((a, b) => a.name.localeCompare(b.name)), ...EVERYONE]
+        .map((x) => [x, score(x)] as const)
+        .filter(([, s]) => s >= 0)
+        .sort((a, b) => a[1] - b[1])
+        .slice(0, 8)
+        .map(([x]) => x);
+      return matches.length ? { kind: "mention", start: caret - at[1].length - 1, end: caret, matches } : null;
+    }
     const m = /(?:^|\s):([\w!?-]{2,})$/.exec(value.slice(0, caret));
     // Not inside an already-closed :name: (e.g. right after picking a suggestion).
     if (!m || /^[\w!?-]*:/.test(value.slice(caret))) return null;
@@ -109,26 +146,30 @@ export function Composer({ channelId, guildId, replyTo, clearReply }: { channelI
       .flatMap((g) => g.emotes.filter((e) => e.name.toLowerCase().includes(q)))
       .sort((a, b) => rank(a) - rank(b) || a.name.length - b.name.length)
       .slice(0, 8);
-    return matches.length ? { start: caret - m[1].length - 1, end: caret, matches } : null;
-  }, [value, groups, guildId]);
+    return matches.length ? { kind: "emote", start: caret - m[1].length - 1, end: caret, matches } : null;
+  }, [value, groups, guildId, members]);
 
   useEffect(() => setSel(0), [suggestion?.matches.length]);
 
-  const insertEmote = (e: Emote, range?: { start: number; end: number }) => {
+  const insertEmote = (e: Emote, range?: { start: number; end: number }) =>
+    // This server's emotes by :name:; other servers' need an explicit reference.
+    insert(e.guildId === guildId ? `:${e.name}:` : emoteToken(e), range);
+
+  // People by @username (the server turns it into a mention); unique, unlike display names.
+  const insertMention = (x: Mentionable, range: { start: number; end: number }) =>
+    insert(`@${x.kind === "user" ? x.user.username : x.name}`, range);
+
+  const pick = (s: Suggestion, i: number) => (s.kind === "emote" ? insertEmote(s.matches[i], s) : insertMention(s.matches[i], s));
+
+  const insert = (text: string, range?: { start: number; end: number }) => {
     const el = ta.current;
     const start = range?.start ?? el?.selectionStart ?? value.length;
     const end = range?.end ?? el?.selectionEnd ?? value.length;
     const before = value.slice(0, start);
     const pad = before && !/\s$/.test(before) ? " " : "";
-    // This server's emotes by :name:; other servers' need an explicit reference.
-    const text = e.guildId === guildId ? `:${e.name}:` : emoteToken(e);
     const next = `${before}${pad}${text} ${value.slice(end)}`;
     setValue(next);
-    requestAnimationFrame(() => {
-      const pos = before.length + pad.length + text.length + 1;
-      el?.setSelectionRange(pos, pos);
-      el?.focus();
-    });
+    caret.current = before.length + pad.length + text.length + 1;
   };
 
   const uploading = uploads.some((u) => !u.attachment && !u.error);
@@ -152,7 +193,7 @@ export function Composer({ channelId, guildId, replyTo, clearReply }: { channelI
       }
       if (e.key === "Tab" || e.key === "Enter") {
         e.preventDefault();
-        insertEmote(suggestion.matches[sel], suggestion);
+        pick(suggestion, sel);
         return;
       }
     }
@@ -178,7 +219,36 @@ export function Composer({ channelId, guildId, replyTo, clearReply }: { channelI
 
   return (
     <div className="relative px-4">
-      {suggestion && (
+      {suggestion?.kind === "mention" && (
+        <div className="absolute right-4 bottom-full left-4 mb-1 rounded-md border border-border bg-popover p-1 shadow-lg">
+          <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase">Members</div>
+          {suggestion.matches.map((x, i) => (
+            <button
+              key={x.kind === "user" ? x.user.id : x.name}
+              onMouseDown={(ev) => {
+                ev.preventDefault();
+                pick(suggestion, i);
+              }}
+              className={cn("flex w-full items-center gap-2 rounded px-2 py-1 text-left", i === sel && "bg-accent")}
+            >
+              {x.kind === "user" ? (
+                <>
+                  <UserAvatar user={x.user} size={24} />
+                  <span>{x.name}</span>
+                  <span className="ml-auto truncate text-xs text-muted-foreground">{x.user.username}</span>
+                </>
+              ) : (
+                <>
+                  <span className="grid size-6 place-items-center font-semibold text-muted-foreground">@</span>
+                  <span>@{x.name}</span>
+                  <span className="ml-auto truncate text-xs text-muted-foreground">{x.hint}</span>
+                </>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+      {suggestion?.kind === "emote" && (
         <div className="absolute right-4 bottom-full left-4 mb-1 rounded-md border border-border bg-popover p-1 shadow-lg">
           <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase">Emotes matching :{value.slice(suggestion.start + 1, suggestion.end)}</div>
           {suggestion.matches.map((e, i) => (

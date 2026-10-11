@@ -19,6 +19,13 @@ pub enum ClientOp {
         channel_id: Id,
     },
     SetStatus { status: Status },
+    /// Read a channel up to `message_id`; clears its mention count.
+    Ack {
+        #[serde(rename = "channelId")]
+        channel_id: Id,
+        #[serde(rename = "messageId")]
+        message_id: Id,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -76,6 +83,18 @@ pub enum ServerEvent {
     VoiceStateRemove(VoiceStateRef),
     /// Sent only to the user who requested to join voice.
     VoiceServer(VoiceServer),
+    /// Sent to all of a user's sessions when they read a channel.
+    ReadStateUpdate(ReadState),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct ReadState {
+    pub channel_id: Id,
+    /// None when nothing has been read.
+    pub last_read_id: Option<Id>,
+    pub mention_count: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -95,6 +114,7 @@ pub struct Ready {
     /// Largest attachment this server accepts, so clients can refuse up front.
     #[cfg_attr(feature = "ts", ts(type = "number"))]
     pub max_upload_bytes: u64,
+    pub read_states: Vec<ReadState>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -140,15 +140,18 @@ struct MessageRow {
     edited_at: Option<i64>,
     reply_to: Option<i64>,
     emotes: Option<String>,
+    mentions: Option<String>,
+    mention_everyone: bool,
     #[sqlx(flatten)]
     author: UserRow,
 }
 
-fn emote_snapshot(json: Option<&str>) -> Vec<Emote> {
+/// A JSON snapshot column (emotes, mentions); missing or unreadable is empty.
+fn snapshot<T: serde::de::DeserializeOwned>(json: Option<&str>) -> Vec<T> {
     json.and_then(|j| serde_json::from_str(j).ok()).unwrap_or_default()
 }
 
-const USER_COLS: &str = "u.id, u.username, u.display_name, u.avatar_url";
+pub const USER_COLS: &str = "u.id, u.username, u.display_name, u.avatar_url";
 
 pub async fn user(db: &SqlitePool, id: Id) -> sqlx::Result<User> {
     sqlx::query_as::<_, UserRow>(AssertSqlSafe(format!("SELECT {USER_COLS} FROM users u WHERE u.id = ?")))
@@ -281,7 +284,7 @@ pub async fn messages(
     viewer: Id,
 ) -> sqlx::Result<Vec<Message>> {
     let rows = sqlx::query_as::<_, MessageRow>(AssertSqlSafe(format!(
-        "SELECT m.id AS mid, m.channel_id, m.content, m.edited_at, m.reply_to, m.emotes, {USER_COLS}
+        "SELECT m.id AS mid, m.channel_id, m.content, m.edited_at, m.reply_to, m.emotes, m.mentions, m.mention_everyone, {USER_COLS}
          FROM messages m JOIN users u ON u.id = m.author_id
          WHERE m.channel_id = ?1 AND m.id < ?2 AND m.id > ?3
          ORDER BY m.id {} LIMIT ?4",
@@ -307,7 +310,9 @@ pub async fn messages(
             reply_to: r.reply_to.map(Id),
             reactions: reactions.remove(&r.id).unwrap_or_default(),
             attachments: attachments.remove(&r.id).unwrap_or_default(),
-            emotes: emote_snapshot(r.emotes.as_deref()),
+            emotes: snapshot(r.emotes.as_deref()),
+            mentions: snapshot(r.mentions.as_deref()),
+            mention_everyone: r.mention_everyone,
             nonce: None,
         })
         .collect();
@@ -319,7 +324,7 @@ pub async fn messages(
 
 pub async fn message(db: &SqlitePool, id: Id, viewer: Id) -> sqlx::Result<Message> {
     let r = sqlx::query_as::<_, MessageRow>(AssertSqlSafe(format!(
-        "SELECT m.id AS mid, m.channel_id, m.content, m.edited_at, m.reply_to, m.emotes, {USER_COLS}
+        "SELECT m.id AS mid, m.channel_id, m.content, m.edited_at, m.reply_to, m.emotes, m.mentions, m.mention_everyone, {USER_COLS}
          FROM messages m JOIN users u ON u.id = m.author_id WHERE m.id = ?"
     )))
     .bind(id.0)
@@ -336,7 +341,9 @@ pub async fn message(db: &SqlitePool, id: Id, viewer: Id) -> sqlx::Result<Messag
         reply_to: r.reply_to.map(Id),
         reactions: reactions.remove(&r.id).unwrap_or_default(),
         attachments: attachments.remove(&r.id).unwrap_or_default(),
-        emotes: emote_snapshot(r.emotes.as_deref()),
+        emotes: snapshot(r.emotes.as_deref()),
+            mentions: snapshot(r.mentions.as_deref()),
+            mention_everyone: r.mention_everyone,
         nonce: None,
     })
 }
@@ -404,4 +411,74 @@ async fn reactions_for(
         map.entry(mid).or_default().push(Reaction { emoji, count: count as u32, me: me != 0 });
     }
     Ok(map)
+}
+
+#[derive(FromRow)]
+struct ReadStateRow {
+    channel_id: i64,
+    last_read_id: i64,
+    mention_count: i64,
+}
+
+impl From<ReadStateRow> for proto::gateway::ReadState {
+    fn from(r: ReadStateRow) -> Self {
+        Self {
+            channel_id: Id(r.channel_id),
+            last_read_id: (r.last_read_id > 0).then_some(Id(r.last_read_id)),
+            mention_count: r.mention_count.clamp(0, u32::MAX as i64) as u32,
+        }
+    }
+}
+
+/// Read states for channels in guilds `user` is still in.
+pub async fn read_states(db: &SqlitePool, user: Id) -> sqlx::Result<Vec<proto::gateway::ReadState>> {
+    Ok(sqlx::query_as::<_, ReadStateRow>(
+        "SELECT r.channel_id, r.last_read_id, r.mention_count FROM read_states r
+         JOIN channels c ON c.id = r.channel_id
+         JOIN members m ON m.guild_id = c.guild_id AND m.user_id = r.user_id
+         WHERE r.user_id = ?",
+    )
+    .bind(user.0)
+    .fetch_all(db)
+    .await?
+    .into_iter()
+    .map(Into::into)
+    .collect())
+}
+
+/// Marks `channel` read up to `message` (never backwards) and clears its mentions.
+pub async fn ack(db: &SqlitePool, user: Id, channel: Id, message: Id) -> sqlx::Result<proto::gateway::ReadState> {
+    sqlx::query_as::<_, ReadStateRow>(
+        "INSERT INTO read_states (user_id, channel_id, last_read_id, mention_count) VALUES (?1, ?2, ?3, 0)
+         ON CONFLICT (user_id, channel_id) DO UPDATE SET last_read_id = MAX(last_read_id, excluded.last_read_id), mention_count = 0
+         RETURNING channel_id, last_read_id, mention_count",
+    )
+    .bind(user.0)
+    .bind(channel.0)
+    .bind(message.0)
+    .fetch_one(db)
+    .await
+    .map(Into::into)
+}
+
+/// Adds a mention to `channel` for each of `users`, or for every member of `guild` but
+/// `except` when `users` is None (@everyone).
+pub async fn bump_mentions(db: &SqlitePool, guild: Id, channel: Id, users: Option<&[Id]>, except: Id) -> sqlx::Result<()> {
+    let filter = match users {
+        // Ids are integers, so inlining them is injection-safe.
+        Some(ids) if ids.is_empty() => return Ok(()),
+        Some(ids) => format!("AND user_id IN ({})", ids.iter().map(|i| i.0.to_string()).collect::<Vec<_>>().join(",")),
+        None => String::new(),
+    };
+    sqlx::query(AssertSqlSafe(format!(
+        "INSERT INTO read_states (user_id, channel_id, mention_count)
+         SELECT user_id, ?1, 1 FROM members WHERE guild_id = ?2 AND user_id != ?3 {filter}
+         ON CONFLICT (user_id, channel_id) DO UPDATE SET mention_count = mention_count + 1"
+    )))
+    .bind(channel.0)
+    .bind(guild.0)
+    .bind(except.0)
+    .execute(db)
+    .await?;
+    Ok(())
 }

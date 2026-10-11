@@ -17,7 +17,16 @@ export function ChatView({ guildId, channelId }: { guildId: string; channelId: s
 
   useEffect(() => {
     setReplyTo(null);
-    useApp.getState().markRead(channelId);
+    const app = useApp.getState();
+    app.setViewing(channelId);
+    app.markRead(channelId);
+    // Reads that waited while the window was hidden.
+    const onVisible = () => document.visibilityState === "visible" && useApp.getState().markRead(channelId);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      if (useApp.getState().viewing === channelId) useApp.getState().setViewing(null);
+    };
   }, [channelId]);
 
   return (

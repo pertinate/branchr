@@ -72,8 +72,12 @@ async fn run(mut ws: WebSocket, state: AppState) -> anyhow::Result<()> {
     let _guard = SessionGuard { state: state.clone(), key };
 
     let me = db::user(&state.db, user).await?;
-    let guilds = try_join_all(guild_ids.iter().map(|g| ready_guild(&state, *g))).await?;
-    send(&mut ws, &ServerEvent::Ready(Ready { user: me, session_id: key.to_string(), guilds, max_upload_bytes: state.config.max_upload_bytes })).await?;
+    let (guilds, read_states) = tokio::try_join!(
+        try_join_all(guild_ids.iter().map(|g| ready_guild(&state, *g))),
+        async { Ok(db::read_states(&state.db, user).await?) },
+    )?;
+    let ready = Ready { user: me, session_id: key.to_string(), guilds, max_upload_bytes: state.config.max_upload_bytes, read_states };
+    send(&mut ws, &ServerEvent::Ready(ready)).await?;
 
     if first {
         broadcast_presence(&state, user, Status::Online, &guild_ids);
@@ -151,6 +155,16 @@ async fn handle_op(state: &AppState, key: SessionKey, user: Id, op: ClientOp) {
             }
         }
         ClientOp::VoiceStateUpdate(u) => voice_state_update(state, key, user, u).await,
+        ClientOp::Ack { channel_id, message_id } => {
+            let Ok(guild) = state.guild_of_channel(channel_id).await else { return };
+            if !db::is_member(&state.db, guild, user).await.unwrap_or(false) {
+                return;
+            }
+            match db::ack(&state.db, user, channel_id, message_id).await {
+                Ok(rs) => state.hub.to_user(user, &ServerEvent::ReadStateUpdate(rs)),
+                Err(e) => tracing::warn!("ack: {e}"),
+            }
+        }
         ClientOp::Identify { .. } | ClientOp::Heartbeat => {}
     }
 }

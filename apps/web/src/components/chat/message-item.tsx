@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { UserAvatar, userColor } from "@/components/user-avatar";
 import { api } from "@/lib/api";
 import { snowflakeTime } from "@/lib/ids";
+import { editableMentions, mentionsMe, plainText } from "@/lib/mentions";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/stores/app";
 import { useEmote } from "@/stores/emotes";
@@ -69,6 +70,7 @@ export const MessageItem = memo(function MessageItem({
   const replyNick = useApp((s) => (reply ? s.members[guildId]?.[reply.author.id]?.nick : undefined));
   const [pickerOpen, setPickerOpen] = useState(false);
   const real = !m.pending && !m.failed;
+  const pinged = useApp((s) => mentionsMe(m, s.me?.id));
 
   const toggleReaction = async (emoji: string, me: boolean) => {
     try {
@@ -87,7 +89,16 @@ export const MessageItem = memo(function MessageItem({
   };
 
   return (
-    <div className={cn("group relative px-4 hover:bg-black/[0.06]", grouped ? "py-0.5" : "mt-4 pt-0.5 pb-0.5", pickerOpen && "bg-black/[0.06]")}>
+    <div
+      data-pinged={pinged || undefined}
+      className={cn(
+        "group relative px-4",
+        grouped ? "py-0.5" : "mt-4 pt-0.5 pb-0.5",
+        pinged
+          ? "bg-amber-400/10 before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-amber-400 before:content-[''] hover:bg-amber-400/[0.14]"
+          : cn("hover:bg-black/[0.06]", pickerOpen && "bg-black/[0.06]"),
+      )}
+    >
       {m.replyTo && (
         <div className="mb-1 ml-14 flex items-center gap-1 text-xs text-muted-foreground before:-mb-2 before:ml-[-36px] before:h-2.5 before:w-8 before:rounded-tl-md before:border-t-2 before:border-l-2 before:border-muted-foreground/40 before:content-['']">
           {reply ? (
@@ -96,7 +107,7 @@ export const MessageItem = memo(function MessageItem({
               <span className="font-semibold" style={{ color: userColor(reply.author.id) }}>
                 {replyNick ?? reply.author.displayName}
               </span>
-              <span className="truncate opacity-80">{reply.content}</span>
+              <span className="truncate opacity-80">{plainText(reply, guildId)}</span>
             </>
           ) : (
             <span className="italic">Original message not loaded</span>
@@ -124,7 +135,7 @@ export const MessageItem = memo(function MessageItem({
             <EditBox message={m} onDone={() => setEditing(null)} />
           ) : (
             <div className={cn("selectable leading-[1.375rem] break-words whitespace-pre-wrap", m.pending && "opacity-50", m.failed && "text-destructive")}>
-              {m.content && <Markup content={m.content} emotes={emotes} refs={m.emotes} />}
+              {m.content && <Markup content={m.content} emotes={emotes} refs={m.emotes} guildId={guildId} mentions={m.mentions} />}
               {m.editedAt && <span className="ml-1 text-[10px] text-muted-foreground">(edited)</span>}
             </div>
           )}
@@ -194,10 +205,12 @@ export const MessageItem = memo(function MessageItem({
 });
 
 function EditBox({ message, onDone }: { message: UiMessage; onDone: () => void }) {
-  const [value, setValue] = useState(message.content);
+  // Mentions are edited as they're typed (@username); the server resolves them again.
+  const [initial] = useState(() => editableMentions(message.content, message.mentions));
+  const [value, setValue] = useState(initial);
   const save = async () => {
     const content = value.trim();
-    if (!content || content === message.content) return onDone();
+    if (!content || content === initial) return onDone();
     try {
       await api("PATCH", `/channels/${message.channelId}/messages/${message.id}`, { content });
       onDone();

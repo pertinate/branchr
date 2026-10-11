@@ -6,6 +6,7 @@ import { useShallow } from "zustand/react/shallow";
 
 import { CreateChannelDialog } from "@/components/guild/create-channel-dialog";
 import { GuildMenu } from "@/components/guild/guild-menu";
+import { MentionBadge } from "@/components/mention-badge";
 import { UserAvatar } from "@/components/user-avatar";
 import { UserPanel } from "@/components/voice/user-panel";
 import { compareIds } from "@/lib/ids";
@@ -72,6 +73,7 @@ const TextChannelRow = memo(function TextChannelRow({ channel }: { channel: Chan
   const unread = useApp(
     (s) => !!channel.lastMessageId && (!s.lastRead[channel.id] || compareIds(channel.lastMessageId, s.lastRead[channel.id]) > 0),
   );
+  const pings = useApp((s) => s.pings[channel.id] ?? 0);
   return (
     <Link
       to="/$guildId/$channelId"
@@ -84,6 +86,7 @@ const TextChannelRow = memo(function TextChannelRow({ channel }: { channel: Chan
       {unread && !active && <span className="absolute -left-2 h-2 w-1 rounded-r-full bg-foreground" />}
       <Hash className="size-5 shrink-0 opacity-70" />
       <span className="truncate">{channel.name}</span>
+      {pings > 0 && !active && <MentionBadge count={pings} className="ml-auto" />}
     </Link>
   );
 });

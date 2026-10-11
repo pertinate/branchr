@@ -16,6 +16,14 @@ replyTo: Id | null, reactions: Array<Reaction>, attachments: Array<Attachment>,
  */
 emotes: Array<Emote>, 
 /**
+ * Users mentioned as `<@id>` (and the author replied to), snapshotted when sent.
+ */
+mentions: Array<User>, 
+/**
+ * `@everyone` or `@here`.
+ */
+mentionEveryone: boolean, 
+/**
  * Client-generated id echoed back so optimistic sends can be reconciled.
  */
 nonce?: string | null, };

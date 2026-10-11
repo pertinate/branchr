@@ -6,6 +6,7 @@
 - **Backend (Rust)**: `api`, an axum REST API and realtime gateway on SQLite; `sfu`, a str0m-based selective forwarding unit for voice, video and streams.
 - **Client**: Vite, React, TanStack Router, shadcn/ui and Tailwind v4. It ships as an **Electron AppImage** for Linux and also works as a web app served by the API.
 - **Emotes** come from [7TV](https://7tv.app/emotes), [BetterTTV](https://betterttv.com) and [FrankerFaceZ](https://www.frankerfacez.com). You can search 7TV and FFZ, paste a link to any emote, import a 7TV set or user, or import a Twitch channel's emotes from all three. The server only uses each provider's public API and identifies itself honestly (no browser impersonation). That's why BetterTTV has no search there: BTTV emotes come from a Twitch channel import, or from a link plus a name.
+- **Mentions**: `@user`, `@here` (online members) and `@everyone`, with autocomplete. Replies ping the author. Unread mention counts are kept on the server, so pings sent while you're offline still show, and reading on one device clears the others. They appear on channels, servers, the taskbar badge and as desktop notifications. Role mentions (`<@&id>`) are parsed but render as unknown until roles exist.
 
 ```
 apps/web        React client (also bundled into the desktop app)

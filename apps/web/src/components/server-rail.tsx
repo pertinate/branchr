@@ -5,6 +5,7 @@ import { memo, useState } from "react";
 import { toast } from "sonner";
 
 import { guildInitials } from "@/components/guild/guild-badge";
+import { MentionBadge } from "@/components/mention-badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -41,12 +42,17 @@ const GuildIcon = memo(function GuildIcon({ guildId, active }: { guildId: string
         (!s.lastRead[c.id] || compareIds(c.lastMessageId, s.lastRead[c.id]) > 0),
     ),
   );
+  const pings = useApp((s) => {
+    let n = 0;
+    for (const [cid, count] of Object.entries(s.pings)) if (s.channels[cid]?.guildId === guildId) n += count;
+    return n;
+  });
   const inVoice = useVoice((s) => s.guildId === guildId);
   if (!guild) return null;
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Link to="/$guildId" params={{ guildId }} className="group relative flex w-full justify-center">
+        <Link to="/$guildId" params={{ guildId }} aria-label={guild.name} className="group relative flex w-full justify-center">
           <span
             className={cn(
               "absolute left-0 top-1/2 w-1 -translate-y-1/2 rounded-r-full bg-foreground transition-all",
@@ -61,7 +67,8 @@ const GuildIcon = memo(function GuildIcon({ guildId, active }: { guildId: string
           >
             {guild.iconUrl ? <img src={guild.iconUrl} alt="" className="size-full object-cover" /> : guildInitials(guild.name)}
           </div>
-          {inVoice && (
+          {pings > 0 && <MentionBadge count={pings} className="absolute right-1 bottom-0 border-4 border-rail" />}
+          {inVoice && !pings && (
             <span className="absolute -right-0 bottom-0 grid size-5 place-items-center rounded-full border-4 border-rail bg-online">
               <Volume2 className="size-2.5 text-white" />
             </span>

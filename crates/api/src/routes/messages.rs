@@ -9,6 +9,7 @@ use super::channel_access;
 use crate::auth::Auth;
 use crate::db;
 use crate::error::{AppError, AppResult, bad};
+use crate::mentions;
 use crate::state::AppState;
 
 const MAX_LEN: usize = 4000;
@@ -132,17 +133,25 @@ pub async fn create(
         return Err(bad("nonce too long"));
     }
     let (content, emotes) = resolve_emotes(&state, user, content, &[]).await?;
+    let replied = replied_author(&state, cid, body.reply_to, user).await?;
+    let mut mentions = mentions::resolve(&state.db, guild, &content, replied).await?;
+    let content = std::mem::take(&mut mentions.content);
     let id = state.ids.next();
     let mut tx = state.db.begin().await?;
-    sqlx::query("INSERT INTO messages (id, channel_id, author_id, content, reply_to, emotes) VALUES (?1, ?2, ?3, ?4, ?5, ?6)")
-        .bind(id.0)
-        .bind(cid.0)
-        .bind(user.0)
-        .bind(&content)
-        .bind(body.reply_to.map(|r| r.0))
-        .bind(snapshot_json(&emotes))
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query(
+        "INSERT INTO messages (id, channel_id, author_id, content, reply_to, emotes, mentions, mention_everyone)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+    )
+    .bind(id.0)
+    .bind(cid.0)
+    .bind(user.0)
+    .bind(&content)
+    .bind(body.reply_to.map(|r| r.0))
+    .bind(snapshot_json(&emotes))
+    .bind(snapshot_json(&mentions.users))
+    .bind(mentions.everyone || mentions.here)
+    .execute(&mut *tx)
+    .await?;
     sqlx::query("UPDATE channels SET last_message_id = ? WHERE id = ?").bind(id.0).bind(cid.0).execute(&mut *tx).await?;
     for a in &body.attachment_ids {
         // Only the uploader's own, unsent uploads to this channel can be attached.
@@ -158,6 +167,7 @@ pub async fn create(
         }
     }
     tx.commit().await?;
+    bump_mentions(&state, guild, cid, user, &mentions).await;
 
     let msg = Message {
         id,
@@ -169,6 +179,8 @@ pub async fn create(
         reactions: vec![],
         attachments: db::attachments_for(&state.db, std::iter::once(id.0)).await?.remove(&id.0).unwrap_or_default(),
         emotes,
+        mention_everyone: mentions.everyone || mentions.here,
+        mentions: mentions.users,
         nonce: body.nonce,
     };
     state.hub.to_guild(guild, &ServerEvent::MessageCreate(msg.clone()));
@@ -196,11 +208,17 @@ pub async fn edit(
         return Err(AppError::NotFound);
     }
     let (content, emotes) = resolve_emotes(&state, user, content, &prev.emotes).await?;
+    let replied = replied_author(&state, cid, prev.reply_to, user).await?;
+    let mentions = mentions::resolve(&state.db, guild, &content, replied).await?;
+    let content = mentions.content;
     let r = sqlx::query(
-        "UPDATE messages SET content = ?1, emotes = ?2, edited_at = ?3 WHERE id = ?4 AND channel_id = ?5 AND author_id = ?6",
+        "UPDATE messages SET content = ?1, emotes = ?2, mentions = ?3, mention_everyone = ?4, edited_at = ?5
+         WHERE id = ?6 AND channel_id = ?7 AND author_id = ?8",
     )
     .bind(&content)
     .bind(snapshot_json(&emotes))
+    .bind(snapshot_json(&mentions.users))
+    .bind(mentions.everyone || mentions.here)
     .bind(db::now_ms())
     .bind(mid.0)
     .bind(cid.0)
@@ -237,8 +255,44 @@ pub async fn delete(
     Ok(())
 }
 
-fn snapshot_json(emotes: &[Emote]) -> Option<String> {
-    (!emotes.is_empty()).then(|| serde_json::to_string(emotes).expect("emotes serialize"))
+fn snapshot_json<T: serde::Serialize>(items: &[T]) -> Option<String> {
+    (!items.is_empty()).then(|| serde_json::to_string(items).expect("snapshot serializes"))
+}
+
+/// Counts the mentions toward each pinged member's unread badge, which is what makes a
+/// mention sent while someone was offline show up when they return.
+async fn bump_mentions(state: &AppState, guild: Id, channel: Id, author: Id, m: &mentions::Mentions) {
+    let r = if m.everyone {
+        db::bump_mentions(&state.db, guild, channel, None, author).await
+    } else {
+        let mut users: Vec<Id> = m.users.iter().map(|u| u.id).collect();
+        if m.here {
+            let members: Vec<i64> = sqlx::query_scalar("SELECT user_id FROM members WHERE guild_id = ?")
+                .bind(guild.0)
+                .fetch_all(&state.db)
+                .await
+                .unwrap_or_default();
+            users.extend(members.into_iter().map(Id).filter(|u| state.hub.status(*u) != Status::Offline));
+            users.sort_unstable_by_key(|u| u.0);
+            users.dedup();
+        }
+        db::bump_mentions(&state.db, guild, channel, Some(&users), author).await
+    };
+    // The message is already sent; a missed count only costs a badge.
+    if let Err(e) = r {
+        tracing::warn!("counting mentions: {e}");
+    }
+}
+
+/// Replies ping the author replied to (unless replying to yourself), as on Discord.
+async fn replied_author(state: &AppState, cid: Id, reply_to: Option<Id>, user: Id) -> AppResult<Option<Id>> {
+    let Some(r) = reply_to else { return Ok(None) };
+    let author: Option<i64> = sqlx::query_scalar("SELECT author_id FROM messages WHERE id = ? AND channel_id = ?")
+        .bind(r.0)
+        .bind(cid.0)
+        .fetch_optional(&state.db)
+        .await?;
+    Ok(author.map(Id).filter(|a| *a != user))
 }
 
 fn valid_emoji(e: &str) -> bool {

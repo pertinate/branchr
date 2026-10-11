@@ -5,6 +5,7 @@ mod emote_providers;
 mod error;
 mod gateway;
 mod hub;
+mod mentions;
 mod ratelimit;
 mod routes;
 mod state;

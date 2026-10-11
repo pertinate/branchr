@@ -6,4 +6,4 @@ import type { VoiceStateUpdate } from "./VoiceStateUpdate";
 /**
  * Messages sent by the client.
  */
-export type ClientOp = { "op": "identify", "d": { token: string, } } | { "op": "heartbeat" } | { "op": "voice_state_update", "d": VoiceStateUpdate } | { "op": "typing", "d": { channelId: Id, } } | { "op": "set_status", "d": { status: Status, } };
+export type ClientOp = { "op": "identify", "d": { token: string, } } | { "op": "heartbeat" } | { "op": "voice_state_update", "d": VoiceStateUpdate } | { "op": "typing", "d": { channelId: Id, } } | { "op": "set_status", "d": { status: Status, } } | { "op": "ack", "d": { channelId: Id, messageId: Id, } };

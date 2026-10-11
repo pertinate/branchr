@@ -1,14 +1,17 @@
-import type { Emote } from "@app/protocol";
+import type { Emote, User } from "@app/protocol";
 import { Fragment, type ReactNode, memo, useMemo } from "react";
 
 import { EMOTE_TOKEN, emoteSource, emoteSrcSet, emoteUrl } from "@/lib/emotes";
+import { EVERYONE_MENTION, ROLE_MENTION, USER_MENTION } from "@/lib/mentions";
 import { cn } from "@/lib/utils";
+import { useApp } from "@/stores/app";
 import { useEmoteCard } from "@/stores/emotes";
 
 /**
  * Discord-flavoured markdown subset: ```code blocks```, `inline code`, **bold**, *italic*,
  * _italic_, __underline__, ~~strike~~, ||spoiler||, links, and emotes: this server's as
- * :name:, any server's as <:name:id> tokens resolved from the message's emote snapshot.
+ * :name:, any server's as <:name:id> tokens resolved from the message's emote snapshot,
+ * and mentions (<@id>, <@&role>, @everyone, @here).
  */
 
 type Inline = { re: RegExp; render: (m: RegExpExecArray, ctx: Ctx, key: number) => ReactNode };
@@ -18,6 +21,24 @@ interface Ctx {
   /** Emotes referenced by id (<:name:id>). */
   byId: Map<string, Emote>;
   jumbo: boolean;
+  guildId?: string;
+  /** Users the message mentions, snapshotted when sent. */
+  mentions: Map<string, User>;
+}
+
+const PILL = "rounded-sm bg-primary/25 px-0.5 font-medium text-[oklch(0.86_0.08_265)] hover:bg-primary/60 hover:text-white";
+
+/** `@name`, live from the member list so nick changes show; the snapshot covers people who left. */
+function Mention({ id, ctx }: { id: string; ctx: Ctx }) {
+  const name = useApp((s) => {
+    const m = ctx.guildId ? s.members[ctx.guildId]?.[id] : undefined;
+    return m?.nick ?? m?.user.displayName ?? ctx.mentions.get(id)?.displayName ?? "unknown-user";
+  });
+  return (
+    <span data-mention={id} className={cn(PILL, "cursor-default")}>
+      @{name}
+    </span>
+  );
 }
 
 export function EmoteImage({ emote, size, className, interactive }: { emote: Emote; size: number; className?: string; interactive?: boolean }) {
@@ -53,6 +74,9 @@ const INLINE: Inline[] = [
       return e ? emoteEl(e, c, k) : `:${m[1]}:`;
     },
   },
+  { re: USER_MENTION, render: (m, c, k) => <Mention key={k} id={m[1]} ctx={c} /> },
+  { re: ROLE_MENTION, render: (_m, _c, k) => <span key={k} className={PILL}>@unknown-role</span> },
+  { re: EVERYONE_MENTION, render: (m, _c, k) => <span key={k} data-mention={m[1]} className={PILL}>@{m[1]}</span> },
   { re: /`([^`\n]+)`/, render: (m, _c, k) => <code key={k} className="rounded bg-muted px-1 py-0.5 font-mono text-[0.85em]">{m[1]}</code> },
   { re: /\|\|([\s\S]+?)\|\|/, render: (m, c, k) => <Spoiler key={k}>{inline(m[1], c)}</Spoiler> },
   { re: /\*\*([\s\S]+?)\*\*/, render: (m, c, k) => <strong key={k}>{inline(m[1], c)}</strong> },
@@ -118,8 +142,21 @@ const EMOTE_ONLY = /^\s*(\S+\s*){1,27}$/;
 
 const WHOLE_TOKEN = new RegExp(`^${EMOTE_TOKEN.source}$`);
 
-export const Markup = memo(function Markup({ content, emotes, refs }: { content: string; emotes: Map<string, Emote>; refs?: Emote[] }) {
+export const Markup = memo(function Markup({
+  content,
+  emotes,
+  refs,
+  guildId,
+  mentions: mentioned,
+}: {
+  content: string;
+  emotes: Map<string, Emote>;
+  refs?: Emote[];
+  guildId?: string;
+  mentions?: User[];
+}) {
   const byId = useMemo(() => new Map((refs ?? []).map((e) => [e.id, e])), [refs]);
+  const mentions = useMemo(() => new Map((mentioned ?? []).map((u) => [u.id, u])), [mentioned]);
   // A message made only of emotes renders them large.
   const words = content.trim().split(/\s+/);
   const jumbo =
@@ -129,7 +166,7 @@ export const Markup = memo(function Markup({ content, emotes, refs }: { content:
         (w.startsWith(":") && w.endsWith(":") && emotes.has(w.slice(1, -1))) ||
         byId.has(WHOLE_TOKEN.exec(w)?.[2] ?? ""),
     );
-  const ctx: Ctx = { emotes, byId, jumbo };
+  const ctx: Ctx = { emotes, byId, jumbo, guildId, mentions };
 
   const blocks = content.split(/```(?:([\w+-]+)\n)?([\s\S]*?)```/);
   // split with 2 capture groups yields [text, lang, code, text, lang, code, ...]

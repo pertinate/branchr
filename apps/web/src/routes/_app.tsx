@@ -5,6 +5,7 @@ import { EmoteCard } from "@/components/chat/emote-card";
 import { AudioRenderer } from "@/components/voice/audio-renderer";
 import { ServerRail } from "@/components/server-rail";
 import { gateway } from "@/lib/gateway";
+import { startNotifications } from "@/lib/notify";
 import { useApp } from "@/stores/app";
 import { useAuth } from "@/stores/auth";
 import { useVoice } from "@/stores/voice";
@@ -29,7 +30,11 @@ function AppLayout() {
       return;
     }
     gateway.start();
-    return () => gateway.stop();
+    const stopNotifications = startNotifications();
+    return () => {
+      stopNotifications();
+      gateway.stop();
+    };
   }, [token, navigate]);
 
   if (!ready) {

@@ -65,6 +65,12 @@ wire! {
         /// snapshotted when sent so any reader can render them.
         #[serde(default)]
         pub emotes: Vec<Emote>,
+        /// Users mentioned as `<@id>` (and the author replied to), snapshotted when sent.
+        #[serde(default)]
+        pub mentions: Vec<User>,
+        /// `@everyone` or `@here`.
+        #[serde(default)]
+        pub mention_everyone: bool,
         /// Client-generated id echoed back so optimistic sends can be reconciled.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub nonce: Option<String>,

@@ -4,6 +4,7 @@ import { create } from "zustand";
 
 import { api } from "@/lib/api";
 import { EMOTE_TOKEN } from "@/lib/emotes";
+import { localMentions } from "@/lib/mentions";
 import { compareIds, nonce } from "@/lib/ids";
 import { useApp } from "@/stores/app";
 import { useAuth } from "@/stores/auth";
@@ -126,11 +127,14 @@ export const useMessages = create<MessagesState>()((set, get) => {
       const me = useAuth.getState().user;
       if (!me) return;
       const n = nonce();
+      const local = localMentions(content, useApp.getState().channels[channelId]?.guildId);
       const optimistic: UiMessage = {
         id: `pending-${n}`,
         channelId,
         author: me,
-        content,
+        content: local.content,
+        mentions: local.mentions,
+        mentionEveryone: local.mentionEveryone,
         editedAt: null,
         replyTo,
         reactions: [],
