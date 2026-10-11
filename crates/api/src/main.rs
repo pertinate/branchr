@@ -16,7 +16,10 @@ use axum::routing::{delete, get, patch, post, put};
 use dashmap::DashMap;
 use proto::id::IdGen;
 use tower_http::compression::CompressionLayer;
+use axum::http::HeaderValue;
+use axum::http::header::CACHE_CONTROL;
 use tower_http::cors::CorsLayer;
+use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::services::{ServeDir, ServeFile};
 use tracing_subscriber::EnvFilter;
 
@@ -67,18 +70,21 @@ async fn main() -> anyhow::Result<()> {
         .route("/emotes/search", get(emotes::search))
         .route("/health", get(|| async { "ok" }));
 
-    let mut app = Router::new()
-        .nest("/api", api)
-        .route("/gateway", get(gateway::upgrade))
-        .layer(CompressionLayer::new())
-        .layer(CorsLayer::permissive())
-        .with_state(state);
+    let mut app = Router::new().nest("/api", api).route("/gateway", get(gateway::upgrade));
 
     if let Some(dir) = &config.web_dir {
-        // Hashed assets are immutable; index.html is the SPA fallback.
+        // Hashed assets never change: cache them forever. index.html is the SPA fallback.
+        let assets = Router::new().fallback_service(ServeDir::new(dir.join("assets"))).layer(
+            SetResponseHeaderLayer::overriding(CACHE_CONTROL, HeaderValue::from_static("public, max-age=31536000, immutable")),
+        );
         let index = dir.join("index.html");
-        app = app.fallback_service(ServeDir::new(dir).precompressed_br().precompressed_gzip().fallback(ServeFile::new(index)));
+        app = app
+            .nest("/assets", assets)
+            .fallback_service(ServeDir::new(dir).fallback(ServeFile::new(index)));
     }
+
+    // Layers last so they also wrap the static file services.
+    let app = app.layer(CompressionLayer::new()).layer(CorsLayer::permissive()).with_state(state);
 
     let listener = tokio::net::TcpListener::bind(config.bind).await?;
     tracing::info!("api listening on {}", config.bind);

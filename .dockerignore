@@ -1,0 +1,7 @@
+target
+**/node_modules
+**/dist
+apps/desktop/release
+apps/desktop/web
+data
+.git
