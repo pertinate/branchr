@@ -112,4 +112,10 @@ test("chat, voice and screen streaming between two users", async ({ browser }) =
   // Stopping the stream removes it for Bob.
   await alice.getByRole("button", { name: "Stop", exact: true }).first().click();
   await expect(bob.getByRole("button", { name: "Watch Stream" })).toHaveCount(0);
+
+  // Disconnect really leaves (it used to auto-rejoin).
+  await bob.getByRole("button", { name: "Disconnect" }).click();
+  await bob.waitForTimeout(4000);
+  await expect(bob.getByText(/Voice Connected|Reconnecting|Connecting…/)).toHaveCount(0);
+  await expect(bob.getByRole("button", { name: "Join Voice" })).toBeVisible();
 });

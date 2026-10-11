@@ -205,8 +205,10 @@ export const useVoice = create<VoiceState>()((set, get) => {
   };
 
   const cleanup = () => {
-    conn?.close();
+    // Clear first: close() fires the `closed` callback, which must not see this as a drop.
+    const c = conn;
     conn = null;
+    c?.close();
     mic?.stop();
     mic = null;
     const { camera, screen } = get();
@@ -299,7 +301,11 @@ export const useVoice = create<VoiceState>()((set, get) => {
             if (g && ch && retries < 5) {
               retries++;
               set({ status: "reconnecting" });
-              setTimeout(() => void get().join(g, ch), 1000 * retries);
+              const mySeq = joinSeq;
+              setTimeout(() => {
+                // Skip if the user left or switched channels meanwhile.
+                if (joinSeq === mySeq && get().channelId === ch) void get().join(g, ch);
+              }, 1000 * retries);
             } else {
               get().leave();
               set({ error: reason });
