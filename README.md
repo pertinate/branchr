@@ -71,6 +71,15 @@ On a **2 vCPU / 4 GB VPS** (DigitalOcean Basic AMD), with viewers on the other s
 
 On that VPS the gateway handles 5,000 concurrent sessions, and every message reaches all of them.
 
+Chat throughput, with 100 users in one server each sending a burst of 10 messages (half of them with `@user` or `@here`), so 1,000 messages and 100,000 deliveries (`node tests/load/chat.mjs http://host:8080`, `USERS=100`). Measured on the Ryzen desktop, loopback, release build:
+
+| Condition | Messages/s | Send p50 / p99 | Fan-out p50 / p99 |
+|---|---|---|---|
+| Chat only | ~1,050 | 94 / 134 ms | 42 / 89 ms |
+| While the SFU relays a 100 viewer × 4 Mbps stream | ~900–1,000 | 93–108 / 163–200 ms | 42–50 / 106–115 ms |
+
+The stream stayed at 60 fps for every viewer with p99 under 7 ms while chat was loaded.
+
 Viewers of one room are spread across all worker cores. Outgoing packets go out through `sendmmsg`. The gateway fans a message out to 5,000 connected sessions with p99 under 80 ms (`node tests/load/gateway.mjs http://host:8080 5000`).
 
 ## Self-hosting
