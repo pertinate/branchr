@@ -27,6 +27,8 @@ export interface ConnectionEvents {
   speaking: (userId: string, speaking: boolean) => void;
   layer: (trackId: string, layer: string | null, estimateBps: number) => void;
   closed: (reason: string) => void;
+  /** Media transport up (true) or interrupted (false). */
+  media?: (connected: boolean) => void;
 }
 
 interface Slot {
@@ -67,7 +69,9 @@ export class VoiceConnection {
     for (const t of tracks) this.tracks.set(t.id, t);
     this.pc = new RTCPeerConnection({ bundlePolicy: "max-bundle", rtcpMuxPolicy: "require" });
     this.pc.onconnectionstatechange = () => {
-      if (this.pc.connectionState === "failed") this.close("media connection failed");
+      const state = this.pc.connectionState;
+      this.events.media?.(state === "connected");
+      if (state === "failed") this.close("media connection failed");
     };
     ws.onmessage = (e) => this.onMessage(JSON.parse(e.data) as VoiceServerMsg);
     ws.onclose = () => this.close("signaling closed");

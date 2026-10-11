@@ -8,6 +8,7 @@ import { useApp } from "@/stores/app";
 import { VoiceConnection } from "@/voice/connection";
 import { type StreamSettings, cameraEncodings, defaultStreamSettings, layersFor, pickCodec } from "@/voice/presets";
 
+/** "connected" means media is flowing, not just that signaling succeeded. */
 export type VoiceStatus = "disconnected" | "connecting" | "connected" | "reconnecting";
 
 export interface Subscription {
@@ -243,7 +244,7 @@ export const useVoice = create<VoiceState>()((set, get) => {
 
     join: async (guildId, channelId) => {
       const s = get();
-      if (s.channelId === channelId && s.status === "connected") return;
+      if (s.channelId === channelId && (s.status === "connected" || s.status === "connecting")) return;
       const seq = ++joinSeq;
       cleanup();
       set({ status: s.status === "reconnecting" ? "reconnecting" : "connecting", guildId, channelId, error: null });
@@ -275,6 +276,16 @@ export const useVoice = create<VoiceState>()((set, get) => {
           speaking: (userId, speaking) => set((s) => ({ speaking: { ...s.speaking, [userId]: speaking } })),
           layer: (trackId, layer, estimateBps) =>
             set((s) => (s.subs[trackId] ? { subs: { ...s.subs, [trackId]: { ...s.subs[trackId], layer } }, estimateBps } : {})),
+          media: (up) => {
+            if (conn !== c && conn !== null) return;
+            const st = get().status;
+            if (up && st !== "connected") {
+              set({ status: "connected" });
+              retries = 0;
+            } else if (!up && st === "connected") {
+              set({ status: "reconnecting" });
+            }
+          },
           closed: (reason) => {
             if (conn !== c) return;
             conn = null;
@@ -301,8 +312,8 @@ export const useVoice = create<VoiceState>()((set, get) => {
         }
         conn = c;
         await c.start(mic);
-        set({ status: "connected", tracks: Object.fromEntries([...c.tracks].map(([k, v]) => [k, v])) });
-        retries = 0;
+        // Status flips to "connected" from the media callback once ICE/DTLS are up.
+        set({ tracks: Object.fromEntries([...c.tracks].map(([k, v]) => [k, v])) });
         for (const t of c.tracks.values()) if (autoSubscribe(t)) void subscribe(t.id);
       } catch (e) {
         if (seq !== joinSeq) return;
