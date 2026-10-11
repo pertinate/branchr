@@ -13,3 +13,4 @@ apps/desktop/web
 apps/desktop/release
 tests/e2e/test-results
 tests/e2e/playwright-report
+*.tsbuildinfo
