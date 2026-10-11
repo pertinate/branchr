@@ -4,10 +4,13 @@
   "type": "module",
   "packageManager": "pnpm@10.24.0",
   "scripts": {
-    "dev": "pnpm --filter web dev",
+    "dev": "pnpm --filter desktop dev",
     "build": "pnpm --filter web build",
     "typecheck": "pnpm -r typecheck",
-    "gen:protocol": "cargo test -p proto --features ts,token --quiet"
+    "gen:protocol": "cargo test -p proto --features ts,token --quiet",
+    "dev:web": "pnpm --filter web dev",
+    "appimage": "pnpm --filter desktop dist",
+    "test:e2e": "pnpm --filter e2e test"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

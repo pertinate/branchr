@@ -8,6 +8,12 @@ files:
   - dist/**
   - web/**
   - package.json
+  # Main/preload are bundled by esbuild; only the native PipeWire addon is needed at runtime.
+  - "!node_modules/**"
+  - node_modules/@vencord/venmic/lib/**
+  - node_modules/@vencord/venmic/prebuilds/venmic-addon-linux-x64/**
+  - node_modules/@vencord/venmic/package.json
+  - node_modules/pkg-prebuilds/**
 extraResources:
   - from: build/icon.png
     to: icon.png
@@ -16,21 +22,13 @@ asar: true
 asarUnpack:
   - "**/node_modules/@vencord/venmic/**"
 linux:
-  target:
-    - AppImage
-    - pacman
-    - tar.gz
+  target: AppImage
+  syncDesktopName: true
   category: Network;InstantMessaging;Chat
   icon: build/icon.png
   maintainer: Pertinate
   desktop:
     entry:
       StartupWMClass: discord-clone
-pacman:
-  depends:
-    - gtk3
-    - nss
-    - libxss
-    - alsa-lib
-    - libpipewire
-    - xdg-desktop-portal
+appImage:
+  artifactName: discord-clone-${version}-${arch}.AppImage

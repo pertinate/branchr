@@ -9,9 +9,10 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "build:main": "node scripts/build-main.mjs",
-    "build": "pnpm --filter web build && node scripts/build-main.mjs && electron-builder --linux",
-    "pack": "pnpm --filter web build && node scripts/build-main.mjs && electron-builder --linux dir",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "package": "pnpm --filter web build && node scripts/build-main.mjs && electron-builder --linux dir",
+    "dist": "pnpm --filter web build && node scripts/build-main.mjs && electron-builder --linux",
+    "build": "pnpm --filter web build && node scripts/build-main.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
@@ -22,5 +23,7 @@
   },
   "dependencies": {
     "@vencord/venmic": "^7.2.3"
-  }
+  },
+  "homepage": "https://github.com/Pertinate/discord-clone",
+  "desktopName": "discord-clone.desktop"
 }
