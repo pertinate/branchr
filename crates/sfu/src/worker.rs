@@ -100,6 +100,9 @@ const UPGRADE_HEADROOM: f64 = 1.25;
 const UPGRADE_COOLDOWN: Duration = Duration::from_secs(4);
 /// How long ICE may stay Disconnected before the peer is dropped.
 const ICE_GRACE: Duration = Duration::from_secs(15);
+/// Don't re-boost the estimate more often than this (lets real congestion signals win).
+const BWE_BOOST_INTERVAL: Duration = Duration::from_secs(10);
+const MAX_BOOST_BPS: u64 = 200_000_000;
 /// Flush queued packets once this many are pending, even mid-batch.
 const TX_FLUSH_AT: usize = 512;
 
@@ -181,6 +184,8 @@ struct Peer {
     addrs: Vec<SocketAddr>,
     /// When ICE went Disconnected, if it hasn't recovered yet.
     ice_lost: Option<Instant>,
+    /// Last time the bandwidth estimate was jump-started for a single-layer stream.
+    bwe_boosted: Option<Instant>,
 }
 
 impl Peer {
@@ -593,6 +598,7 @@ impl Worker {
                 speaking: false,
                 addrs: Vec::new(),
                 ice_lost: None,
+                bwe_boosted: None,
             },
         );
         tracing::info!(peer = id.0, user = %user, room = %room_id, worker = self.index, "peer joined");
@@ -1089,6 +1095,20 @@ impl Worker {
         }
 
         let peer = self.peers.get_mut(&id).expect("checked");
+        // A single-layer stream can't be downgraded, so a slowly ramping estimate only queues
+        // it in the pacer (seconds of delay over real links). Start the estimate at what the
+        // stream needs; real congestion still pulls it down.
+        let must_carry = (fixed_bps + audio_bps) as f64 * 1.2;
+        if fixed_bps > 0
+            && (peer.estimate_bps as f64) < must_carry
+            && peer.bwe_boosted.is_none_or(|t| now.duration_since(t) > BWE_BOOST_INTERVAL)
+        {
+            let target = (must_carry as u64).min(MAX_BOOST_BPS);
+            peer.rtc.bwe().reset(Bitrate::bps(target));
+            peer.estimate_bps = target;
+            peer.bwe_boosted = Some(now);
+            tracing::debug!(peer = id.0, target, "bwe boosted for single-layer stream");
+        }
         // Ask the BWE to probe for what full quality would need.
         peer.rtc.bwe().set_desired_bitrate(Bitrate::bps(((desired + audio_bps + fixed_bps) as f64 * 1.1) as u64));
         let mut kf = Vec::new();

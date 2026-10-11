@@ -88,6 +88,8 @@ enum Role {
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> anyhow::Result<()> {
+    // ring and aws-lc are both linked; pick aws-lc (same as str0m) for wss:// signaling.
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
     let a = args();
     let stats = Arc::new(Stats::default());
     stats.per_viewer_frames.lock().unwrap().resize(a.viewers, 0);

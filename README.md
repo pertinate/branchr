@@ -50,6 +50,15 @@ Results for a single room on one SFU (8 workers, loopback, Ryzen desktop):
 | 10 viewers × 50 Mbps | 510 Mbps | 60 fps all viewers, 0 gaps | 8.2 / 31 ms | 0.5 core |
 | 300 viewers × 4 Mbps | 1.22 Gbps | 60 fps all viewers, 0 gaps | 4.3 / 7.3 ms | 2.2 cores |
 
+On a **2 vCPU / 4 GB VPS** (DigitalOcean Basic AMD), with viewers on the other side of the internet (the latency includes ~56 ms for the two internet legs from publisher to SFU to viewer):
+
+| Load | Egress | Delivered | Latency p50 / p99 | SFU CPU |
+|---|---|---|---|---|
+| 100 viewers × 4 Mbps | 412 Mbps | 60 fps all viewers, 0 gaps | 64 / 90–167 ms | ~1 vCPU |
+| 20 viewers × 20 Mbps | 408 Mbps | 60 fps all viewers, 0 gaps | 67 / 100–149 ms | 0.7 vCPU |
+
+On that VPS the gateway handles 5,000 concurrent sessions, and every message reaches all of them.
+
 Viewers of one room are spread across all worker cores. Outgoing packets go out through `sendmmsg`. The gateway fans a message out to 5,000 connected sessions with p99 under 80 ms (`node tests/load/gateway.mjs http://host:8080 5000`).
 
 ## Self-hosting
