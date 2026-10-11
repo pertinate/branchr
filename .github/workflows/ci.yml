@@ -70,7 +70,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo build -p api -p sfu
       - run: pnpm --filter e2e exec playwright install --with-deps chromium
-      - run: pnpm --filter e2e test app.spec attachments.spec
+      - run: pnpm --filter e2e test app.spec attachments.spec noise.spec
       - if: failure()
         uses: actions/upload-artifact@v4
         with:

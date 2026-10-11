@@ -31,6 +31,16 @@ Streams go through the SFU relay. The streamer **uploads each quality layer once
 | Stream audio on Linux | Chromium can't capture app audio on Linux. The desktop app uses [venmic](https://github.com/Vencord/venmic) to route one app (e.g. the game), or everything except the client itself, into a PipeWire virtual mic. |
 | Background throttling | Electron disables renderer backgrounding and timer throttling, so a minimized client keeps encoding. |
 
+**Noise suppression** is open source and runs on-device, like Krisp: [GTCRN](https://github.com/Xiaobin-Rong/gtcrn) runs in an AudioWorklet, through [web-noise-suppressor](https://github.com/sapphi-red/web-noise-suppressor), after the browser's echo cancellation. Measured on 48 kHz input (`tests/e2e/noise.spec.ts`, plus a speech/noise benchmark):
+
+| Mode | Steady hiss removed | Keyboard clicks removed | Speech level change | CPU |
+|---|---|---|---|---|
+| AI (GTCRN, default) | 22 dB | 53 dB | −0.1 dB | ~7% of a core |
+| Standard (browser) | 19 dB | 7 dB | −0.3 dB | ~0 |
+| RNNoise (not shipped) | 6.5 dB | 6 dB | 0 dB | ~3% |
+
+Muting suspends the model. **User Settings → Voice → Mic Test** plays your processed mic back so you can compare modes.
+
 Streams are opt-in ("Watch Stream"), so nobody downloads a stream they aren't watching. The **stats overlay** on a stream shows resolution, fps, bitrate, codec, encoder/decoder (HW or SW), jitter buffer, loss, current layer and the bandwidth estimate.
 
 ## Performance

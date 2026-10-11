@@ -33,6 +33,8 @@ test("desktop: switching channels and disconnect are stable", async () => {
     env: { ...process.env, APPIMAGE_EXTRACT_AND_RUN: "1", DISCORD_CLONE_FAKE_MEDIA: "1", DISCORD_CLONE_PROFILE: mkdtempSync(path.join(tmpdir(), "dc-voice-")) },
   });
   const win = await app.firstWindow();
+  const warnings: string[] = [];
+  win.on("console", (m) => m.type() === "warning" && warnings.push(m.text()));
   await win.getByRole("button", { name: "Register" }).click();
   await win.getByLabel("Username").fill(`dv_${Date.now().toString(36)}`);
   await win.getByLabel("Password").fill("correct horse battery");
@@ -43,6 +45,8 @@ test("desktop: switching channels and disconnect are stable", async () => {
 
   await win.getByRole("link", { name: "General", exact: true }).click();
   await expect(win.getByText("Voice Connected")).toBeVisible();
+  // The AI noise suppression model must load from file:// (no silent fallback).
+  expect(warnings.filter((w) => w.includes("noise suppression"))).toEqual([]);
 
   await win.getByRole("link", { name: "Streaming", exact: true }).click();
   const afterSwitch = await voiceTimeline(win, 6000);

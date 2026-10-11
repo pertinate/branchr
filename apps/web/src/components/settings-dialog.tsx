@@ -10,12 +10,14 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { MicTest } from "@/components/voice/mic-test";
 import { api } from "@/lib/api";
 import { desktop } from "@/lib/desktop";
 import { gateway } from "@/lib/gateway";
 import { useApp } from "@/stores/app";
 import { useAuth } from "@/stores/auth";
 import { useVoice, useVoiceSettings } from "@/stores/voice";
+import { type NoiseSuppression, noiseSuppressionModes } from "@/voice/mic";
 
 export function SettingsDialog({ onClose }: { onClose: () => void }) {
   return (
@@ -143,9 +145,27 @@ function VoiceSettings() {
           </SelectContent>
         </Select>
       </div>
+      <div className="space-y-2">
+        <Label>Noise suppression</Label>
+        <Select value={s.noiseSuppression} onValueChange={(v) => update({ noiseSuppression: v as NoiseSuppression })}>
+          <SelectTrigger className="w-full" aria-label="Noise suppression">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {noiseSuppressionModes.map((m) => (
+              <SelectItem key={m.value} value={m.value}>
+                {m.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          {noiseSuppressionModes.find((m) => m.value === s.noiseSuppression)?.hint} Runs on your device; nothing leaves it.
+        </p>
+      </div>
+      <MicTest />
       {(
         [
-          ["noiseSuppression", "Noise suppression"],
           ["echoCancellation", "Echo cancellation"],
           ["autoGainControl", "Automatic gain control"],
         ] as const

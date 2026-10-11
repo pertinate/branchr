@@ -6,6 +6,7 @@ import { desktop } from "@/lib/desktop";
 import { gateway } from "@/lib/gateway";
 import { useApp } from "@/stores/app";
 import { VoiceConnection } from "@/voice/connection";
+import { type Mic, type NoiseSuppression, openMic } from "@/voice/mic";
 import { type StreamSettings, cameraEncodings, defaultStreamSettings, layersFor, pickCodec } from "@/voice/presets";
 
 /** "connected" means media is flowing, not just that signaling succeeded. */
@@ -20,7 +21,7 @@ export interface Subscription {
 interface VoiceSettings {
   inputDeviceId: string | null;
   outputDeviceId: string | null;
-  noiseSuppression: boolean;
+  noiseSuppression: NoiseSuppression;
   echoCancellation: boolean;
   autoGainControl: boolean;
   stream: StreamSettings;
@@ -34,14 +35,23 @@ export const useVoiceSettings = create<VoiceSettings>()(
     (set) => ({
       inputDeviceId: null,
       outputDeviceId: null,
-      noiseSuppression: true,
+      noiseSuppression: "gtcrn",
       echoCancellation: true,
       autoGainControl: true,
       stream: defaultStreamSettings,
       userVolumes: {},
       setSettings: (p) => set(p),
     }),
-    { name: "voice-settings" },
+    {
+      name: "voice-settings",
+      version: 1,
+      // v0 stored noise suppression as an on/off switch.
+      migrate: (old, version) => {
+        const o = old as Record<string, unknown>;
+        if (version < 1) o.noiseSuppression = o.noiseSuppression === false ? "off" : "gtcrn";
+        return o as unknown as VoiceSettings;
+      },
+    },
   ),
 );
 
@@ -77,7 +87,7 @@ interface VoiceState {
 }
 
 let conn: VoiceConnection | null = null;
-let mic: MediaStreamTrack | null = null;
+let mic: Mic | null = null;
 let joinSeq = 0;
 let venmicActive = false;
 
@@ -136,21 +146,16 @@ export function mediaUnavailableReason(): string | null {
     : "Voice and streaming need HTTPS. Serve this instance over https:// or use the desktop app.";
 }
 
-async function getMic(): Promise<MediaStreamTrack | null> {
+async function getMic(): Promise<Mic | null> {
   if (mediaUnavailableReason()) return null;
   const s = useVoiceSettings.getState();
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        deviceId: s.inputDeviceId ? { exact: s.inputDeviceId } : undefined,
-        echoCancellation: s.echoCancellation,
-        noiseSuppression: s.noiseSuppression,
-        autoGainControl: s.autoGainControl,
-        channelCount: 1,
-        sampleRate: 48000,
-      },
+    return await openMic({
+      deviceId: s.inputDeviceId,
+      noiseSuppression: s.noiseSuppression,
+      echoCancellation: s.echoCancellation,
+      autoGainControl: s.autoGainControl,
     });
-    return stream.getAudioTracks()[0] ?? null;
   } catch (e) {
     console.warn("microphone unavailable", e);
     return null;
@@ -259,13 +264,13 @@ export const useVoice = create<VoiceState>()((set, get) => {
       const server = waitForVoiceServer(channelId);
       syncState();
       try {
-        const [vs, micTrack] = await Promise.all([server, getMic()]);
+        const [vs, opened] = await Promise.all([server, getMic()]);
         if (seq !== joinSeq) {
-          micTrack?.stop();
+          opened?.stop();
           return;
         }
-        mic = micTrack;
-        if (mic) mic.enabled = !get().muted && !get().deafened;
+        mic = opened;
+        mic?.setEnabled(!get().muted && !get().deafened);
         const c = await VoiceConnection.connect(vs.endpoint, vs.token, {
           trackAdded: onTrackAdded,
           trackRemoved: (id) => {
@@ -317,7 +322,7 @@ export const useVoice = create<VoiceState>()((set, get) => {
           return;
         }
         conn = c;
-        await c.start(mic);
+        await c.start(mic?.track ?? null);
         // Status flips to "connected" from the media callback once ICE/DTLS are up.
         set({ tracks: Object.fromEntries([...c.tracks].map(([k, v]) => [k, v])) });
         for (const t of c.tracks.values()) if (autoSubscribe(t)) void subscribe(t.id);
@@ -344,14 +349,14 @@ export const useVoice = create<VoiceState>()((set, get) => {
       // Unmuting while deafened undeafens too, like Discord.
       const deafened = muted ? get().deafened : false;
       set({ muted, deafened });
-      if (mic) mic.enabled = !muted && !deafened;
+      mic?.setEnabled(!muted && !deafened);
       syncState();
     },
 
     toggleDeafen: () => {
       const deafened = !get().deafened;
       set({ deafened });
-      if (mic) mic.enabled = !get().muted && !deafened;
+      mic?.setEnabled(!get().muted && !deafened);
       syncState();
     },
 
@@ -458,8 +463,9 @@ export const useVoice = create<VoiceState>()((set, get) => {
       if (!conn) return;
       const next = await getMic();
       if (!next) return;
-      next.enabled = !get().muted && !get().deafened;
-      await conn.replaceTrack("mic", next);
+      if (!conn) return next.stop();
+      next.setEnabled(!get().muted && !get().deafened);
+      await conn.replaceTrack("mic", next.track);
       mic?.stop();
       mic = next;
     },
