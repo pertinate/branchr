@@ -1,7 +1,8 @@
 import type { Attachment } from "@app/protocol";
 import { Download, FileIcon } from "lucide-react";
-import { memo } from "react";
+import { memo, useState } from "react";
 
+import { ImageViewer } from "@/components/chat/image-viewer";
 import { attachmentUrl, formatBytes } from "@/lib/upload";
 
 const MAX_W = 400;
@@ -14,19 +15,31 @@ function fit(a: Attachment) {
   return { width: Math.round(a.width * scale), height: Math.round(a.height * scale) };
 }
 
+const isImage = (a: Attachment) => /^image\/(png|jpeg|gif|webp|avif)$/.test(a.contentType);
+
 export const Attachments = memo(function Attachments({ items }: { items: Attachment[] }) {
+  const [viewing, setViewing] = useState<number | null>(null);
   if (!items.length) return null;
+  const images = items.filter(isImage);
   return (
     <div className="mt-1 flex flex-col items-start gap-1">
+      <ImageViewer images={images} index={viewing} onIndex={setViewing} onClose={() => setViewing(null)} />
       {items.map((a) => {
         const url = attachmentUrl(a.url);
         const type = a.contentType;
-        if (/^image\/(png|jpeg|gif|webp|avif)$/.test(type)) {
+        if (isImage(a)) {
           const s = fit(a);
           return (
-            <a key={a.id} href={url} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-md bg-muted" style={s}>
+            <button
+              key={a.id}
+              type="button"
+              onClick={() => setViewing(images.indexOf(a))}
+              aria-label={`View ${a.filename}`}
+              className="block cursor-zoom-in overflow-hidden rounded-md bg-muted"
+              style={s}
+            >
               <img src={url} alt={a.filename} loading="lazy" decoding="async" width={s.width} height={s.height} className="size-full object-contain" />
-            </a>
+            </button>
           );
         }
         if (type.startsWith("video/")) {

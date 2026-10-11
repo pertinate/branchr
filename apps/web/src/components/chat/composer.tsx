@@ -1,6 +1,7 @@
 import type { Attachment, Emote } from "@app/protocol";
 import { FileIcon, Paperclip, Smile, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 
 import { EmojiPicker } from "@/components/chat/emoji-picker";
@@ -49,7 +50,12 @@ export function Composer({ channelId, guildId, replyTo, clearReply }: { channelI
     for (const up of added) {
       uploadAttachment(channelId, up.file, (p) => setUploads((u) => u.map((x) => (x.key === up.key ? { ...x, progress: p } : x))), up.abort.signal)
         .then((attachment) => setUploads((u) => u.map((x) => (x.key === up.key ? { ...x, attachment, progress: 1 } : x))))
-        .catch((e: Error) => setUploads((u) => u.map((x) => (x.key === up.key ? { ...x, error: e.message } : x))));
+        .catch((e: Error) => {
+          if (up.abort.signal.aborted) return;
+          const error = e.message || "upload failed";
+          toast.error(`Couldn't upload ${up.file.name}`, { description: error });
+          setUploads((u) => u.map((x) => (x.key === up.key ? { ...x, error } : x)));
+        });
     }
   };
 

@@ -32,7 +32,7 @@ export default defineConfig({
       url: "http://localhost:8080/api/health",
       reuseExistingServer: true,
       timeout: 300_000,
-      env: { DATABASE_URL: `sqlite://${SCRATCH}/db.sqlite`, API_BIND: "127.0.0.1:8080", SFU_URLS: "ws://127.0.0.1:8090/ws" },
+      env: { DATABASE_URL: `sqlite://${SCRATCH}/db.sqlite`, API_BIND: "127.0.0.1:8080", SFU_URLS: "ws://127.0.0.1:8090/ws", MAX_UPLOAD_MB: "1" },
     },
     {
       command: `cargo run -q -p sfu`,

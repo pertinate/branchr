@@ -58,6 +58,12 @@ pub async fn upload(
         .to_ascii_lowercase();
     let dim = |k| header_str(&headers, k).and_then(|v| v.parse::<u32>().ok()).filter(|v| *v > 0 && *v <= 16384);
     let (width, height) = (dim("x-width"), dim("x-height"));
+    // Refuse before reading anything: bailing mid-stream leaves the client sending into a
+    // closed socket (and a proxy reporting 502) instead of seeing this error.
+    let too_large = || AppError::PayloadTooLarge(format!("file is larger than {} MB", state.config.max_upload_bytes / 1024 / 1024));
+    if header_str(&headers, header::CONTENT_LENGTH.as_str()).and_then(|v| v.parse::<u64>().ok()).is_some_and(|n| n > state.config.max_upload_bytes) {
+        return Err(too_large());
+    }
 
     let id = state.ids.next();
     let mut token = [0u8; 16];
@@ -74,7 +80,7 @@ pub async fn upload(
             let chunk = chunk.map_err(|e| bad(format!("upload interrupted: {e}")))?;
             size += chunk.len() as u64;
             if size > state.config.max_upload_bytes {
-                return Err(AppError::BadRequest(format!("file is larger than {} MB", state.config.max_upload_bytes / 1024 / 1024)));
+                return Err(too_large());
             }
             file.write_all(&chunk).await.map_err(|e| AppError::Internal(e.into()))?;
         }

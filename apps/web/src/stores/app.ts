@@ -35,6 +35,8 @@ interface AppState {
   voiceServer: VoiceServer | null;
   /** channel id -> last message id we've seen */
   lastRead: Record<string, string>;
+  /** Largest attachment the server accepts. */
+  maxUploadBytes: number;
   setConnection: (c: ConnectionState) => void;
   markRead: (channelId: string) => void;
   apply: (ev: ServerEvent) => void;
@@ -109,6 +111,7 @@ export const useApp = create<AppState>()((set, get) => ({
   typing: {},
   voiceServer: null,
   lastRead: loadLastRead(),
+  maxUploadBytes: Infinity,
   setConnection: (connection) => set({ connection }),
   markRead: (channelId) => {
     const last = get().channels[channelId]?.lastMessageId;
@@ -123,6 +126,7 @@ export const useApp = create<AppState>()((set, get) => ({
         const base: AppState = {
           ...get(),
           me: ev.d.user,
+          maxUploadBytes: ev.d.maxUploadBytes,
           guildOrder: [],
           guilds: {},
           channels: {},

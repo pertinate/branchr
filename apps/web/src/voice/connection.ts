@@ -1,4 +1,5 @@
 import type { LayerPref, TrackInfo, TrackSource, VoiceClientMsg, VoiceServerMsg } from "@app/protocol";
+import { toast } from "sonner";
 
 export interface PublishLayer {
   name: "h" | "m" | "l";
@@ -128,7 +129,10 @@ export class VoiceConnection {
       }
       case "error":
         console.warn("[voice]", msg.message);
-        if (msg.message.startsWith("replaced")) this.close(msg.message);
+        if (msg.message.startsWith("replaced")) {
+          toast.info("Voice moved to another window", { description: "You joined from somewhere else." });
+          this.close(msg.message);
+        } else toast.error("Voice error", { description: msg.message });
         return;
       case "joined":
       case "pong":

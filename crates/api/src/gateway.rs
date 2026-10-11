@@ -73,7 +73,7 @@ async fn run(mut ws: WebSocket, state: AppState) -> anyhow::Result<()> {
 
     let me = db::user(&state.db, user).await?;
     let guilds = try_join_all(guild_ids.iter().map(|g| ready_guild(&state, *g))).await?;
-    send(&mut ws, &ServerEvent::Ready(Ready { user: me, session_id: key.to_string(), guilds })).await?;
+    send(&mut ws, &ServerEvent::Ready(Ready { user: me, session_id: key.to_string(), guilds, max_upload_bytes: state.config.max_upload_bytes })).await?;
 
     if first {
         broadcast_presence(&state, user, Status::Online, &guild_ids);

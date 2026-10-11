@@ -47,7 +47,7 @@ impl Config {
                 let path = db.trim_start_matches("sqlite://").to_string();
                 std::path::Path::new(&path).parent().map(|p| p.join("uploads")).unwrap_or_else(|| "uploads".into())
             }),
-            max_upload_bytes: var("MAX_UPLOAD_MB").map(|v| v.parse::<u64>()).transpose()?.unwrap_or(100) * 1024 * 1024,
+            max_upload_bytes: var("MAX_UPLOAD_MB").map(|v| v.parse::<u64>()).transpose()?.unwrap_or(500) * 1024 * 1024,
         })
     }
 }

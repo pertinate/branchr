@@ -2,4 +2,8 @@
 import type { ReadyGuild } from "./ReadyGuild";
 import type { User } from "./User";
 
-export type Ready = { user: User, sessionId: string, guilds: Array<ReadyGuild>, };
+export type Ready = { user: User, sessionId: string, guilds: Array<ReadyGuild>, 
+/**
+ * Largest attachment this server accepts, so clients can refuse up front.
+ */
+maxUploadBytes: number, };

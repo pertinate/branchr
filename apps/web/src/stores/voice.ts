@@ -1,4 +1,5 @@
 import type { LayerPref, TrackInfo, VoiceServer } from "@app/protocol";
+import { toast } from "sonner";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
@@ -150,14 +151,17 @@ async function getMic(): Promise<Mic | null> {
   if (mediaUnavailableReason()) return null;
   const s = useVoiceSettings.getState();
   try {
-    return await openMic({
+    const mic = await openMic({
       deviceId: s.inputDeviceId,
       noiseSuppression: s.noiseSuppression,
       echoCancellation: s.echoCancellation,
       autoGainControl: s.autoGainControl,
     });
+    if (mic.mode !== s.noiseSuppression) toast.warning("AI noise suppression couldn't load", { description: "Using the standard suppressor instead." });
+    return mic;
   } catch (e) {
     console.warn("microphone unavailable", e);
+    toast.error("Microphone unavailable", { description: `${(e as Error).message}. You can still listen.` });
     return null;
   }
 }
@@ -331,6 +335,7 @@ export const useVoice = create<VoiceState>()((set, get) => {
         cleanup();
         gateway.send({ op: "voice_state_update", d: { guildId, channelId: null, selfMute: false, selfDeaf: false, selfVideo: false, selfStream: false } });
         set({ status: "disconnected", guildId: null, channelId: null, error: (e as Error).message });
+        toast.error("Couldn't join voice", { description: (e as Error).message });
       }
     },
 

@@ -108,6 +108,8 @@ Configuration is all through the environment:
 | `SFU_URLS` | api | `ws://localhost:8090/ws` | Comma-separated. Channels are spread across SFUs by hash. |
 | `WEB_DIR` | api | unset | Serve the web client (set in the Docker image). |
 | `OPEN_REGISTRATION` | api | `true` | |
+| `UPLOAD_DIR` | api | `uploads/` next to the database | Where attachments are stored (local disk for now; S3-compatible storage such as RustFS is planned). |
+| `MAX_UPLOAD_MB` | api | `500` | Largest attachment. Sent to clients, which refuse bigger files up front. |
 | `SFU_PUBLIC_IP` | sfu | autodetected | IP put in ICE candidates. |
 | `SFU_UDP_PORT` / `SFU_WORKERS` | sfu | `50000` / #cores | Worker *i* uses `SFU_UDP_PORT + i`. |
 | `SFU_INITIAL_BWE` | sfu | `5000000` | Starting per-viewer estimate (bps). |

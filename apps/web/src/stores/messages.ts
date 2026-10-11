@@ -1,4 +1,5 @@
 import type { Attachment, Emote, Message, ReactionEvent } from "@app/protocol";
+import { toast } from "sonner";
 import { create } from "zustand";
 
 import { api } from "@/lib/api";
@@ -76,7 +77,8 @@ export const useMessages = create<MessagesState>()((set, get) => {
         attachmentIds: attachments.map((a) => a.id),
       });
       get().onCreate({ ...m, nonce: n });
-    } catch {
+    } catch (e) {
+      toast.error("Message not sent", { description: `${(e as Error).message}. Click it to retry.` });
       patch(channelId, (c) => ({
         ...c,
         items: c.items.map((x) => (x.nonce === n ? { ...x, failed: true, pending: false } : x)),

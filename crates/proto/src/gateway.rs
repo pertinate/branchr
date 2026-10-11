@@ -92,6 +92,9 @@ pub struct Ready {
     pub user: User,
     pub session_id: String,
     pub guilds: Vec<ReadyGuild>,
+    /// Largest attachment this server accepts, so clients can refuse up front.
+    #[cfg_attr(feature = "ts", ts(type = "number"))]
+    pub max_upload_bytes: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
