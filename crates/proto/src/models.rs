@@ -88,12 +88,13 @@ wire! {
         pub me: bool,
     }
 
-    /// A 7TV emote added to a guild.
+    /// A third-party emote (7TV, BetterTTV, FrankerFaceZ) added to a guild.
+    /// Images are loaded from the provider's CDN using `providerId`.
     pub struct Emote {
         pub id: Id,
         pub guild_id: Id,
         pub name: String,
-        /// 7TV emote id; CDN url is `https://cdn.7tv.app/emote/{providerId}/{1x|2x|3x|4x}.webp`.
+        pub provider: EmoteProvider,
         pub provider_id: String,
         pub animated: bool,
         pub width: u32,
@@ -122,14 +123,22 @@ wire! {
         pub status: Status,
     }
 
-    /// A 7TV search hit (not yet added to a guild).
-    pub struct SevenTvEmote {
+    /// An emote found on a provider (not yet added to a guild).
+    pub struct ExternalEmote {
+        pub provider: EmoteProvider,
         pub id: String,
         pub name: String,
         pub animated: bool,
         pub width: u32,
         pub height: u32,
         pub owner: Option<String>,
+    }
+
+    /// Result of importing a set or channel: what was added, out of how many found
+    /// (the rest had invalid or already-used names, or hit the emote limit).
+    pub struct EmoteImport {
+        pub added: Vec<Emote>,
+        pub found: u32,
     }
 
     pub struct AuthResponse {
@@ -174,6 +183,32 @@ impl ChannelKind {
             "category" => Self::Category,
             _ => return None,
         })
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub enum EmoteProvider {
+    #[serde(rename = "7tv")]
+    SevenTv,
+    #[serde(rename = "bttv")]
+    Bttv,
+    #[serde(rename = "ffz")]
+    Ffz,
+}
+
+impl EmoteProvider {
+    pub const ALL: [Self; 3] = [Self::SevenTv, Self::Bttv, Self::Ffz];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::SevenTv => "7tv",
+            Self::Bttv => "bttv",
+            Self::Ffz => "ffz",
+        }
+    }
+    pub fn parse(s: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|p| p.as_str() == s)
     }
 }
 

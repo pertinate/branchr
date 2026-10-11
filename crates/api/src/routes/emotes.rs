@@ -8,6 +8,7 @@ use serde::Deserialize;
 use super::{require_member, require_owner};
 use crate::auth::Auth;
 use crate::db;
+use crate::emote_providers::{Link, ProviderError, parse_link};
 use crate::error::{AppError, AppResult, bad};
 use crate::state::AppState;
 
@@ -16,6 +17,7 @@ const MAX_EMOTES: i64 = 1000;
 #[derive(Deserialize)]
 pub struct SearchQuery {
     q: String,
+    provider: Option<String>,
     limit: Option<u32>,
 }
 
@@ -23,12 +25,16 @@ pub async fn search(
     State(state): State<AppState>,
     Auth(_): Auth,
     Query(q): Query<SearchQuery>,
-) -> AppResult<Json<Vec<SevenTvEmote>>> {
+) -> AppResult<Json<Vec<ExternalEmote>>> {
     let query = q.q.trim();
     if query.is_empty() || query.len() > 100 {
         return Ok(Json(vec![]));
     }
-    let res = state.seventv.search(query, q.limit.unwrap_or(48).clamp(1, 100)).await?;
+    let provider = match q.provider.as_deref() {
+        None => EmoteProvider::SevenTv,
+        Some(p) => EmoteProvider::parse(p).ok_or_else(|| bad("unknown emote provider"))?,
+    };
+    let res = state.emotes.search(provider, query, q.limit.unwrap_or(48).clamp(1, 100)).await?;
     Ok(Json((*res).clone()))
 }
 
@@ -36,18 +42,19 @@ fn valid_name(n: &str) -> bool {
     (1..=64).contains(&n.len()) && n.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '!' || c == '?')
 }
 
-async fn insert(state: &AppState, gid: Id, e: SevenTvEmote) -> AppResult<Option<Emote>> {
+async fn insert(state: &AppState, gid: Id, e: &ExternalEmote) -> AppResult<Option<Emote>> {
     if !valid_name(&e.name) {
         return Ok(None);
     }
     let id = state.ids.next();
     let r = sqlx::query(
-        "INSERT OR IGNORE INTO emotes (id, guild_id, name, provider_id, animated, width, height)
-         SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7 WHERE (SELECT COUNT(*) FROM emotes WHERE guild_id = ?2) < ?8",
+        "INSERT OR IGNORE INTO emotes (id, guild_id, name, provider, provider_id, animated, width, height)
+         SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8 WHERE (SELECT COUNT(*) FROM emotes WHERE guild_id = ?2) < ?9",
     )
     .bind(id.0)
     .bind(gid.0)
     .bind(&e.name)
+    .bind(e.provider.as_str())
     .bind(&e.id)
     .bind(e.animated)
     .bind(e.width as i64)
@@ -63,10 +70,13 @@ async fn insert(state: &AppState, gid: Id, e: SevenTvEmote) -> AppResult<Option<
     Ok(Some(emote))
 }
 
+/// Add one emote, by provider + id or by a link to it on any supported site.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AddEmote {
-    provider_id: String,
+    provider: Option<EmoteProvider>,
+    provider_id: Option<String>,
+    url: Option<String>,
     name: Option<String>,
 }
 
@@ -77,14 +87,21 @@ pub async fn add(
     Json(body): Json<AddEmote>,
 ) -> AppResult<Json<Emote>> {
     require_member(&state, gid, user).await?;
-    let mut e = state.seventv.emote(&body.provider_id).await.map_err(|_| AppError::NotFound)?;
-    if let Some(name) = body.name {
-        e.name = name.trim().to_string();
-    }
+    let (provider, provider_id) = match (body.url.as_deref(), body.provider_id) {
+        (Some(url), _) => match parse_link(url) {
+            Some(Link::Emote(p, id)) => (p, id),
+            Some(_) => return Err(bad("that link is a set or channel; use Import instead")),
+            None => return Err(bad("not a 7TV, BetterTTV or FrankerFaceZ emote link")),
+        },
+        (None, Some(id)) => (body.provider.unwrap_or(EmoteProvider::SevenTv), id),
+        (None, None) => return Err(bad("providerId or url is required")),
+    };
+    let name = body.name.as_deref().map(str::trim).filter(|n| !n.is_empty());
+    let e = state.emotes.emote(provider, &provider_id, name).await?;
     if !valid_name(&e.name) {
         return Err(bad("emote names may contain letters, numbers, _ - ! ?"));
     }
-    insert(&state, gid, e)
+    insert(&state, gid, &e)
         .await?
         .map(Json)
         .ok_or_else(|| AppError::Conflict("an emote with that name exists, or the emote limit was reached".into()))
@@ -93,27 +110,58 @@ pub async fn add(
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportSet {
-    set_id: String,
+    /// A 7TV set/user link or id, an FFZ channel link, a Twitch channel link or name.
+    #[serde(alias = "setId")]
+    source: String,
+    /// For Twitch channels: which providers to pull from (default: all).
+    providers: Option<Vec<EmoteProvider>>,
 }
 
-/// Imports a whole 7TV emote set, skipping names that already exist.
+/// Imports a whole emote set or a Twitch channel's emotes, skipping names that already
+/// exist. For channels, earlier providers win name clashes (7TV, then BTTV, then FFZ).
 pub async fn import_set(
     State(state): State<AppState>,
     Auth(user): Auth,
     Path(gid): Path<Id>,
     Json(body): Json<ImportSet>,
-) -> AppResult<Json<Vec<Emote>>> {
+) -> AppResult<Json<EmoteImport>> {
     require_owner(&state, gid, user).await?;
-    // Accept a bare id or a 7tv.app url.
-    let set_id = body.set_id.trim().trim_end_matches('/').rsplit('/').next().unwrap_or_default().to_string();
-    let emotes = state.seventv.emote_set(&set_id).await.map_err(|_| AppError::NotFound)?;
+    let p = &state.emotes;
+    let lists = match parse_link(&body.source) {
+        Some(Link::SevenTvSet(id)) => vec![p.seventv_set(&id).await?],
+        Some(Link::SevenTvUser(id)) => vec![p.seventv_user(&id).await?],
+        Some(Link::FfzChannel(login)) => vec![p.twitch_channel(EmoteProvider::Ffz, &login).await?],
+        Some(Link::Twitch(login)) => {
+            let want = body.providers.unwrap_or(EmoteProvider::ALL.to_vec());
+            let fetches = EmoteProvider::ALL.into_iter().filter(|p| want.contains(p)).map(|pr| p.twitch_channel(pr, &login));
+            let mut lists = Vec::new();
+            for r in futures::future::join_all(fetches).await {
+                match r {
+                    Ok(l) => lists.push(l),
+                    // Channel unknown to this provider.
+                    Err(ProviderError::NotFound) => {}
+                    Err(e) => return Err(e.into()),
+                }
+            }
+            lists
+        }
+        Some(Link::BttvUser(_)) => {
+            return Err(bad("BetterTTV user pages can't be read publicly; enter the user's Twitch channel instead"));
+        }
+        Some(Link::Emote(..)) => return Err(bad("that's a single emote; use Add instead")),
+        None => return Err(bad("enter an emote set link, or a Twitch channel name")),
+    };
+    let found: usize = lists.iter().map(|l| l.len()).sum();
+    if found == 0 {
+        return Err(AppError::NotFound);
+    }
     let mut added = Vec::new();
-    for e in emotes {
+    for e in lists.iter().flat_map(|l| l.iter()) {
         if let Some(e) = insert(&state, gid, e).await? {
             added.push(e);
         }
     }
-    Ok(Json(added))
+    Ok(Json(EmoteImport { added, found: found as u32 }))
 }
 
 pub async fn remove(

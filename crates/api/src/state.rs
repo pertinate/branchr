@@ -8,7 +8,7 @@ use sqlx::SqlitePool;
 use crate::config::Config;
 use crate::hub::Hub;
 use crate::ratelimit::RateLimiter;
-use crate::seventv::SevenTv;
+use crate::emote_providers::EmoteProviders;
 
 pub type AppState = Arc<State>;
 
@@ -17,7 +17,7 @@ pub struct State {
     pub hub: Hub,
     pub config: Config,
     pub ids: IdGen,
-    pub seventv: SevenTv,
+    pub emotes: EmoteProviders,
     /// sha256(token) -> user id. Sessions are immutable so this never goes stale except on logout.
     pub sessions: DashMap<[u8; 32], Id>,
     /// channel id -> guild id, channels never move between guilds.

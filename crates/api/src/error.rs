@@ -11,6 +11,7 @@ pub enum AppError {
     NotFound,
     Conflict(String),
     TooManyRequests,
+    BadGateway(String),
     Internal(anyhow::Error),
 }
 
@@ -25,6 +26,7 @@ impl IntoResponse for AppError {
             AppError::NotFound => (StatusCode::NOT_FOUND, "not found".into()),
             AppError::Conflict(m) => (StatusCode::CONFLICT, m),
             AppError::TooManyRequests => (StatusCode::TOO_MANY_REQUESTS, "slow down".into()),
+            AppError::BadGateway(m) => (StatusCode::BAD_GATEWAY, m),
             AppError::Internal(e) => {
                 tracing::error!("internal error: {e:#}");
                 (StatusCode::INTERNAL_SERVER_ERROR, "internal error".into())
@@ -51,4 +53,18 @@ impl From<anyhow::Error> for AppError {
 
 pub fn bad(msg: impl Into<String>) -> AppError {
     AppError::BadRequest(msg.into())
+}
+
+impl From<crate::emote_providers::ProviderError> for AppError {
+    fn from(e: crate::emote_providers::ProviderError) -> Self {
+        use crate::emote_providers::ProviderError as E;
+        match e {
+            E::NotFound => AppError::NotFound,
+            E::Unsupported(m) => AppError::BadRequest(m.into()),
+            e @ (E::Upstream(_) | E::Other(_)) => {
+                tracing::warn!("{e}");
+                AppError::BadGateway(e.to_string())
+            }
+        }
+    }
 }

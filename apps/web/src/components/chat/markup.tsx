@@ -1,7 +1,7 @@
 import type { Emote } from "@app/protocol";
 import { Fragment, type ReactNode, memo } from "react";
 
-import { emoteSrcSet, emoteUrl } from "@/lib/emotes";
+import { emoteSource, emoteSrcSet, emoteUrl } from "@/lib/emotes";
 
 /**
  * Discord-flavoured markdown subset: ```code blocks```, `inline code`, **bold**, *italic*,
@@ -20,8 +20,8 @@ export function EmoteImage({ emote, size, className }: { emote: Emote; size: num
   const width = Math.round((emote.width / emote.height) * size);
   return (
     <img
-      src={emoteUrl(emote.providerId, 1)}
-      srcSet={emoteSrcSet(emote.providerId)}
+      src={emoteUrl(emoteSource(emote), 1)}
+      srcSet={emoteSrcSet(emoteSource(emote))}
       alt={emote.name}
       title={emote.name}
       draggable={false}

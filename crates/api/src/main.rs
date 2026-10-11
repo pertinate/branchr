@@ -1,12 +1,12 @@
 mod auth;
 mod config;
 mod db;
+mod emote_providers;
 mod error;
 mod gateway;
 mod hub;
 mod ratelimit;
 mod routes;
-mod seventv;
 mod state;
 
 use std::sync::Arc;
@@ -42,7 +42,7 @@ async fn main() -> anyhow::Result<()> {
         db,
         hub: Default::default(),
         ids: IdGen::new(worker),
-        seventv: seventv::SevenTv::new(),
+        emotes: emote_providers::EmoteProviders::new(),
         sessions: DashMap::new(),
         channel_guild: DashMap::new(),
         message_limiter: ratelimit::RateLimiter::new(10, 5.0),

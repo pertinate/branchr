@@ -181,7 +181,12 @@ export const useApp = create<AppState>()((set, get) => ({
         set((s) => ({ presences: { ...s.presences, [ev.d.userId]: ev.d.status } }));
         return;
       case "EMOTE_CREATE":
-        set((s) => ({ emotes: { ...s.emotes, [ev.d.guildId]: [...(s.emotes[ev.d.guildId] ?? []), ev.d] } }));
+        set((s) => {
+          const list = s.emotes[ev.d.guildId] ?? [];
+          // Applied locally after an add and again when the gateway echoes it.
+          if (list.some((e) => e.id === ev.d.id)) return s;
+          return { emotes: { ...s.emotes, [ev.d.guildId]: [...list, ev.d] } };
+        });
         return;
       case "EMOTE_DELETE":
         set((s) => ({

@@ -108,6 +108,7 @@ struct EmoteRow {
     id: i64,
     guild_id: i64,
     name: String,
+    provider: String,
     provider_id: String,
     animated: bool,
     width: i64,
@@ -120,6 +121,7 @@ impl From<EmoteRow> for Emote {
             id: Id(r.id),
             guild_id: Id(r.guild_id),
             name: r.name,
+            provider: EmoteProvider::parse(&r.provider).unwrap_or(EmoteProvider::SevenTv),
             provider_id: r.provider_id,
             animated: r.animated,
             width: r.width as u32,
@@ -222,7 +224,7 @@ pub async fn member(db: &SqlitePool, guild: Id, user: Id) -> sqlx::Result<Member
 
 pub async fn emotes(db: &SqlitePool, guild: Id) -> sqlx::Result<Vec<Emote>> {
     let rows = sqlx::query_as::<_, EmoteRow>(
-        "SELECT id, guild_id, name, provider_id, animated, width, height FROM emotes WHERE guild_id = ? ORDER BY name",
+        "SELECT id, guild_id, name, provider, provider_id, animated, width, height FROM emotes WHERE guild_id = ? ORDER BY name",
     )
     .bind(guild.0)
     .fetch_all(db)
@@ -232,7 +234,7 @@ pub async fn emotes(db: &SqlitePool, guild: Id) -> sqlx::Result<Vec<Emote>> {
 
 pub async fn emote(db: &SqlitePool, id: Id) -> sqlx::Result<Emote> {
     sqlx::query_as::<_, EmoteRow>(
-        "SELECT id, guild_id, name, provider_id, animated, width, height FROM emotes WHERE id = ?",
+        "SELECT id, guild_id, name, provider, provider_id, animated, width, height FROM emotes WHERE id = ?",
     )
     .bind(id.0)
     .fetch_one(db)
