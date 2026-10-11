@@ -188,6 +188,11 @@ export const useApp = create<AppState>()((set, get) => ({
           return { emotes: { ...s.emotes, [ev.d.guildId]: [...list, ev.d] } };
         });
         return;
+      case "EMOTE_UPDATE":
+        set((s) => ({
+          emotes: { ...s.emotes, [ev.d.guildId]: (s.emotes[ev.d.guildId] ?? []).map((e) => (e.id === ev.d.id ? ev.d : e)) },
+        }));
+        return;
       case "EMOTE_DELETE":
         set((s) => ({
           emotes: { ...s.emotes, [ev.d.guildId]: (s.emotes[ev.d.guildId] ?? []).filter((e) => e.id !== ev.d.id) },

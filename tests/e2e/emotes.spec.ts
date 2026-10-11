@@ -102,3 +102,45 @@ test("emotes: usable across servers, with source shown and no forging", async ({
   await reaction.click();
   await expect(alice.locator("button", { has: alice.locator('img[alt="OMEGALUL"]') }).filter({ hasText: "2" })).toBeVisible();
 });
+
+test("emotes: name clashes prompt for a new name; owners can rename", async ({ browser }) => {
+  const alice = await register(browser, "rn_a");
+  const code = await createServer(alice, "Rename Test");
+  const bob = await register(browser, "rn_b");
+  await joinServer(bob, code);
+  await alice.getByRole("button", { name: "Rename Test" }).click();
+  await alice.getByRole("menuitem", { name: "Emotes" }).click();
+  const serverEmotes = alice.getByTestId("server-emotes");
+
+  await alice.getByLabel("Emote link").fill("https://www.frankerfacez.com/emoticon/128054-OMEGALUL");
+  await alice.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(serverEmotes.locator('img[alt="OMEGALUL"]')).toHaveCount(1);
+
+  // A different emote with the same name: asked for another name instead of failing.
+  await alice.getByPlaceholder("Search 7TV emotes…").fill("OMEGALUL");
+  await alice.getByTestId("emote-results").locator("button", { hasText: /^OMEGALUL$/ }).first().click();
+  const newName = alice.getByLabel("New emote name");
+  await expect(newName).toHaveValue("OMEGALUL2");
+  await newName.fill("OMEGA7");
+  await newName.press("Enter");
+  await expect(serverEmotes.locator('img[alt="OMEGA7"]')).toHaveCount(1);
+  await expect(newName).toBeHidden();
+
+  // Inline rename, seen live by other members.
+  await serverEmotes.getByRole("button", { name: "OMEGA7", exact: true }).click();
+  const rename = alice.getByLabel("Rename OMEGA7");
+  await rename.fill("SevenLUL");
+  await rename.press("Enter");
+  await expect(serverEmotes.locator('img[alt="SevenLUL"]')).toHaveCount(1);
+  // Renaming onto a taken name is refused and reverts.
+  await serverEmotes.getByRole("button", { name: "SevenLUL", exact: true }).click();
+  await alice.getByLabel("Rename SevenLUL").fill("OMEGALUL");
+  await alice.getByLabel("Rename SevenLUL").press("Enter");
+  await expect(alice.getByText("an emote named OMEGALUL already exists")).toBeVisible();
+  await expect(serverEmotes.locator('img[alt="SevenLUL"]')).toHaveCount(1);
+  await alice.keyboard.press("Escape");
+
+  await bob.getByPlaceholder("Message #general").fill("SevenLUL");
+  await bob.keyboard.press("Enter");
+  await expect(alice.locator('img[alt="SevenLUL"]').last()).toBeVisible();
+});

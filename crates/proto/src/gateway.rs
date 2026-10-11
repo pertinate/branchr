@@ -63,6 +63,8 @@ pub enum ServerEvent {
     ReactionRemove(ReactionEvent),
 
     EmoteCreate(Emote),
+    /// Renamed by the guild (third-party emotes keep their image, the name is local).
+    EmoteUpdate(Emote),
     EmoteDelete(EmoteRef),
 
     TypingStart(TypingStart),

@@ -62,7 +62,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/guilds/{gid}/invites", post(guilds::create_invite))
         .route("/guilds/{gid}/emotes", post(emotes::add))
         .route("/guilds/{gid}/emotes/import", post(emotes::import_set))
-        .route("/guilds/{gid}/emotes/{eid}", delete(emotes::remove))
+        .route("/guilds/{gid}/emotes/{eid}", patch(emotes::rename).delete(emotes::remove))
         .route("/invites/{code}", get(guilds::get_invite).post(guilds::accept_invite))
         .route("/channels/{cid}", patch(channels::patch).delete(channels::delete))
         .route("/channels/{cid}/messages", get(messages::list).post(messages::create))

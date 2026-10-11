@@ -1,6 +1,6 @@
 import type { Emote, EmoteImport, EmoteProvider, ExternalEmote, Guild } from "@app/protocol";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
@@ -88,6 +88,7 @@ function Emotes({ guildId, isOwner }: { guildId: string; isOwner: boolean }) {
   const [from, setFrom] = useState<EmoteProvider[]>(["7tv", "bttv", "ffz"]);
   const [busy, setBusy] = useState<"link" | "import" | null>(null);
   const [filter, setFilter] = useState("");
+  const [clash, setClash] = useState<{ emote: ExternalEmote; name: string } | null>(null);
   const q = useDebounced(query.trim(), 300);
   const search = useQuery({
     queryKey: ["emote-search", provider, q],
@@ -103,11 +104,14 @@ function Emotes({ guildId, isOwner }: { guildId: string; isOwner: boolean }) {
     toast.success(`Added ${emote.name}`);
   };
 
-  const add = async (e: ExternalEmote) => {
+  const add = async (e: ExternalEmote, name?: string) => {
     try {
-      added(await api<Emote>("POST", `/guilds/${guildId}/emotes`, { provider: e.provider, providerId: e.id }));
+      added(await api<Emote>("POST", `/guilds/${guildId}/emotes`, { provider: e.provider, providerId: e.id, name }));
+      setClash(null);
     } catch (err) {
-      toast.error((err as Error).message);
+      // Name taken: ask for another one instead of failing.
+      if (emotes.some((x) => x.name === (name ?? e.name))) setClash({ emote: e, name: `${name ?? e.name}2` });
+      else toast.error((err as Error).message);
     }
   };
 
@@ -192,6 +196,31 @@ function Emotes({ guildId, isOwner }: { guildId: string; isOwner: boolean }) {
             </p>
           )}
         </div>
+        {clash && (
+          <form
+            className="flex items-center gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 p-2 text-xs"
+            onSubmit={(ev) => {
+              ev.preventDefault();
+              void add(clash.emote, clash.name.trim());
+            }}
+          >
+            <EmoteImg source={clash.emote} name={clash.emote.name} size={24} />
+            <span className="shrink-0">{clash.emote.name} is taken. Add as</span>
+            <Input
+              autoFocus
+              className="h-7 text-xs"
+              value={clash.name}
+              onChange={(ev) => setClash({ ...clash, name: ev.target.value })}
+              aria-label="New emote name"
+            />
+            <Button size="sm" type="submit" disabled={!clash.name.trim()}>
+              Add
+            </Button>
+            <Button size="sm" variant="ghost" type="button" onClick={() => setClash(null)}>
+              Cancel
+            </Button>
+          </form>
+        )}
         <div className="flex gap-2">
           <Input placeholder="Emote link (7TV, BetterTTV, FFZ)" value={link} onChange={(e) => setLink(e.target.value)} aria-label="Emote link" />
           <Input
@@ -239,7 +268,7 @@ function Emotes({ guildId, isOwner }: { guildId: string; isOwner: boolean }) {
           {shown.map((e) => (
             <div key={e.id} className="group relative flex flex-col items-center gap-1 rounded p-2 hover:bg-accent" title={`${e.name} · ${providerNames[e.provider]}`}>
               <EmoteImg source={emoteSource(e)} name={e.name} />
-              <span className="w-full truncate text-center text-[11px] text-muted-foreground">{e.name}</span>
+              <EmoteName emote={e} guildId={guildId} canEdit={isOwner} />
               <span className="absolute top-1 left-1 text-[9px] font-semibold text-muted-foreground uppercase opacity-0 group-hover:opacity-100">{e.provider}</span>
               {isOwner && (
                 <button onClick={() => remove(e)} aria-label={`Remove ${e.name}`} className="absolute top-1 right-1 text-destructive opacity-0 group-hover:opacity-100">
@@ -251,5 +280,59 @@ function Emotes({ guildId, isOwner }: { guildId: string; isOwner: boolean }) {
         </div>
       </div>
     </div>
+  );
+}
+
+/** The emote's name in this server; owners click it to rename (e.g. to fix a clash). */
+function EmoteName({ emote, guildId, canEdit }: { emote: Emote; guildId: string; canEdit: boolean }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(emote.name);
+  const save = async () => {
+    const name = value.trim();
+    setEditing(false);
+    if (!name || name === emote.name) return setValue(emote.name);
+    try {
+      const updated = await api<Emote>("PATCH", `/guilds/${guildId}/emotes/${emote.id}`, { name });
+      useApp.getState().apply({ t: "EMOTE_UPDATE", d: updated });
+    } catch (err) {
+      setValue(emote.name);
+      toast.error((err as Error).message);
+    }
+  };
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        value={value}
+        maxLength={64}
+        aria-label={`Rename ${emote.name}`}
+        onChange={(ev) => setValue(ev.target.value)}
+        onBlur={save}
+        onKeyDown={(ev) => {
+          if (ev.key === "Enter") ev.currentTarget.blur();
+          if (ev.key === "Escape") {
+            ev.stopPropagation(); // keep the dialog open
+            setValue(emote.name);
+            setEditing(false);
+          }
+        }}
+        className="w-full rounded bg-background px-1 text-center text-[11px] outline-none ring-1 ring-ring"
+      />
+    );
+  }
+  return canEdit ? (
+    <button
+      onClick={() => {
+        setValue(emote.name);
+        setEditing(true);
+      }}
+      className="flex w-full items-center justify-center gap-0.5 truncate text-center text-[11px] text-muted-foreground hover:text-foreground"
+      title="Rename"
+    >
+      <span className="truncate">{emote.name}</span>
+      <Pencil className="size-2.5 shrink-0 opacity-0 group-hover:opacity-100" />
+    </button>
+  ) : (
+    <span className="w-full truncate text-center text-[11px] text-muted-foreground">{emote.name}</span>
   );
 }

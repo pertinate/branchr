@@ -164,6 +164,42 @@ pub async fn import_set(
     Ok(Json(EmoteImport { added, found: found as u32 }))
 }
 
+#[derive(Deserialize)]
+pub struct RenameEmote {
+    name: String,
+}
+
+/// Renames an emote in this guild, e.g. to resolve a clash or to taste. The provider's
+/// image stays the same; only the name used here changes.
+pub async fn rename(
+    State(state): State<AppState>,
+    Auth(user): Auth,
+    Path((gid, eid)): Path<(Id, Id)>,
+    Json(body): Json<RenameEmote>,
+) -> AppResult<Json<Emote>> {
+    require_owner(&state, gid, user).await?;
+    let name = body.name.trim();
+    if !valid_name(name) {
+        return Err(bad("emote names are 1-64 letters, numbers, _ - ! ?"));
+    }
+    let r = sqlx::query("UPDATE emotes SET name = ?1 WHERE id = ?2 AND guild_id = ?3")
+        .bind(name)
+        .bind(eid.0)
+        .bind(gid.0)
+        .execute(&state.db)
+        .await
+        .map_err(|e| match e.as_database_error() {
+            Some(d) if d.is_unique_violation() => AppError::Conflict(format!("an emote named {name} already exists")),
+            _ => e.into(),
+        })?;
+    if r.rows_affected() == 0 {
+        return Err(AppError::NotFound);
+    }
+    let emote = db::emote(&state.db, eid).await?;
+    state.hub.to_guild(gid, &ServerEvent::EmoteUpdate(emote.clone()));
+    Ok(Json(emote))
+}
+
 pub async fn remove(
     State(state): State<AppState>,
     Auth(user): Auth,
