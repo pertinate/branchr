@@ -1,6 +1,7 @@
 // Chat throughput: N users in one guild, all on the gateway; each sends a burst of PER
 // messages (mixing @user, @here and plain). Measures send latency and fan-out.
 //   node chat.mjs http://host:8080          (USERS=50 PER=10 MENTIONS=1)
+const BASE = process.argv[2] ?? "http://localhost:8080";
 const N = +(process.env.USERS ?? 50), PER = +(process.env.PER ?? 10), MENTIONS = process.env.MENTIONS !== "0";
 const run = Date.now().toString(36);
 async function api(method, path, token, body) {
