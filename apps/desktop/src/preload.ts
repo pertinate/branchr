@@ -1,0 +1,18 @@
+import { contextBridge, ipcRenderer } from "electron";
+
+const isWayland = process.platform === "linux" && (process.env.XDG_SESSION_TYPE === "wayland" || !!process.env.WAYLAND_DISPLAY);
+
+contextBridge.exposeInMainWorld("desktop", {
+  platform: process.platform,
+  systemPicker: isWayland,
+  getSources: () => ipcRenderer.invoke("desktop:get-sources"),
+  selectSource: (id: string | null) => ipcRenderer.invoke("desktop:select-source", id),
+  setBadge: (count: number) => ipcRenderer.send("desktop:badge", count),
+  notify: (title: string, body: string) => ipcRenderer.send("desktop:notify", title, body),
+  window: {
+    minimize: () => ipcRenderer.send("desktop:window", "minimize"),
+    maximize: () => ipcRenderer.send("desktop:window", "maximize"),
+    close: () => ipcRenderer.send("desktop:window", "close"),
+  },
+  gpuInfo: () => ipcRenderer.invoke("desktop:gpu-info"),
+});

@@ -1,0 +1,400 @@
+import type { LayerPref, TrackInfo, VoiceServer } from "@app/protocol";
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
+
+import { gateway } from "@/lib/gateway";
+import { useApp } from "@/stores/app";
+import { VoiceConnection } from "@/voice/connection";
+import { type StreamSettings, cameraEncodings, defaultStreamSettings, encodingsFor, pickCodec } from "@/voice/presets";
+
+export type VoiceStatus = "disconnected" | "connecting" | "connected" | "reconnecting";
+
+export interface Subscription {
+  track: MediaStreamTrack;
+  layer: string | null;
+  pref: LayerPref;
+}
+
+interface VoiceSettings {
+  inputDeviceId: string | null;
+  outputDeviceId: string | null;
+  noiseSuppression: boolean;
+  echoCancellation: boolean;
+  autoGainControl: boolean;
+  stream: StreamSettings;
+  /** user id -> 0..2 */
+  userVolumes: Record<string, number>;
+  setSettings: (p: Partial<Omit<VoiceSettings, "setSettings">>) => void;
+}
+
+export const useVoiceSettings = create<VoiceSettings>()(
+  persist(
+    (set) => ({
+      inputDeviceId: null,
+      outputDeviceId: null,
+      noiseSuppression: true,
+      echoCancellation: true,
+      autoGainControl: true,
+      stream: defaultStreamSettings,
+      userVolumes: {},
+      setSettings: (p) => set(p),
+    }),
+    { name: "voice-settings" },
+  ),
+);
+
+interface VoiceState {
+  status: VoiceStatus;
+  guildId: string | null;
+  channelId: string | null;
+  error: string | null;
+  muted: boolean;
+  deafened: boolean;
+  camera: MediaStream | null;
+  screen: MediaStream | null;
+  screenSender: RTCRtpSender | null;
+  tracks: Record<string, TrackInfo>;
+  subs: Record<string, Subscription>;
+  /** Screen shares the user chose to watch. */
+  watching: string[];
+  speaking: Record<string, boolean>;
+  estimateBps: number;
+
+  join: (guildId: string, channelId: string) => Promise<void>;
+  leave: () => void;
+  toggleMute: () => void;
+  toggleDeafen: () => void;
+  startStream: (settings: StreamSettings) => Promise<void>;
+  stopStream: () => Promise<void>;
+  toggleCamera: () => Promise<void>;
+  watch: (trackId: string) => Promise<void>;
+  unwatch: (trackId: string) => void;
+  setLayer: (trackId: string, pref: LayerPref) => void;
+  reloadMic: () => Promise<void>;
+  connection: () => VoiceConnection | null;
+}
+
+let conn: VoiceConnection | null = null;
+let mic: MediaStreamTrack | null = null;
+let joinSeq = 0;
+let retries = 0;
+
+function waitForVoiceServer(channelId: string): Promise<VoiceServer> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      off();
+      reject(new Error("voice server did not respond"));
+    }, 10_000);
+    const off = gateway.on((ev) => {
+      if (ev.t === "VOICE_SERVER" && ev.d.channelId === channelId) {
+        clearTimeout(timer);
+        off();
+        resolve(ev.d);
+      }
+    });
+  });
+}
+
+async function getMic(): Promise<MediaStreamTrack | null> {
+  const s = useVoiceSettings.getState();
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        deviceId: s.inputDeviceId ? { exact: s.inputDeviceId } : undefined,
+        echoCancellation: s.echoCancellation,
+        noiseSuppression: s.noiseSuppression,
+        autoGainControl: s.autoGainControl,
+        channelCount: 1,
+        sampleRate: 48000,
+      },
+    });
+    return stream.getAudioTracks()[0] ?? null;
+  } catch (e) {
+    console.warn("microphone unavailable", e);
+    return null;
+  }
+}
+
+/** Mic and camera audio are subscribed automatically; screens are opt-in (they're expensive). */
+function autoSubscribe(t: TrackInfo): boolean {
+  return t.source === "mic" || t.source === "camera";
+}
+
+export const useVoice = create<VoiceState>()((set, get) => {
+  const syncState = () => {
+    const s = get();
+    if (!s.guildId || !s.channelId) return;
+    gateway.send({
+      op: "voice_state_update",
+      d: {
+        guildId: s.guildId,
+        channelId: s.channelId,
+        selfMute: s.muted || s.deafened,
+        selfDeaf: s.deafened,
+        selfVideo: !!s.camera,
+        selfStream: !!s.screen,
+      },
+    });
+  };
+
+  const subscribe = async (trackId: string, pref: LayerPref = "auto") => {
+    if (!conn || get().subs[trackId]) return;
+    const res = await conn.subscribe(trackId);
+    if (!res) return;
+    set((s) => ({ subs: { ...s.subs, [trackId]: { track: res.track, layer: null, pref } } }));
+    if (pref !== "auto") conn.setLayer(trackId, pref);
+  };
+
+  const dropSub = (trackId: string) => {
+    set((s) => {
+      const { [trackId]: _, ...subs } = s.subs;
+      return { subs, watching: s.watching.filter((w) => w !== trackId) };
+    });
+  };
+
+  const onTrackAdded = (t: TrackInfo) => {
+    set((s) => ({ tracks: { ...s.tracks, [t.id]: t } }));
+    if (autoSubscribe(t)) void subscribe(t.id);
+    // Stream audio follows the stream video: subscribe if we're watching that user's screen.
+    if (t.source === "screen_audio") {
+      const watchingUser = get().watching.some((w) => get().tracks[w]?.userId === t.userId);
+      if (watchingUser) void subscribe(t.id);
+    }
+  };
+
+  const cleanup = () => {
+    conn?.close();
+    conn = null;
+    mic?.stop();
+    mic = null;
+    const { camera, screen } = get();
+    camera?.getTracks().forEach((t) => t.stop());
+    screen?.getTracks().forEach((t) => t.stop());
+    set({
+      camera: null,
+      screen: null,
+      screenSender: null,
+      tracks: {},
+      subs: {},
+      watching: [],
+      speaking: {},
+    });
+  };
+
+  return {
+    status: "disconnected",
+    guildId: null,
+    channelId: null,
+    error: null,
+    muted: false,
+    deafened: false,
+    camera: null,
+    screen: null,
+    screenSender: null,
+    tracks: {},
+    subs: {},
+    watching: [],
+    speaking: {},
+    estimateBps: 0,
+
+    connection: () => conn,
+
+    join: async (guildId, channelId) => {
+      const s = get();
+      if (s.channelId === channelId && s.status === "connected") return;
+      const seq = ++joinSeq;
+      cleanup();
+      set({ status: s.status === "reconnecting" ? "reconnecting" : "connecting", guildId, channelId, error: null });
+
+      // Leaving first guarantees the API issues a fresh voice token even for the same channel.
+      const me = useApp.getState().me;
+      const inVoice = me && Object.values(useApp.getState().voice).some((g) => g[me.id]);
+      if (inVoice) gateway.send({ op: "voice_state_update", d: { guildId, channelId: null, selfMute: false, selfDeaf: false, selfVideo: false, selfStream: false } });
+
+      const server = waitForVoiceServer(channelId);
+      syncState();
+      try {
+        const [vs, micTrack] = await Promise.all([server, getMic()]);
+        if (seq !== joinSeq) {
+          micTrack?.stop();
+          return;
+        }
+        mic = micTrack;
+        if (mic) mic.enabled = !get().muted && !get().deafened;
+        const c = await VoiceConnection.connect(vs.endpoint, vs.token, {
+          trackAdded: onTrackAdded,
+          trackRemoved: (id) => {
+            set((s) => {
+              const { [id]: _, ...tracks } = s.tracks;
+              return { tracks };
+            });
+            dropSub(id);
+          },
+          speaking: (userId, speaking) => set((s) => ({ speaking: { ...s.speaking, [userId]: speaking } })),
+          layer: (trackId, layer, estimateBps) =>
+            set((s) => (s.subs[trackId] ? { subs: { ...s.subs, [trackId]: { ...s.subs[trackId], layer } }, estimateBps } : {})),
+          closed: (reason) => {
+            if (conn !== c) return;
+            conn = null;
+            if (reason.startsWith("replaced")) {
+              cleanup();
+              set({ status: "disconnected", guildId: null, channelId: null });
+              return;
+            }
+            // Unexpected drop: rejoin with backoff.
+            const { guildId: g, channelId: ch } = get();
+            if (g && ch && retries < 5) {
+              retries++;
+              set({ status: "reconnecting" });
+              setTimeout(() => void get().join(g, ch), 1000 * retries);
+            } else {
+              get().leave();
+              set({ error: reason });
+            }
+          },
+        });
+        if (seq !== joinSeq) {
+          c.close();
+          return;
+        }
+        conn = c;
+        await c.start(mic);
+        set({ status: "connected", tracks: Object.fromEntries([...c.tracks].map(([k, v]) => [k, v])) });
+        retries = 0;
+        for (const t of c.tracks.values()) if (autoSubscribe(t)) void subscribe(t.id);
+      } catch (e) {
+        if (seq !== joinSeq) return;
+        cleanup();
+        gateway.send({ op: "voice_state_update", d: { guildId, channelId: null, selfMute: false, selfDeaf: false, selfVideo: false, selfStream: false } });
+        set({ status: "disconnected", guildId: null, channelId: null, error: (e as Error).message });
+      }
+    },
+
+    leave: () => {
+      joinSeq++;
+      const { guildId } = get();
+      cleanup();
+      if (guildId) {
+        gateway.send({ op: "voice_state_update", d: { guildId, channelId: null, selfMute: false, selfDeaf: false, selfVideo: false, selfStream: false } });
+      }
+      set({ status: "disconnected", guildId: null, channelId: null });
+    },
+
+    toggleMute: () => {
+      const muted = !get().muted;
+      // Unmuting while deafened undeafens too, like Discord.
+      const deafened = muted ? get().deafened : false;
+      set({ muted, deafened });
+      if (mic) mic.enabled = !muted && !deafened;
+      syncState();
+    },
+
+    toggleDeafen: () => {
+      const deafened = !get().deafened;
+      set({ deafened });
+      if (mic) mic.enabled = !get().muted && !deafened;
+      syncState();
+    },
+
+    startStream: async (settings) => {
+      if (!conn) return;
+      const heightCap = settings.resolution === "source" ? undefined : Number(settings.resolution);
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: {
+          frameRate: { ideal: settings.fps, max: settings.fps },
+          height: heightCap ? { max: heightCap } : undefined,
+        },
+        audio: settings.audio
+          ? { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 2 }
+          : false,
+        // Chromium-specific hints: don't offer the current tab, prefer whole screens.
+        selfBrowserSurface: "exclude",
+        systemAudio: "include",
+      } as DisplayMediaStreamOptions);
+      const video = stream.getVideoTracks()[0];
+      video.contentHint = settings.content === "game" ? "motion" : "detail";
+      const vs = video.getSettings();
+      const width = vs.width ?? 1920;
+      const height = vs.height ?? 1080;
+      const { encodings, maxBitrate } = encodingsFor(settings, width, height);
+      const codec = await pickCodec(settings.codec, width, height, settings.fps);
+      const sender = await conn.publish(video, {
+        source: "screen",
+        encodings,
+        codec,
+        degradation: settings.content === "game" ? "maintain-framerate" : "maintain-resolution",
+        startBitrateKbps: Math.min(Math.round(maxBitrate / 1000), 15_000),
+      });
+      const audio = stream.getAudioTracks()[0];
+      if (audio) {
+        await conn.publish(audio, { source: "screen_audio", encodings: [{ maxBitrate: 256_000, priority: "high" }] });
+      }
+      video.addEventListener("ended", () => void get().stopStream());
+      set({ screen: stream, screenSender: sender });
+      useVoiceSettings.getState().setSettings({ stream: settings });
+      syncState();
+    },
+
+    stopStream: async () => {
+      const { screen } = get();
+      if (!screen) return;
+      set({ screen: null, screenSender: null });
+      screen.getTracks().forEach((t) => t.stop());
+      await conn?.unpublish("screen");
+      await conn?.unpublish("screen_audio");
+      syncState();
+    },
+
+    toggleCamera: async () => {
+      if (!conn) return;
+      const { camera } = get();
+      if (camera) {
+        set({ camera: null });
+        camera.getTracks().forEach((t) => t.stop());
+        await conn.unpublish("camera");
+      } else {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
+        });
+        await conn.publish(stream.getVideoTracks()[0], { source: "camera", encodings: cameraEncodings });
+        set({ camera: stream });
+      }
+      syncState();
+    },
+
+    watch: async (trackId) => {
+      if (get().watching.includes(trackId)) return;
+      set((s) => ({ watching: [...s.watching, trackId] }));
+      await subscribe(trackId);
+      const t = get().tracks[trackId];
+      const audio = Object.values(get().tracks).find((x) => x.userId === t?.userId && x.source === "screen_audio");
+      if (audio) await subscribe(audio.id);
+    },
+
+    unwatch: (trackId) => {
+      const t = get().tracks[trackId];
+      conn?.unsubscribe(trackId);
+      dropSub(trackId);
+      const audio = Object.values(get().tracks).find((x) => x.userId === t?.userId && x.source === "screen_audio");
+      if (audio) {
+        conn?.unsubscribe(audio.id);
+        dropSub(audio.id);
+      }
+    },
+
+    setLayer: (trackId, pref) => {
+      conn?.setLayer(trackId, pref);
+      set((s) => (s.subs[trackId] ? { subs: { ...s.subs, [trackId]: { ...s.subs[trackId], pref } } } : {}));
+    },
+
+    reloadMic: async () => {
+      if (!conn) return;
+      const next = await getMic();
+      if (!next) return;
+      next.enabled = !get().muted && !get().deafened;
+      await conn.replaceTrack("mic", next);
+      mic?.stop();
+      mic = next;
+    },
+  };
+});

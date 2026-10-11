@@ -1,0 +1,33 @@
+appId: dev.discordclone.desktop
+productName: Discord Clone
+executableName: discord-clone
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**
+  - web/**
+  - package.json
+extraResources:
+  - from: build/icon.png
+    to: icon.png
+asar: true
+linux:
+  target:
+    - AppImage
+    - pacman
+    - tar.gz
+  category: Network;InstantMessaging;Chat
+  icon: build/icon.png
+  maintainer: Pertinate
+  desktop:
+    entry:
+      StartupWMClass: discord-clone
+pacman:
+  depends:
+    - gtk3
+    - nss
+    - libxss
+    - alsa-lib
+    - libpipewire
+    - xdg-desktop-portal

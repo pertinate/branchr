@@ -2239,7 +2239,17 @@ dependencies = [
 name = "sfu"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "axum",
+ "futures",
+ "proto",
+ "serde",
+ "serde_json",
+ "socket2",
  "str0m",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
