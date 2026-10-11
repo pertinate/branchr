@@ -1,3 +1,5 @@
+import type { PublishLayer } from "@/voice/connection";
+
 export type Resolution = "720" | "1080" | "1440" | "2160" | "source";
 export type ContentType = "game" | "desktop";
 export type CodecChoice = "auto" | "video/AV1" | "video/VP9" | "video/H264" | "video/H265" | "video/VP8";
@@ -45,29 +47,21 @@ export function autoBitrateBps(width: number, height: number, fps: number, conte
   return Math.round(width * height * effectiveFps * bpp(content));
 }
 
-export function encodingsFor(
-  s: StreamSettings,
-  width: number,
-  height: number,
-): { encodings: RTCRtpEncodingParameters[]; maxBitrate: number } {
+export function layersFor(s: StreamSettings, width: number, height: number): { layers: PublishLayer[]; maxBitrate: number } {
   const maxBitrate = s.bitrateMbps ? s.bitrateMbps * 1_000_000 : autoBitrateBps(width, height, s.fps, s.content);
-  const top: RTCRtpEncodingParameters = {
-    maxBitrate,
-    maxFramerate: s.fps,
-    priority: "high",
-    networkPriority: "high",
+  const top: PublishLayer = {
+    name: "h",
+    encoding: { maxBitrate, maxFramerate: s.fps, priority: "high", networkPriority: "high" },
   };
-  if (!s.simulcast) return { encodings: [top], maxBitrate };
+  if (!s.simulcast) return { layers: [top], maxBitrate };
   return {
     maxBitrate,
-    encodings: [
-      { ...top, rid: "h" },
-      { rid: "m", scaleResolutionDownBy: 2, maxBitrate: Math.round(maxBitrate * 0.3), maxFramerate: s.fps },
+    layers: [
+      top,
+      { name: "m", encoding: { scaleResolutionDownBy: 2, maxBitrate: Math.round(maxBitrate * 0.3), maxFramerate: s.fps, priority: "medium" } },
       {
-        rid: "l",
-        scaleResolutionDownBy: 4,
-        maxBitrate: Math.round(maxBitrate * 0.08),
-        maxFramerate: Math.min(s.fps, 30),
+        name: "l",
+        encoding: { scaleResolutionDownBy: 4, maxBitrate: Math.round(maxBitrate * 0.08), maxFramerate: Math.min(s.fps, 30), priority: "low" },
       },
     ],
   };
@@ -86,7 +80,9 @@ export async function pickCodec(choice: CodecChoice, width: number, height: numb
     try {
       const info = await navigator.mediaCapabilities.encodingInfo({
         type: "webrtc",
-        video: { contentType: codec, width, height, framerate: fps, bitrate: 8_000_000 },
+        // VA-API advertises 30 fps maxima but encodes faster in practice; asking for 60 would
+        // falsely report software-only.
+        video: { contentType: codec, width, height, framerate: Math.min(fps, 30), bitrate: 8_000_000 },
       });
       if (info.supported && info.powerEfficient) return codec;
     } catch {

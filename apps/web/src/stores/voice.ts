@@ -5,7 +5,7 @@ import { persist } from "zustand/middleware";
 import { gateway } from "@/lib/gateway";
 import { useApp } from "@/stores/app";
 import { VoiceConnection } from "@/voice/connection";
-import { type StreamSettings, cameraEncodings, defaultStreamSettings, encodingsFor, pickCodec } from "@/voice/presets";
+import { type StreamSettings, cameraEncodings, defaultStreamSettings, layersFor, pickCodec } from "@/voice/presets";
 
 export type VoiceStatus = "disconnected" | "connecting" | "connected" | "reconnecting";
 
@@ -316,11 +316,11 @@ export const useVoice = create<VoiceState>()((set, get) => {
       const vs = video.getSettings();
       const width = vs.width ?? 1920;
       const height = vs.height ?? 1080;
-      const { encodings, maxBitrate } = encodingsFor(settings, width, height);
+      const { layers, maxBitrate } = layersFor(settings, width, height);
       const codec = await pickCodec(settings.codec, width, height, settings.fps);
       const sender = await conn.publish(video, {
         source: "screen",
-        encodings,
+        layers,
         codec,
         degradation: settings.content === "game" ? "maintain-framerate" : "maintain-resolution",
         startBitrateKbps: Math.min(Math.round(maxBitrate / 1000), 15_000),

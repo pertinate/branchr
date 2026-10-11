@@ -52,6 +52,7 @@ pub enum VoiceServerMsg {
     Answer {
         sdp: String,
     },
+    /// A track was published, or an existing track's layers changed (upsert by id).
     TrackAdded {
         track: TrackInfo,
     },
@@ -86,6 +87,16 @@ pub enum VoiceServerMsg {
 pub struct PublishTrack {
     pub mid: String,
     pub source: TrackSource,
+    /// m-lines sharing a group form one logical track whose layers are separately encoded
+    /// transceivers. This keeps each layer on its own (hardware) encoder, which RID
+    /// simulcast can't do in Chromium.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub group: Option<String>,
+    /// Layer name within the group: "h", "m" or "l".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub layer: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -96,7 +107,7 @@ pub struct TrackInfo {
     pub user_id: Id,
     pub kind: MediaKind,
     pub source: TrackSource,
-    /// Simulcast rids published for this track (empty when not simulcast).
+    /// Quality layers available, best first (empty when there's only one).
     pub layers: Vec<String>,
 }
 

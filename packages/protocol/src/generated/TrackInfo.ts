@@ -5,6 +5,6 @@ import type { TrackSource } from "./TrackSource";
 
 export type TrackInfo = { id: string, userId: Id, kind: MediaKind, source: TrackSource, 
 /**
- * Simulcast rids published for this track (empty when not simulcast).
+ * Quality layers available, best first (empty when there's only one).
  */
 layers: Array<string>, };

@@ -1,8 +1,19 @@
 import type { LayerPref, TrackInfo, TrackSource, VoiceClientMsg, VoiceServerMsg } from "@app/protocol";
 
+export interface PublishLayer {
+  name: "h" | "m" | "l";
+  encoding: RTCRtpEncodingParameters;
+}
+
 export interface PublishOptions {
   source: TrackSource;
   encodings?: RTCRtpEncodingParameters[];
+  /**
+   * Publish each quality layer on its own transceiver (and so its own encoder). Chromium
+   * falls back to software encoding for RID simulcast, but gives every transceiver its own
+   * hardware encoder session.
+   */
+  layers?: PublishLayer[];
   /** Preferred codec mime type, e.g. "video/AV1". Other codecs are removed from the offer. */
   codec?: string;
   degradation?: RTCDegradationPreference;
@@ -27,6 +38,8 @@ interface Slot {
 interface Pending {
   transceiver: RTCRtpTransceiver;
   source: TrackSource;
+  group?: string;
+  layer?: string;
 }
 
 /**
@@ -37,7 +50,7 @@ export class VoiceConnection {
   readonly tracks = new Map<string, TrackInfo>();
   private pc: RTCPeerConnection;
   private slots = new Map<string, Slot>();
-  private published = new Map<TrackSource, RTCRtpTransceiver>();
+  private published = new Map<TrackSource, RTCRtpTransceiver[]>();
   private pendingPublish: Pending[] = [];
   private chain: Promise<void> = Promise.resolve();
   private answerWaiter: ((sdp: string) => void) | null = null;
@@ -129,7 +142,7 @@ export class VoiceConnection {
       const pending = this.pendingPublish.splice(0);
       const publish = pending
         .filter((p) => p.transceiver.mid)
-        .map((p) => ({ mid: p.transceiver.mid!, source: p.source }));
+        .map((p) => ({ mid: p.transceiver.mid!, source: p.source, group: p.group, layer: p.layer }));
       const answer = new Promise<string>((resolve, reject) => {
         this.answerWaiter = resolve;
         setTimeout(() => reject(new Error("no answer from voice server")), 10_000);
@@ -191,7 +204,7 @@ export class VoiceConnection {
         direction: "sendonly",
         sendEncodings: [{ maxBitrate: 128_000, priority: "high", networkPriority: "high" }],
       });
-      this.published.set("mic", t);
+      this.published.set("mic", [t]);
       this.pendingPublish.push({ transceiver: t, source: "mic" });
     }
     // At least one m-line is required for ICE even when listening only.
@@ -202,43 +215,57 @@ export class VoiceConnection {
   async publish(track: MediaStreamTrack, opts: PublishOptions): Promise<RTCRtpSender> {
     await this.unpublish(opts.source);
     if (opts.startBitrateKbps) this.startBitrateKbps = Math.max(this.startBitrateKbps, opts.startBitrateKbps);
-    const t = this.pc.addTransceiver(track, { direction: "sendonly", sendEncodings: opts.encodings });
-    if (opts.codec && track.kind === "video") {
-      const caps = RTCRtpSender.getCapabilities("video")?.codecs ?? [];
-      const preferred = caps.filter((c) => c.mimeType.toLowerCase() === opts.codec!.toLowerCase());
-      // Keep resiliency codecs so NACK/RTX keeps working.
-      const support = caps.filter((c) => /rtx|red|ulpfec|flexfec/i.test(c.mimeType));
-      if (preferred.length) t.setCodecPreferences([...preferred, ...support]);
-    }
-    this.published.set(opts.source, t);
-    this.pendingPublish.push({ transceiver: t, source: opts.source });
+    const layers = opts.layers ?? [{ name: "h" as const, encoding: {} }];
+    const grouped = !!opts.layers && opts.layers.length > 1;
+    const group = grouped ? opts.source : undefined;
+    const transceivers = layers.map((layer, i) => {
+      // Clones share the capture; each feeds its own encoder.
+      const t = this.pc.addTransceiver(i === 0 ? track : track.clone(), {
+        direction: "sendonly",
+        sendEncodings: opts.layers ? [layer.encoding] : opts.encodings,
+      });
+      if (opts.codec && track.kind === "video") {
+        const caps = RTCRtpSender.getCapabilities("video")?.codecs ?? [];
+        const preferred = caps.filter((c) => c.mimeType.toLowerCase() === opts.codec!.toLowerCase());
+        // Keep resiliency codecs so NACK/RTX keeps working.
+        const support = caps.filter((c) => /rtx|red|ulpfec|flexfec/i.test(c.mimeType));
+        if (preferred.length) t.setCodecPreferences([...preferred, ...support]);
+      }
+      this.pendingPublish.push({ transceiver: t, source: opts.source, group, layer: grouped ? layer.name : undefined });
+      return t;
+    });
+    this.published.set(opts.source, transceivers);
     await this.negotiate();
     if (opts.degradation) {
-      const p = t.sender.getParameters();
-      p.degradationPreference = opts.degradation;
-      await t.sender.setParameters(p).catch(() => {});
+      for (const t of transceivers) {
+        const p = t.sender.getParameters();
+        p.degradationPreference = opts.degradation;
+        await t.sender.setParameters(p).catch(() => {});
+      }
     }
-    return t.sender;
+    return transceivers[0].sender;
   }
 
   async unpublish(source: TrackSource) {
-    const t = this.published.get(source);
-    if (!t) return;
+    const ts = this.published.get(source);
+    if (!ts) return;
     this.published.delete(source);
-    if (t.mid) this.send({ type: "unpublish", mid: t.mid });
-    t.sender.track?.stop();
-    t.stop();
+    for (const t of ts) {
+      if (t.mid) this.send({ type: "unpublish", mid: t.mid });
+      t.sender.track?.stop();
+      t.stop();
+    }
     await this.negotiate();
   }
 
   /** Replace a published track in place (e.g. switching microphones) without renegotiating. */
   async replaceTrack(source: TrackSource, track: MediaStreamTrack) {
-    const t = this.published.get(source);
+    const t = this.published.get(source)?.[0];
     if (t) await t.sender.replaceTrack(track);
   }
 
   sender(source: TrackSource): RTCRtpSender | null {
-    return this.published.get(source)?.sender ?? null;
+    return this.published.get(source)?.[0]?.sender ?? null;
   }
 
   /** Points a free receive slot at a remote track and returns the local MediaStreamTrack. */
@@ -285,7 +312,7 @@ export class VoiceConnection {
     if (this.closed) return;
     this.closed = true;
     clearInterval(this.pingTimer);
-    for (const t of this.published.values()) t.sender.track?.stop();
+    for (const ts of this.published.values()) for (const t of ts) t.sender.track?.stop();
     this.ws.onclose = null;
     this.ws.close();
     this.pc.close();

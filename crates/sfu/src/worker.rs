@@ -4,6 +4,11 @@
 //! Hot path per incoming packet:
 //!   socket -> addr lookup (O(1)) -> `Rtc::handle_input` -> `MediaData` events ->
 //!   for each subscriber: layer filter, timestamp rebase, `Writer::write` (Arc clone).
+//!
+//! A published *track* is a logical stream with one or more quality *layers*. A layer is
+//! identified by `(mid, rid)`, which covers both RID simulcast (one m-line, several rids)
+//! and grouped transceivers (several m-lines, each its own encoder, e.g. one hardware
+//! encoder session per layer).
 
 use std::collections::{HashMap, HashSet};
 use std::io::ErrorKind;
@@ -14,7 +19,7 @@ use proto::Id;
 use proto::voice::{LayerPref, MediaKind as WireKind, PublishTrack, TrackInfo, TrackSource, VoiceClientMsg, VoiceServerMsg};
 use str0m::bwe::{Bitrate, BweKind};
 use str0m::change::SdpOffer;
-use str0m::media::{Direction, KeyframeRequestKind, MediaData, MediaKind, Mid, Rid};
+use str0m::media::{Direction, KeyframeRequestKind, MediaData, MediaKind, MediaTime, Mid, Rid};
 use str0m::net::{Protocol, Receive};
 use str0m::{Candidate, Event, IceConnectionState, Input, Output, Rtc};
 use tokio::net::UdpSocket;
@@ -72,9 +77,13 @@ const SPEAK_HOLD: Duration = Duration::from_millis(350);
 const SPEAK_DBOV: i32 = 50;
 /// Upgrades need this much headroom to avoid flapping between layers.
 const UPGRADE_HEADROOM: f64 = 1.25;
+/// After backing off, wait this long before trying a better layer again.
+const UPGRADE_COOLDOWN: Duration = Duration::from_secs(4);
 
-/// Simulcast rids from highest to lowest quality; clients publish these names.
+/// Layer names from highest to lowest quality; clients publish these names.
 const LAYER_ORDER: [&str; 3] = ["h", "m", "l"];
+
+type LayerKey = (Mid, Option<Rid>);
 
 struct RateMeter {
     bytes: u64,
@@ -100,48 +109,59 @@ impl RateMeter {
     }
 }
 
-struct Published {
+struct Layer {
+    name: String,
+    key: LayerKey,
+}
+
+struct Track {
     id: String,
     kind: MediaKind,
     source: TrackSource,
-    rids: Vec<Rid>,
-    rates: HashMap<Option<Rid>, RateMeter>,
-    last_keyframe_req: HashMap<Option<Rid>, Instant>,
+    /// Best quality first.
+    layers: Vec<Layer>,
+    rates: HashMap<LayerKey, RateMeter>,
+    last_keyframe_req: HashMap<LayerKey, Instant>,
 }
 
-impl Published {
+impl Track {
     fn info(&self, user: Id) -> TrackInfo {
         TrackInfo {
             id: self.id.clone(),
             user_id: user,
             kind: if self.kind == MediaKind::Audio { WireKind::Audio } else { WireKind::Video },
             source: self.source,
-            layers: self.rids.iter().map(|r| r.to_string()).collect(),
+            layers: if self.layers.len() > 1 { self.layers.iter().map(|l| l.name.clone()).collect() } else { vec![] },
         }
     }
 
-    fn rate(&self, rid: Option<Rid>) -> u64 {
-        self.rates.get(&rid).map(|r| r.bps).unwrap_or(0)
+    fn rate(&self, key: LayerKey) -> u64 {
+        self.rates.get(&key).map(|r| r.bps).unwrap_or(0)
     }
 
-    /// Available layers, best first.
-    fn layers_desc(&self) -> Vec<Rid> {
-        let mut v: Vec<Rid> = LAYER_ORDER.iter().map(|s| Rid::from(*s)).filter(|r| self.rids.contains(r)).collect();
-        // Unknown rid names still work, just without an ordering guarantee.
-        let extra: Vec<Rid> = self.rids.iter().filter(|r| !v.contains(r)).copied().collect();
-        v.extend(extra);
-        v
+    fn mids(&self) -> Vec<Mid> {
+        let mut m: Vec<Mid> = self.layers.iter().map(|l| l.key.0).collect();
+        m.dedup();
+        m
+    }
+
+    fn sort_layers(&mut self) {
+        let rank = |n: &str| LAYER_ORDER.iter().position(|o| *o == n).unwrap_or(LAYER_ORDER.len());
+        self.layers.sort_by_key(|l| rank(&l.name));
+    }
+
+    fn layer_name(&self, key: LayerKey) -> Option<String> {
+        self.layers.iter().find(|l| l.key == key).map(|l| l.name.clone())
     }
 }
 
 struct Sub {
-    src: (PeerId, Mid),
+    src: (PeerId, String),
     pref: LayerPref,
-    /// Layer currently forwarded (None for non-simulcast sources).
-    current: Option<Rid>,
+    /// Layer currently forwarded.
+    current: Option<LayerKey>,
     /// Layer we want; switched to on its next keyframe.
-    target: Option<Rid>,
-    waiting_keyframe: bool,
+    target: Option<LayerKey>,
     /// Timestamp rebasing so source/layer switches look continuous to the receiver.
     ts_in: u64,
     ts_out: u64,
@@ -160,9 +180,10 @@ struct Peer {
     room: Id,
     rtc: Rtc,
     out: mpsc::UnboundedSender<VoiceServerMsg>,
-    /// Sources announced in the latest offer, keyed by mid, consumed on `MediaAdded`.
-    pending_publish: HashMap<String, TrackSource>,
-    published: HashMap<Mid, Published>,
+    /// Publish metadata from the latest offer, keyed by mid, consumed on `MediaAdded`.
+    pending_publish: HashMap<String, PublishTrack>,
+    tracks: HashMap<String, Track>,
+    mid_track: HashMap<Mid, String>,
     slots: HashMap<Mid, Slot>,
     next_timeout: Instant,
     estimate_bps: u64,
@@ -180,7 +201,8 @@ impl Peer {
 #[derive(Default)]
 struct Room {
     peers: Vec<PeerId>,
-    tracks: HashMap<String, (PeerId, Mid)>,
+    /// track id -> publishing peer
+    tracks: HashMap<String, PeerId>,
 }
 
 struct Worker {
@@ -190,7 +212,8 @@ struct Worker {
     peers: HashMap<PeerId, Peer>,
     rooms: HashMap<Id, Room>,
     addrs: HashMap<SocketAddr, PeerId>,
-    /// Publisher track -> subscriber slots.
+    /// Publisher m-line -> subscriber slots. A layered track registers its subscribers on
+    /// every one of its m-lines.
     fanout: HashMap<(PeerId, Mid), Vec<(PeerId, Mid)>>,
     dirty: HashSet<PeerId>,
     buf: Vec<u8>,
@@ -351,21 +374,24 @@ impl Worker {
             Event::Connected => {
                 tracing::debug!(peer = id.0, "connected");
                 // Subscriptions made before DTLS completed need a fresh keyframe.
-                let srcs: Vec<_> = self
+                let reqs: Vec<_> = self
                     .peers
                     .get(&id)
-                    .map(|p| p.slots.values().filter_map(|s| s.sub.as_ref().map(|s| (s.src, s.target))).collect())
+                    .map(|p| p.slots.values().filter_map(|s| s.sub.as_ref().and_then(|s| Some((s.src.0, s.target?)))).collect())
                     .unwrap_or_default();
-                for (src, rid) in srcs {
-                    self.request_keyframe(src, rid, true);
+                for (pid, key) in reqs {
+                    self.request_keyframe(pid, key, true);
                 }
             }
-            Event::MediaAdded(m) => self.media_added(id, m.mid, m.kind, m.direction, m.simulcast.map(|s| s.recv.into_iter().map(|l| l.rid).collect())),
+            Event::MediaAdded(m) => {
+                let rids = m.simulcast.map(|s| s.recv.into_iter().map(|l| l.rid).collect()).unwrap_or_default();
+                self.media_added(id, m.mid, m.kind, m.direction, rids);
+            }
             Event::MediaChanged(m) => {
                 let receiving = matches!(m.direction, Direction::RecvOnly | Direction::SendRecv);
-                let is_published = self.peers.get(&id).is_some_and(|p| p.published.contains_key(&m.mid));
-                if is_published && !receiving {
-                    self.unpublish(id, m.mid);
+                let published = self.peers.get(&id).is_some_and(|p| p.mid_track.contains_key(&m.mid));
+                if published && !receiving {
+                    self.unpublish_mid(id, m.mid);
                 }
             }
             Event::MediaData(d) => self.media_data(id, d),
@@ -373,8 +399,10 @@ impl Worker {
                 let Some(sub) = self.peers.get(&id).and_then(|p| p.slots.get(&req.mid)).and_then(|s| s.sub.as_ref()) else {
                     return;
                 };
-                let (src, rid) = (sub.src, sub.current.or(sub.target));
-                self.request_keyframe(src, rid, req.kind == KeyframeRequestKind::Fir);
+                if let Some(key) = sub.current.or(sub.target) {
+                    let pid = sub.src.0;
+                    self.request_keyframe(pid, key, req.kind == KeyframeRequestKind::Fir);
+                }
             }
             Event::EgressBitrateEstimate(BweKind::Twcc { estimate, .. }) => {
                 if let Some(p) = self.peers.get_mut(&id) {
@@ -398,14 +426,18 @@ impl Worker {
                     VoiceClientMsg::Subscribe { mid, track_id } => self.subscribe(peer, Mid::from(mid.as_str()), &track_id),
                     VoiceClientMsg::Unsubscribe { mid } => self.unsubscribe(peer, Mid::from(mid.as_str())),
                     VoiceClientMsg::SetLayer { mid, layer } => {
-                        if let Some(sub) = self.peers.get_mut(&peer).and_then(|p| p.slots.get_mut(&Mid::from(mid.as_str())))
+                        if let Some(sub) = self
+                            .peers
+                            .get_mut(&peer)
+                            .and_then(|p| p.slots.get_mut(&Mid::from(mid.as_str())))
                             .and_then(|s| s.sub.as_mut())
                         {
                             sub.pref = layer;
+                            sub.last_downgrade = None;
                         }
                         self.select_layers_for(peer);
                     }
-                    VoiceClientMsg::Unpublish { mid } => self.unpublish(peer, Mid::from(mid.as_str())),
+                    VoiceClientMsg::Unpublish { mid } => self.unpublish_mid(peer, Mid::from(mid.as_str())),
                     VoiceClientMsg::Join { .. } | VoiceClientMsg::Ping => {}
                 }
                 self.dirty.insert(peer);
@@ -444,10 +476,10 @@ impl Worker {
         let room = self.rooms.entry(room_id).or_default();
         let tracks: Vec<TrackInfo> = room
             .tracks
-            .values()
-            .filter_map(|(pid, mid)| {
+            .iter()
+            .filter_map(|(tid, pid)| {
                 let p = self.peers.get(pid)?;
-                Some(p.published.get(mid)?.info(p.user))
+                Some(p.tracks.get(tid)?.info(p.user))
             })
             .collect();
         room.peers.push(id);
@@ -460,7 +492,8 @@ impl Worker {
                 rtc,
                 out,
                 pending_publish: HashMap::new(),
-                published: HashMap::new(),
+                tracks: HashMap::new(),
+                mid_track: HashMap::new(),
                 slots: HashMap::new(),
                 next_timeout: Instant::now(),
                 estimate_bps: self.initial_bwe,
@@ -474,13 +507,11 @@ impl Worker {
 
     fn remove_peer(&mut self, id: PeerId) {
         let Some(peer) = self.peers.get(&id) else { return };
-        let mids: Vec<Mid> = peer.published.keys().copied().collect();
+        let mids: Vec<Mid> = peer.mid_track.keys().copied().collect();
         let slots: Vec<Mid> = peer.slots.keys().copied().collect();
-        let room_id = peer.room;
-        let speaking = peer.speaking;
-        let user = peer.user;
+        let (room_id, speaking, user) = (peer.room, peer.speaking, peer.user);
         for m in mids {
-            self.unpublish(id, m);
+            self.unpublish_mid(id, m);
         }
         for s in slots {
             self.unsubscribe(id, s);
@@ -516,7 +547,7 @@ impl Worker {
     fn offer(&mut self, id: PeerId, sdp: String, publish: Vec<PublishTrack>) {
         let Some(peer) = self.peers.get_mut(&id) else { return };
         for p in publish {
-            peer.pending_publish.insert(p.mid, p.source);
+            peer.pending_publish.insert(p.mid.clone(), p);
         }
         let offer = match SdpOffer::from_sdp_string(&sdp) {
             Ok(o) => o,
@@ -528,37 +559,57 @@ impl Worker {
         match peer.rtc.sdp_api().accept_offer(offer) {
             Ok(answer) => {
                 peer.send(VoiceServerMsg::Answer { sdp: answer.to_sdp_string() });
-                // Process MediaAdded now so a Subscribe right after this offer finds its slot.
                 self.drive(id);
             }
             Err(e) => peer.send(VoiceServerMsg::Error { message: format!("offer rejected: {e}") }),
         }
     }
 
-    fn media_added(&mut self, id: PeerId, mid: Mid, kind: MediaKind, dir: Direction, rids: Option<Vec<Rid>>) {
+    fn media_added(&mut self, id: PeerId, mid: Mid, kind: MediaKind, dir: Direction, rids: Vec<Rid>) {
         let Some(peer) = self.peers.get_mut(&id) else { return };
         match dir {
-            // The client sends on this m-line: it's a published track.
+            // The client sends on this m-line: a published track (or a layer of one).
             Direction::RecvOnly | Direction::SendRecv => {
-                let source = peer.pending_publish.remove(&mid.to_string()).unwrap_or(match kind {
+                let meta = peer.pending_publish.remove(&mid.to_string());
+                let source = meta.as_ref().map(|m| m.source).unwrap_or(match kind {
                     MediaKind::Audio => TrackSource::Mic,
                     MediaKind::Video => TrackSource::Camera,
                 });
-                let track = Published {
-                    id: format!("{}-{}", id.0, mid),
+                let group = meta.as_ref().and_then(|m| m.group.clone());
+                let track_id = match &group {
+                    Some(g) => format!("{}-g{}", id.0, g),
+                    None => format!("{}-{}", id.0, mid),
+                };
+                let new_layers: Vec<Layer> = if rids.is_empty() {
+                    let name = meta.and_then(|m| m.layer).unwrap_or_else(|| "h".into());
+                    vec![Layer { name, key: (mid, None) }]
+                } else {
+                    rids.iter().map(|r| Layer { name: r.to_string(), key: (mid, Some(*r)) }).collect()
+                };
+                let track = peer.tracks.entry(track_id.clone()).or_insert_with(|| Track {
+                    id: track_id.clone(),
                     kind,
                     source,
-                    rids: rids.unwrap_or_default(),
+                    layers: vec![],
                     rates: HashMap::new(),
                     last_keyframe_req: HashMap::new(),
-                };
+                });
+                // Existing subscribers of a growing group must also receive the new m-line.
+                let existing_mid = track.layers.first().map(|l| l.key.0);
+                track.layers.extend(new_layers);
+                track.sort_layers();
                 let info = track.info(peer.user);
                 let room = peer.room;
-                peer.published.insert(mid, track);
-                if let Some(r) = self.rooms.get_mut(&room) {
-                    r.tracks.insert(info.id.clone(), (id, mid));
+                peer.mid_track.insert(mid, track_id.clone());
+                if let Some(em) = existing_mid
+                    && let Some(subs) = self.fanout.get(&(id, em)).cloned()
+                {
+                    self.fanout.entry((id, mid)).or_default().extend(subs);
                 }
-                tracing::info!(peer = id.0, track = %info.id, source = ?info.source, layers = ?info.layers, "published");
+                if let Some(r) = self.rooms.get_mut(&room) {
+                    r.tracks.insert(track_id.clone(), id);
+                }
+                tracing::info!(peer = id.0, track = %track_id, %mid, source = ?info.source, layers = ?info.layers, "published");
                 self.broadcast(room, Some(id), VoiceServerMsg::TrackAdded { track: info });
             }
             // The client receives on this m-line: a subscription slot.
@@ -569,35 +620,61 @@ impl Worker {
         }
     }
 
-    fn unpublish(&mut self, id: PeerId, mid: Mid) {
+    fn unpublish_mid(&mut self, id: PeerId, mid: Mid) {
         let Some(peer) = self.peers.get_mut(&id) else { return };
-        let Some(track) = peer.published.remove(&mid) else { return };
+        let Some(track_id) = peer.mid_track.remove(&mid) else { return };
+        let Some(track) = peer.tracks.get_mut(&track_id) else { return };
+        track.layers.retain(|l| l.key.0 != mid);
+        track.rates.retain(|k, _| k.0 != mid);
+        let empty = track.layers.is_empty();
+        let best = track.layers.first().map(|l| l.key);
+        let info = track.info(peer.user);
         let room = peer.room;
-        if let Some(r) = self.rooms.get_mut(&room) {
-            r.tracks.remove(&track.id);
+        if empty {
+            peer.tracks.remove(&track_id);
         }
-        if let Some(subs) = self.fanout.remove(&(id, mid)) {
-            for (sp, smid) in subs {
-                if let Some(slot) = self.peers.get_mut(&sp).and_then(|p| p.slots.get_mut(&smid)) {
-                    slot.sub = None;
+        let subs = self.fanout.remove(&(id, mid)).unwrap_or_default();
+        for (sp, smid) in subs {
+            let Some(slot) = self.peers.get_mut(&sp).and_then(|p| p.slots.get_mut(&smid)) else { continue };
+            if empty {
+                slot.sub = None;
+            } else if let Some(sub) = slot.sub.as_mut() {
+                // Retarget subscribers that were on the removed layer.
+                if sub.current.is_some_and(|c| c.0 == mid) {
+                    sub.current = None;
+                }
+                if sub.target.is_some_and(|t| t.0 == mid) {
+                    sub.target = best;
                 }
             }
         }
-        tracing::info!(peer = id.0, track = %track.id, "unpublished");
-        self.broadcast(room, Some(id), VoiceServerMsg::TrackRemoved { track_id: track.id });
+        if empty {
+            if let Some(r) = self.rooms.get_mut(&room) {
+                r.tracks.remove(&track_id);
+            }
+            tracing::info!(peer = id.0, track = %track_id, "unpublished");
+            self.broadcast(room, Some(id), VoiceServerMsg::TrackRemoved { track_id });
+        } else {
+            self.broadcast(room, Some(id), VoiceServerMsg::TrackAdded { track: info });
+        }
     }
 
     fn subscribe(&mut self, id: PeerId, mid: Mid, track_id: &str) {
         let Some(peer) = self.peers.get(&id) else { return };
-        let Some(&src) = self.rooms.get(&peer.room).and_then(|r| r.tracks.get(track_id)) else {
+        let Some(&pid) = self.rooms.get(&peer.room).and_then(|r| r.tracks.get(track_id)) else {
             peer.send(VoiceServerMsg::Error { message: format!("no track {track_id}") });
             return;
         };
-        if src.0 == id {
+        if pid == id {
             return;
         }
-        let Some(track) = self.peers.get(&src.0).and_then(|p| p.published.get(&src.1)) else { return };
-        let (kind, layers) = (track.kind, track.layers_desc());
+        let Some(track) = self.peers.get(&pid).and_then(|p| p.tracks.get(track_id)) else { return };
+        let kind = track.kind;
+        let mids = track.mids();
+        // Start mid-quality and let the allocator move from there.
+        let target = track.layers.get(track.layers.len() / 2).or(track.layers.first()).map(|l| l.key);
+
+        self.unsubscribe(id, mid);
         let peer = self.peers.get_mut(&id).expect("checked");
         // str0m only emits MediaAdded once DTLS is up; a subscribe can arrive before that.
         if !peer.slots.contains_key(&mid)
@@ -614,29 +691,25 @@ impl Worker {
             peer.send(VoiceServerMsg::Error { message: "slot kind mismatch".into() });
             return;
         }
-        let old = slot.sub.take().map(|s| (s.src, s.last_out));
-        // Start mid-quality (if simulcast) and let the allocator move from there.
-        let target = layers.get(layers.len() / 2).copied().or(layers.first().copied());
         slot.sub = Some(Sub {
-            src,
+            src: (pid, track_id.to_string()),
             pref: LayerPref::Auto,
-            current: None,
+            // Audio has no keyframes: forward immediately.
+            current: if kind == MediaKind::Audio { target } else { None },
             target,
-            waiting_keyframe: kind == MediaKind::Video,
             ts_in: 0,
             ts_out: 0,
-            last_out: old.and_then(|o| o.1),
+            last_out: None,
             rebase: true,
             last_downgrade: None,
         });
-        if let Some((old_src, _)) = old {
-            if let Some(v) = self.fanout.get_mut(&old_src) {
-                v.retain(|s| *s != (id, mid));
-            }
+        for m in mids {
+            self.fanout.entry((pid, m)).or_default().push((id, mid));
         }
-        self.fanout.entry(src).or_default().push((id, mid));
         if kind == MediaKind::Video {
-            self.request_keyframe(src, target, true);
+            if let Some(t) = target {
+                self.request_keyframe(pid, t, true);
+            }
             self.select_layers_for(id);
         }
     }
@@ -645,38 +718,44 @@ impl Worker {
         let Some(sub) = self.peers.get_mut(&id).and_then(|p| p.slots.get_mut(&mid)).and_then(|s| s.sub.take()) else {
             return;
         };
-        if let Some(v) = self.fanout.get_mut(&sub.src) {
-            v.retain(|s| *s != (id, mid));
-            if v.is_empty() {
-                self.fanout.remove(&sub.src);
+        let pid = sub.src.0;
+        let mids = self.peers.get(&pid).and_then(|p| p.tracks.get(&sub.src.1)).map(|t| t.mids()).unwrap_or_default();
+        for m in mids {
+            if let Some(v) = self.fanout.get_mut(&(pid, m)) {
+                v.retain(|s| *s != (id, mid));
+                if v.is_empty() {
+                    self.fanout.remove(&(pid, m));
+                }
             }
         }
     }
 
-    fn request_keyframe(&mut self, (pid, mid): (PeerId, Mid), rid: Option<Rid>, force: bool) {
+    fn request_keyframe(&mut self, pid: PeerId, key: LayerKey, force: bool) {
         let Some(peer) = self.peers.get_mut(&pid) else { return };
-        let Some(track) = peer.published.get_mut(&mid) else { return };
+        let Some(track) = peer.mid_track.get(&key.0).and_then(|t| peer.tracks.get_mut(t)) else { return };
         if track.kind != MediaKind::Video {
             return;
         }
         let now = Instant::now();
-        if !force && track.last_keyframe_req.get(&rid).is_some_and(|t| now.duration_since(*t) < KEYFRAME_THROTTLE) {
+        if !force && track.last_keyframe_req.get(&key).is_some_and(|t| now.duration_since(*t) < KEYFRAME_THROTTLE) {
             return;
         }
-        track.last_keyframe_req.insert(rid, now);
-        if let Some(mut w) = peer.rtc.writer(mid) {
-            let _ = w.request_keyframe(rid, KeyframeRequestKind::Pli);
+        track.last_keyframe_req.insert(key, now);
+        if let Some(mut w) = peer.rtc.writer(key.0) {
+            let _ = w.request_keyframe(key.1, KeyframeRequestKind::Pli);
             self.dirty.insert(pid);
         }
     }
 
     fn media_data(&mut self, id: PeerId, d: MediaData) {
         let now = Instant::now();
+        let key: LayerKey = (d.mid, d.rid);
         let Some(peer) = self.peers.get_mut(&id) else { return };
-        let Some(track) = peer.published.get_mut(&d.mid) else { return };
-        track.rates.entry(d.rid).or_insert_with(|| RateMeter::new(now)).add(d.data.len(), now);
-        let simulcast = !track.rids.is_empty();
+        let Some(track) = peer.mid_track.get(&d.mid).and_then(|t| peer.tracks.get_mut(t)) else { return };
+        track.rates.entry(key).or_insert_with(|| RateMeter::new(now)).add(d.data.len(), now);
+        let audio = track.kind == MediaKind::Audio;
         let source = track.source;
+        let layer_name = (track.layers.len() > 1).then(|| track.layer_name(key)).flatten();
 
         if source == TrackSource::Mic
             && let Some(level) = d.ext_vals.audio_level
@@ -685,8 +764,8 @@ impl Worker {
             peer.last_loud = Some(now);
         }
 
-        if !d.contiguous {
-            self.request_keyframe((id, d.mid), d.rid, false);
+        if !d.contiguous && !audio {
+            self.request_keyframe(id, key, false);
         }
 
         let Some(subs) = self.fanout.get(&(id, d.mid)) else { return };
@@ -696,21 +775,16 @@ impl Worker {
             let Some(sp_peer) = self.peers.get_mut(&sp) else { continue };
             let Some(sub) = sp_peer.slots.get_mut(&smid).and_then(|s| s.sub.as_mut()) else { continue };
 
-            if simulcast {
-                if sub.target != sub.current && d.rid == sub.target && is_keyframe {
-                    sub.current = sub.target;
-                    sub.rebase = true;
-                    sub.waiting_keyframe = false;
-                    switched.push((sp, smid, sub.current));
+            // Switch layers only on a keyframe of the target so the decoder never breaks.
+            if sub.target == Some(key) && sub.current != Some(key) && (is_keyframe || audio) {
+                sub.current = Some(key);
+                sub.rebase = true;
+                if layer_name.is_some() {
+                    switched.push((sp, smid));
                 }
-                if d.rid != sub.current {
-                    continue;
-                }
-            } else if sub.waiting_keyframe {
-                if !is_keyframe {
-                    continue;
-                }
-                sub.waiting_keyframe = false;
+            }
+            if sub.current != Some(key) {
+                continue;
             }
 
             let t = d.time.numer();
@@ -723,27 +797,22 @@ impl Worker {
             }
             let out_t = sub.ts_out.wrapping_add(t.wrapping_sub(sub.ts_in));
             sub.last_out = Some(out_t);
-            let out_time = str0m::media::MediaTime::new(out_t, d.time.frequency());
+            let out_time = MediaTime::new(out_t, d.time.frequency());
 
             let Some(writer) = sp_peer.rtc.writer(smid) else { continue };
             let Some(pt) = writer.match_params(d.params) else { continue };
-            let writer = if d.ext_vals.audio_level.is_some() {
-                writer.audio_level(d.ext_vals.audio_level.unwrap_or(-127), d.ext_vals.voice_activity.unwrap_or(false))
-            } else {
-                writer
+            let writer = match d.ext_vals.audio_level {
+                Some(level) => writer.audio_level(level, d.ext_vals.voice_activity.unwrap_or(false)),
+                None => writer,
             };
             if let Err(e) = writer.write(pt, d.network_time, out_time, d.data.clone()) {
                 tracing::debug!(peer = sp.0, "write failed: {e:?}");
             }
             self.dirty.insert(sp);
         }
-        for (sp, smid, rid) in switched {
+        for (sp, smid) in switched {
             if let Some(p) = self.peers.get(&sp) {
-                p.send(VoiceServerMsg::Layer {
-                    mid: smid.to_string(),
-                    layer: rid.map(|r| r.to_string()),
-                    estimate_bps: p.estimate_bps,
-                });
+                p.send(VoiceServerMsg::Layer { mid: smid.to_string(), layer: layer_name.clone(), estimate_bps: p.estimate_bps });
             }
         }
     }
@@ -755,118 +824,119 @@ impl Worker {
         }
     }
 
-    /// Greedy per-subscriber allocation of the downlink estimate across simulcast tracks.
+    /// Greedy per-subscriber allocation of the downlink estimate across layered tracks.
     /// Screen shares get first claim on bandwidth, then cameras.
     fn select_layers_for(&mut self, id: PeerId) {
         let Some(peer) = self.peers.get(&id) else { return };
         struct Want {
-            mid: Mid,
-            src: (PeerId, Mid),
-            layers: Vec<(Rid, u64)>,
+            slot: Mid,
+            src_peer: PeerId,
+            layers: Vec<(LayerKey, u64)>,
             pref: LayerPref,
             priority: u8,
-            current_target: Option<Rid>,
+            target: Option<LayerKey>,
             last_downgrade: Option<Instant>,
         }
         let mut audio_bps = 0u64;
-        let mut wants = Vec::new();
+        let mut fixed_bps = 0u64;
         let mut desired = 0u64;
-        for (mid, slot) in &peer.slots {
-            let Some(sub) = &slot.sub else { continue };
-            let Some(track) = self.peers.get(&sub.src.0).and_then(|p| p.published.get(&sub.src.1)) else { continue };
+        let mut wants = Vec::new();
+        for (slot, s) in &peer.slots {
+            let Some(sub) = &s.sub else { continue };
+            let Some(track) = self.peers.get(&sub.src.0).and_then(|p| p.tracks.get(&sub.src.1)) else { continue };
+            let layers: Vec<(LayerKey, u64)> = track.layers.iter().map(|l| (l.key, track.rate(l.key))).collect();
             if track.kind == MediaKind::Audio {
-                audio_bps += track.rate(None).max(40_000);
+                audio_bps += layers.first().map(|l| l.1).unwrap_or(0).max(40_000);
                 continue;
             }
-            if track.rids.is_empty() {
-                desired += track.rate(None);
+            if layers.len() < 2 {
+                fixed_bps += layers.first().map(|l| l.1).unwrap_or(0);
                 continue;
             }
-            let layers: Vec<(Rid, u64)> = track.layers_desc().into_iter().map(|r| (r, track.rate(Some(r)))).collect();
             desired += layers.first().map(|l| l.1).unwrap_or(0);
             wants.push(Want {
-                mid: *mid,
-                src: sub.src,
+                slot: *slot,
+                src_peer: sub.src.0,
                 layers,
                 pref: sub.pref,
                 priority: if track.source == TrackSource::Screen { 0 } else { 1 },
-                current_target: sub.target,
+                target: sub.target,
                 last_downgrade: sub.last_downgrade,
             });
         }
-        let estimate = peer.estimate_bps;
-        let mut budget = (estimate as f64 * 0.9) as i64 - audio_bps as i64;
+        let mut budget = (peer.estimate_bps as f64 * 0.9) as i64 - (audio_bps + fixed_bps) as i64;
         wants.sort_by_key(|w| w.priority);
 
         let now = Instant::now();
         let mut changes = Vec::new();
         for w in &wants {
+            let idx_of = |k: Option<LayerKey>| k.and_then(|k| w.layers.iter().position(|l| l.0 == k));
             let pick = match w.pref {
                 LayerPref::High => w.layers.first().map(|l| l.0),
                 LayerPref::Medium => w.layers.get(w.layers.len() / 2).map(|l| l.0),
                 LayerPref::Low => w.layers.last().map(|l| l.0),
-                // All layers flow continuously from the publisher, so this only lasts ~1s.
-                LayerPref::Auto if w.layers.iter().any(|l| l.1 == 0) => w.current_target,
+                // Every layer flows continuously from the publisher, so this lasts ~1s.
+                LayerPref::Auto if w.layers.iter().any(|l| l.1 == 0) => w.target,
                 LayerPref::Auto => {
-                    let current_idx = w.current_target.and_then(|t| w.layers.iter().position(|l| l.0 == t));
+                    let current = idx_of(w.target);
+                    let cooling = w.last_downgrade.is_some_and(|t| now.duration_since(t) < UPGRADE_COOLDOWN);
                     let mut choice = w.layers.last().map(|l| l.0);
-                    for (i, (rid, bps)) in w.layers.iter().enumerate() {
-                        let is_upgrade = current_idx.is_some_and(|c| i < c);
-                        // Don't climb back up right after backing off.
-                        let cooling = w.last_downgrade.is_some_and(|t| now.duration_since(t) < Duration::from_secs(4));
-                        if is_upgrade && cooling {
+                    for (i, (key, bps)) in w.layers.iter().enumerate() {
+                        let upgrade = current.is_some_and(|c| i < c);
+                        if upgrade && cooling {
                             continue;
                         }
-                        let need = if is_upgrade { (*bps as f64 * UPGRADE_HEADROOM) as i64 } else { *bps as i64 };
+                        let need = if upgrade { (*bps as f64 * UPGRADE_HEADROOM) as i64 } else { *bps as i64 };
                         if need <= budget {
-                            choice = Some(*rid);
+                            choice = Some(*key);
                             break;
                         }
                     }
                     choice
                 }
             };
-            if let Some(rid) = pick {
-                budget -= w.layers.iter().find(|l| l.0 == rid).map(|l| l.1 as i64).unwrap_or(0);
+            if let Some(k) = pick {
+                budget -= w.layers.iter().find(|l| l.0 == k).map(|l| l.1 as i64).unwrap_or(0);
             }
-            if pick != w.current_target {
-                changes.push((w.mid, w.src, pick, w.current_target, w.layers.clone()));
+            if pick != w.target {
+                let downgrade = w.pref == LayerPref::Auto && idx_of(pick) > idx_of(w.target);
+                changes.push((w.slot, w.src_peer, pick, downgrade));
             }
         }
 
         let peer = self.peers.get_mut(&id).expect("checked");
         // Ask the BWE to probe for what full quality would need.
-        peer.rtc.bwe().set_desired_bitrate(Bitrate::bps(((desired + audio_bps) as f64 * 1.1) as u64));
+        peer.rtc.bwe().set_desired_bitrate(Bitrate::bps(((desired + audio_bps + fixed_bps) as f64 * 1.1) as u64));
         let mut kf = Vec::new();
-        for (mid, src, pick, old, layers) in changes {
-            if let Some(sub) = peer.slots.get_mut(&mid).and_then(|s| s.sub.as_mut()) {
-                let idx = |r: Option<Rid>| r.and_then(|r| layers.iter().position(|l| l.0 == r));
-                if idx(pick) > idx(old) {
+        for (slot, pid, pick, downgrade) in changes {
+            if let Some(sub) = peer.slots.get_mut(&slot).and_then(|s| s.sub.as_mut()) {
+                if downgrade {
                     sub.last_downgrade = Some(now);
                 }
                 sub.target = pick;
-                kf.push((src, pick));
+                if let Some(k) = pick {
+                    kf.push((pid, k));
+                }
             }
         }
-        for (src, rid) in kf {
-            self.request_keyframe(src, rid, false);
+        for (pid, key) in kf {
+            self.request_keyframe(pid, key, false);
         }
     }
 
     fn update_speaking(&mut self) {
         let now = Instant::now();
         let mut changes = Vec::new();
-        for (id, p) in self.peers.iter_mut() {
+        for p in self.peers.values_mut() {
             let speaking = p.last_loud.is_some_and(|t| now.duration_since(t) < SPEAK_HOLD);
             if speaking != p.speaking {
                 p.speaking = speaking;
-                changes.push((*id, p.room, p.user, speaking));
+                changes.push((p.room, p.user, speaking));
             }
         }
-        for (id, room, user, speaking) in changes {
+        for (room, user, speaking) in changes {
             // Include the speaker so their own UI can show the indicator.
             self.broadcast(room, None, VoiceServerMsg::Speaking { user_id: user, speaking });
-            let _ = id;
         }
     }
 }
