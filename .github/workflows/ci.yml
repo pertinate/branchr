@@ -48,7 +48,7 @@ jobs:
           DOMAIN: chat.example.com
           PUBLIC_IP: 203.0.113.10
           VOICE_SECRET: ci
-          IMAGE: ghcr.io/example/discord-clone:ci
+          IMAGE: ghcr.io/example/branchr:ci
         run: |
           docker compose -f docker-compose.yml config -q
           docker compose -f docker-compose.yml -f deploy/docker-compose.public.yml -f deploy/docker-compose.image.yml config -q

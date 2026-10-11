@@ -5,7 +5,7 @@
 #   PUBLIC_IP=203.0.113.10 scripts/deploy-docker.sh root@your-server
 #
 # Env: PUBLIC_IP (required, address clients send media to), API_PORT (8740), SFU_PORT (8741),
-#      UDP_PORT (51000), SFU_WORKERS (8), APPDIR (/mnt/user/appdata/discord-clone),
+#      UDP_PORT (51000), SFU_WORKERS (8), APPDIR (/mnt/user/appdata/branchr),
 #      SFU_URL (default ws://PUBLIC_IP:SFU_PORT/ws; use wss://... behind a TLS proxy).
 set -euo pipefail
 HOST=${1:?usage: deploy-docker.sh user@host}
@@ -14,7 +14,7 @@ API_PORT=${API_PORT:-8740}
 SFU_PORT=${SFU_PORT:-8741}
 UDP_PORT=${UDP_PORT:-51000}
 SFU_WORKERS=${SFU_WORKERS:-8}
-APPDIR=${APPDIR:-/mnt/user/appdata/discord-clone}
+APPDIR=${APPDIR:-/mnt/user/appdata/branchr}
 SFU_URL=${SFU_URL:-ws://$PUBLIC_IP:$SFU_PORT/ws}
 UDP_END=$((UDP_PORT + SFU_WORKERS - 1))
 
@@ -27,17 +27,17 @@ rsync -az --delete --exclude target --exclude node_modules --exclude 'apps/*/dis
 ssh "$HOST" bash -s <<REMOTE
 set -euo pipefail
 cd $APPDIR
-DOCKER_BUILDKIT=1 docker build -q -t discord-clone:latest src
+DOCKER_BUILDKIT=1 docker build -q -t branchr:latest src
 [ -f .env ] || printf "VOICE_SECRET=%s\n" "\$(openssl rand -hex 32)" > .env
 chmod 600 .env; . ./.env
-docker rm -f discord-clone-api discord-clone-sfu >/dev/null 2>&1 || true
-docker run -d --name discord-clone-api --restart unless-stopped --ulimit nofile=1048576 \
+docker rm -f branchr-api branchr-sfu >/dev/null 2>&1 || true
+docker run -d --name branchr-api --restart unless-stopped --ulimit nofile=1048576 \
   -e API_BIND=0.0.0.0:8080 -e VOICE_SECRET=\$VOICE_SECRET -e SFU_URLS=$SFU_URL \
-  -v $APPDIR/data:/data -p $API_PORT:8080 discord-clone:latest api >/dev/null
-docker run -d --name discord-clone-sfu --restart unless-stopped --ulimit nofile=1048576 \
+  -v $APPDIR/data:/data -p $API_PORT:8080 branchr:latest api >/dev/null
+docker run -d --name branchr-sfu --restart unless-stopped --ulimit nofile=1048576 \
   -e SFU_BIND=0.0.0.0:8090 -e VOICE_SECRET=\$VOICE_SECRET -e SFU_PUBLIC_IP=$PUBLIC_IP \
   -e SFU_UDP_PORT=$UDP_PORT -e SFU_WORKERS=$SFU_WORKERS \
-  -p $SFU_PORT:8090 -p $UDP_PORT-$UDP_END:$UDP_PORT-$UDP_END/udp discord-clone:latest sfu >/dev/null
+  -p $SFU_PORT:8090 -p $UDP_PORT-$UDP_END:$UDP_PORT-$UDP_END/udp branchr:latest sfu >/dev/null
 docker image prune -f >/dev/null
 REMOTE
 echo "deployed: http://$PUBLIC_IP:$API_PORT (sfu $SFU_URL, udp $UDP_PORT-$UDP_END)"

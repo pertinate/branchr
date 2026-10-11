@@ -2,7 +2,7 @@
 services:
   api:
     build: .
-    image: discord-clone
+    image: branchr
     command: ["api"]
     restart: unless-stopped
     ulimits:
@@ -20,7 +20,7 @@ services:
 
   sfu:
     build: .
-    image: discord-clone
+    image: branchr
     command: ["sfu"]
     restart: unless-stopped
     ulimits:

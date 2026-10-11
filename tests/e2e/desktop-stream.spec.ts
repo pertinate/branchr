@@ -21,7 +21,7 @@ test("desktop streamer stays connected while streaming with camera", async ({ br
   const app = await electron.launch({
     executablePath,
     args: [desktopDir],
-    env: { ...process.env, DISCORD_CLONE_FAKE_MEDIA: "1", DISCORD_CLONE_PROFILE: mkdtempSync(path.join(tmpdir(), "dc-profile-")) },
+    env: { ...process.env, BRANCHR_FAKE_MEDIA: "1", BRANCHR_PROFILE: mkdtempSync(path.join(tmpdir(), "dc-profile-")) },
   });
   const s = await app.firstWindow();
   const logs: string[] = [];

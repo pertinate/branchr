@@ -12,7 +12,7 @@ test.setTimeout(600_000);
 
 function sfuCpu(): string {
   if (!ssh) return "n/a";
-  return execSync(`ssh ${ssh} "docker stats --no-stream --format '{{.CPUPerc}} {{.MemUsage}} {{.NetIO}}' discord-clone-sfu"`).toString().trim();
+  return execSync(`ssh ${ssh} "docker stats --no-stream --format '{{.CPUPerc}} {{.MemUsage}} {{.NetIO}}' branchr-sfu"`).toString().trim();
 }
 
 test("SFU fan-out load", async ({ browser }) => {

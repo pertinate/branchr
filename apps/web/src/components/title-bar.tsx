@@ -9,8 +9,9 @@ export function TitleBar() {
   if (!desktop) return null;
   return (
     <div className="drag flex h-6 shrink-0 items-center justify-between pl-3 text-xs text-muted-foreground">
-      <span className="font-semibold tracking-wide">
-        Discord Clone
+      <span className="flex items-center gap-1.5 font-semibold tracking-wide">
+        <img src="./icon.svg" alt="" className="size-3.5" draggable={false} />
+        branchr
         {connection === "reconnecting" && <span className="ml-2 text-idle">reconnecting…</span>}
       </span>
       <div className="no-drag flex h-full">

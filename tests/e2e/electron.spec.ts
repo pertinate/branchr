@@ -15,7 +15,7 @@ test("desktop app boots, exposes the bridge and logs in", async () => {
     executablePath,
     args: [desktopDir, "--ozone-platform=headless", "--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream"],
     // Fresh profile: never inherit a logged-in session.
-    env: { ...process.env, DISCORD_CLONE_PROFILE: mkdtempSync(path.join(tmpdir(), "dc-boot-")) },
+    env: { ...process.env, BRANCHR_PROFILE: mkdtempSync(path.join(tmpdir(), "dc-boot-")) },
   });
   const win = await app.firstWindow();
   win.on("console", (m) => m.type() === "error" && console.log("[electron]", m.text()));

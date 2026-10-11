@@ -1,6 +1,6 @@
 import { defineConfig } from "@playwright/test";
 
-const SCRATCH = process.env.E2E_DATA ?? "/tmp/discord-clone-e2e";
+const SCRATCH = process.env.E2E_DATA ?? "/tmp/branchr-e2e";
 /**
  * Point at a deployed instance instead of a local stack. Media APIs need a secure context, so
  * for a plain-http LAN deployment tunnel it to localhost first:

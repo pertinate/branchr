@@ -22,8 +22,8 @@
     "esbuild": "^0.28.2",
     "typescript": "^7.0.2"
   },
-  "homepage": "https://github.com/Pertinate/discord-clone",
-  "desktopName": "discord-clone.desktop",
+  "homepage": "https://github.com/pertinate/branchr",
+  "desktopName": "branchr.desktop",
   "optionalDependencies": {
     "@vencord/venmic": "^7.2.3"
   }

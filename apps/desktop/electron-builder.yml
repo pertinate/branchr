@@ -1,6 +1,6 @@
-appId: dev.discordclone.desktop
-productName: Discord Clone
-executableName: discord-clone
+appId: dev.branchr.desktop
+productName: branchr
+executableName: branchr
 directories:
   output: release
   buildResources: build
@@ -29,15 +29,15 @@ linux:
   maintainer: Pertinate
   desktop:
     entry:
-      StartupWMClass: discord-clone
+      StartupWMClass: branchr
 appImage:
-  artifactName: discord-clone-${version}-${arch}.AppImage
+  artifactName: branchr-${version}-${arch}.AppImage
 win:
   target: nsis
   icon: build/icon.png
 nsis:
-  artifactName: discord-clone-${version}-setup.exe
+  artifactName: branchr-${version}-setup.exe
   oneClick: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
-  shortcutName: Discord Clone
+  shortcutName: branchr

@@ -30,7 +30,7 @@ test("desktop: switching channels and disconnect are stable", async () => {
   const app = await electron.launch({
     executablePath,
     args: [...(packaged ? [] : [desktopDir]), "--ozone-platform=headless"],
-    env: { ...process.env, APPIMAGE_EXTRACT_AND_RUN: "1", DISCORD_CLONE_FAKE_MEDIA: "1", DISCORD_CLONE_PROFILE: mkdtempSync(path.join(tmpdir(), "dc-voice-")) },
+    env: { ...process.env, APPIMAGE_EXTRACT_AND_RUN: "1", BRANCHR_FAKE_MEDIA: "1", BRANCHR_PROFILE: mkdtempSync(path.join(tmpdir(), "dc-voice-")) },
   });
   const win = await app.firstWindow();
   const warnings: string[] = [];

@@ -10,7 +10,7 @@ HOST=${1:?usage: deploy-vps.sh user@host}
 : "${DOMAIN:?set DOMAIN}"
 SFU_WORKERS=${SFU_WORKERS:-2}
 UDP_END=$((50000 + SFU_WORKERS - 1))
-APPDIR=/opt/discord-clone
+APPDIR=/opt/branchr
 
 cd "$(dirname "$0")/.."
 ssh "$HOST" "command -v docker >/dev/null || (curl -fsSL https://get.docker.com | sh); mkdir -p $APPDIR"

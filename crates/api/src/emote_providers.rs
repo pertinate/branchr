@@ -295,7 +295,7 @@ impl EmoteProviders {
         Self {
             http: reqwest::Client::builder()
                 .user_agent(concat!(
-                    "discord-clone/",
+                    "branchr/",
                     env!("CARGO_PKG_VERSION"),
                     " (self-hosted chat server; emote lookups)"
                 ))

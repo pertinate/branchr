@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Roll a prebuilt image out to a host provisioned by deploy-vps.sh (used by CI).
 #
-#   IMAGE=ghcr.io/owner/discord-clone:<sha> scripts/deploy-image.sh root@<host>
+#   IMAGE=ghcr.io/owner/branchr:<sha> scripts/deploy-image.sh root@<host>
 #
 # Env: REGISTRY_USER / REGISTRY_TOKEN to authenticate the pull (optional for public images).
 # Keeps the host's .env (DOMAIN, VOICE_SECRET, ...) and data; only compose files and the
@@ -9,7 +9,7 @@
 set -euo pipefail
 HOST=${1:?usage: deploy-image.sh user@host}
 : "${IMAGE:?set IMAGE}"
-APPDIR=/opt/discord-clone
+APPDIR=/opt/branchr
 
 cd "$(dirname "$0")/.."
 ssh "$HOST" "test -f $APPDIR/.env || { echo 'no $APPDIR/.env; provision with scripts/deploy-vps.sh first' >&2; exit 1; }; mkdir -p $APPDIR/deploy"

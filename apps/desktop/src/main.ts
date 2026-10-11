@@ -1,3 +1,4 @@
+import { cpSync, existsSync } from "node:fs";
 import path from "node:path";
 
 import {
@@ -19,7 +20,7 @@ const isWayland = process.platform === "linux" && (process.env.XDG_SESSION_TYPE 
 const devUrl = process.env.DEV_URL;
 
 /** Test mode: synthetic camera/mic/screen instead of real devices and the portal picker. */
-const fakeMedia = process.env.DISCORD_CLONE_FAKE_MEDIA === "1";
+const fakeMedia = process.env.BRANCHR_FAKE_MEDIA === "1";
 if (fakeMedia) {
   app.commandLine.appendSwitch("use-fake-device-for-media-stream");
   app.commandLine.appendSwitch("use-fake-ui-for-media-stream");
@@ -58,9 +59,10 @@ if (fakeMedia) {
   app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 }
 
-app.setName("Discord Clone");
+app.setName("branchr");
+migrateProfile();
 // Separate profile (and single-instance lock) for tests or multiple accounts.
-if (process.env.DISCORD_CLONE_PROFILE) app.setPath("userData", process.env.DISCORD_CLONE_PROFILE);
+if (process.env.BRANCHR_PROFILE) app.setPath("userData", process.env.BRANCHR_PROFILE);
 if (!app.requestSingleInstanceLock()) app.quit();
 
 let win: BrowserWindow | null = null;
@@ -68,6 +70,24 @@ let tray: Tray | null = null;
 let quitting = false;
 /** Source chosen in our own picker (X11); consumed by the next getDisplayMedia call. */
 let selectedSource: string | null = null;
+
+/**
+ * The app used to be called "Discord Clone": carry that profile (login, settings, server
+ * address) over to the new name once, skipping caches and the old instance lock.
+ */
+function migrateProfile() {
+  if (process.env.BRANCHR_PROFILE) return;
+  // Not app.getPath("userData"): that creates the directory, so it would always "exist".
+  const next = path.join(app.getPath("appData"), app.getName());
+  const old = path.join(app.getPath("appData"), "Discord Clone");
+  if (existsSync(next) || !existsSync(old)) return;
+  const skip = new Set(["Cache", "Code Cache", "GPUCache", "DawnGraphiteCache", "DawnWebGPUCache", "SingletonLock", "SingletonCookie", "SingletonSocket"]);
+  try {
+    cpSync(old, next, { recursive: true, filter: (src) => !skip.has(path.basename(src)) });
+  } catch (e) {
+    console.warn("profile migration failed", e);
+  }
+}
 
 function iconPath() {
   return app.isPackaged ? path.join(process.resourcesPath, "icon.png") : path.join(__dirname, "..", "build", "icon.png");
@@ -202,7 +222,7 @@ function setupIpc() {
 function setupTray() {
   const image = nativeImage.createFromPath(iconPath()).resize({ width: 22, height: 22 });
   tray = new Tray(image);
-  tray.setToolTip("Discord Clone");
+  tray.setToolTip("branchr");
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: "Open", click: () => win?.show() },

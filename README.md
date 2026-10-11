@@ -1,6 +1,7 @@
-# Discord Clone
+<p align="center"><img src="apps/desktop/build/icon.svg" width="96" alt="" /></p>
+<h1 align="center">branchr</h1>
 
-A self-hostable, Discord-style chat app focused on **uncapped, low-latency game and desktop streaming**. It includes a Linux desktop client.
+<p align="center">Self-hostable voice, video and chat, built for <b>uncapped, low-latency game and desktop streaming</b>. Desktop apps for Linux and Windows.</p>
 
 - **Backend (Rust)**: `api`, an axum REST API and realtime gateway on SQLite; `sfu`, a str0m-based selective forwarding unit for voice, video and streams.
 - **Client**: Vite, React, TanStack Router, shadcn/ui and Tailwind v4. It ships as an **Electron AppImage** for Linux and also works as a web app served by the API.
@@ -124,7 +125,7 @@ GitHub Actions (`.github/workflows/`):
 
 ```sh
 pnpm install
-pnpm appimage               # → apps/desktop/release/discord-clone-<version>-x86_64.AppImage
+pnpm appimage               # → apps/desktop/release/branchr-<version>-x86_64.AppImage
 ```
 
 The app enables VA-API encode/decode, PipeWire capture (Wayland portal picker), Ozone/Wayland and zero-copy. **User Settings → Streaming & Performance** shows which codecs your GPU encodes and decodes in hardware. For example, an RX 6950 XT hardware-encodes H.264 and hardware-decodes AV1, HEVC, VP9 and H.264.

@@ -51,7 +51,7 @@ jobs:
         run: pnpm exec electron-builder ${{ matrix.target }} --publish never
       - uses: actions/upload-artifact@v4
         with:
-          name: discord-clone-${{ matrix.name }}
+          name: branchr-${{ matrix.name }}
           path: ${{ matrix.files }}
           if-no-files-found: error
 
