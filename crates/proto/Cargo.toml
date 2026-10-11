@@ -1,0 +1,17 @@
+[package]
+name = "proto"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+ts-rs = { workspace = true, optional = true }
+hmac = { workspace = true, optional = true }
+sha2 = { workspace = true, optional = true }
+base64 = { workspace = true, optional = true }
+
+[features]
+default = []
+ts = ["dep:ts-rs"]
+token = ["dep:hmac", "dep:sha2", "dep:base64"]

@@ -1,0 +1,7 @@
+[package]
+name = "sfu"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+str0m = "0.24"

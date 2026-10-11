@@ -1,0 +1,30 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+license = "MIT"
+
+[workspace.dependencies]
+proto = { path = "crates/proto" }
+tokio = { version = "1", features = ["full"] }
+axum = { version = "0.8", features = ["ws", "macros"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1"
+thiserror = "2"
+ts-rs = { version = "12" }
+hmac = "0.12"
+sha2 = "0.10"
+base64 = "0.22"
+rand = "0.9"
+futures = "0.3"
+tower-http = { version = "0.7", features = ["cors", "fs", "compression-full", "trace"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
