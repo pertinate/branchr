@@ -2264,6 +2264,7 @@ dependencies = [
  "axum",
  "futures",
  "libc",
+ "parking_lot",
  "proto",
  "serde",
  "serde_json",

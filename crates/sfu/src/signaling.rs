@@ -14,23 +14,18 @@ use proto::voice::{VoiceClientMsg, VoiceServerMsg};
 use tokio::sync::mpsc;
 
 use crate::config::Config;
-use crate::worker::{Cmd, PeerId, WorkerHandle};
+use crate::shared::Shared;
+use crate::worker::{Cmd, PeerId};
 
 pub struct App {
     config: Config,
-    workers: Vec<WorkerHandle>,
+    shared: Arc<Shared>,
     next_peer: AtomicU64,
 }
 
 impl App {
-    pub fn new(config: Config, workers: Vec<WorkerHandle>) -> Self {
-        Self { config, workers, next_peer: AtomicU64::new(1) }
-    }
-
-    fn worker_for(&self, room: proto::Id) -> &WorkerHandle {
-        // Snowflake low bits are mostly zero; mix before reducing.
-        let h = (room.0 as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 32;
-        &self.workers[(h % self.workers.len() as u64) as usize]
+    pub fn new(config: Config, shared: Arc<Shared>) -> Self {
+        Self { config, shared, next_peer: AtomicU64::new(1) }
     }
 }
 
@@ -71,10 +66,11 @@ async fn run(mut ws: WebSocket, app: Arc<App>) -> anyhow::Result<()> {
     };
 
     let peer = PeerId(app.next_peer.fetch_add(1, Ordering::Relaxed));
-    let worker = app.worker_for(claims.channel_id);
+    // Peers go to the least loaded worker regardless of room, so big rooms use every core.
+    let worker = app.shared.least_loaded();
     let (out_tx, mut out_rx) = mpsc::unbounded_channel();
-    worker.send(Cmd::Join { peer, user: claims.user_id, room: claims.channel_id, out: out_tx });
-    let _leave = LeaveGuard { worker: worker.clone(), peer };
+    app.shared.send(worker, Cmd::Join { peer, user: claims.user_id, room: claims.channel_id, out: out_tx });
+    let _leave = LeaveGuard { shared: app.shared.clone(), worker, peer };
 
     loop {
         tokio::select! {
@@ -88,7 +84,7 @@ async fn run(mut ws: WebSocket, app: Arc<App>) -> anyhow::Result<()> {
                     Message::Text(t) => match serde_json::from_str::<VoiceClientMsg>(&t) {
                         Ok(VoiceClientMsg::Ping) => send(&mut ws, &VoiceServerMsg::Pong).await?,
                         Ok(VoiceClientMsg::Join { .. }) => {}
-                        Ok(msg) => worker.send(Cmd::Msg { peer, msg }),
+                        Ok(msg) => app.shared.send(worker, Cmd::Msg { peer, msg }),
                         Err(e) => send(&mut ws, &VoiceServerMsg::Error { message: format!("bad message: {e}") }).await?,
                     },
                     Message::Close(_) => break,
@@ -101,12 +97,13 @@ async fn run(mut ws: WebSocket, app: Arc<App>) -> anyhow::Result<()> {
 }
 
 struct LeaveGuard {
-    worker: WorkerHandle,
+    shared: Arc<Shared>,
+    worker: usize,
     peer: PeerId,
 }
 
 impl Drop for LeaveGuard {
     fn drop(&mut self) {
-        self.worker.send(Cmd::Leave { peer: self.peer });
+        self.shared.send(self.worker, Cmd::Leave { peer: self.peer });
     }
 }

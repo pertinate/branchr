@@ -1,4 +1,6 @@
+import { mkdtempSync } from "node:fs";
 import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { _electron as electron, expect, test } from "@playwright/test";
@@ -12,6 +14,8 @@ test("desktop app boots, exposes the bridge and logs in", async () => {
   const app = await electron.launch({
     executablePath,
     args: [desktopDir, "--ozone-platform=headless", "--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream"],
+    // Fresh profile: never inherit a logged-in session.
+    env: { ...process.env, DISCORD_CLONE_PROFILE: mkdtempSync(path.join(tmpdir(), "dc-boot-")) },
   });
   const win = await app.firstWindow();
   win.on("console", (m) => m.type() === "error" && console.log("[electron]", m.text()));

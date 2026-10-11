@@ -16,3 +16,4 @@ anyhow.workspace = true
 futures.workspace = true
 socket2 = "0.6"
 libc = "0.2"
+parking_lot = "0.12"

@@ -6,6 +6,8 @@
 
 mod config;
 mod h264;
+mod shared;
+mod udp;
 mod signaling;
 mod worker;
 
@@ -26,9 +28,10 @@ async fn main() -> anyhow::Result<()> {
     }));
 
     let config = config::Config::from_env()?;
-    let mut workers = Vec::with_capacity(config.workers);
-    for i in 0..config.workers {
-        workers.push(worker::spawn(i, &config)?);
+    let (txs, rxs): (Vec<_>, Vec<_>) = (0..config.workers).map(|_| tokio::sync::mpsc::unbounded_channel()).unzip();
+    let shared = Arc::new(shared::Shared::new(txs));
+    for (i, rx) in rxs.into_iter().enumerate() {
+        worker::spawn(i, &config, shared.clone(), rx)?;
     }
     tracing::info!(
         workers = config.workers,
@@ -37,7 +40,7 @@ async fn main() -> anyhow::Result<()> {
         "sfu started"
     );
 
-    let app = Arc::new(signaling::App::new(config.clone(), workers));
+    let app = Arc::new(signaling::App::new(config.clone(), shared));
     let listener = tokio::net::TcpListener::bind(config.bind).await?;
     tracing::info!("signaling listening on {}", config.bind);
     axum::serve(listener, signaling::router(app)).await?;
