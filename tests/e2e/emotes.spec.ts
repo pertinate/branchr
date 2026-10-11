@@ -33,8 +33,11 @@ test("emotes: add from 7TV, FFZ and BetterTTV, render for other members", async 
   await expect(serverEmotes.locator('img[alt="bttvJAM"]')).toHaveCount(1);
   await alice.keyboard.press("Escape");
 
-  await alice.getByPlaceholder("Message #general").fill("hi OMEGALUL bttvJAM");
+  await alice.getByPlaceholder("Message #general").fill("hi :OMEGALUL: :bttvJAM: and plain OMEGALUL stays text");
   await alice.keyboard.press("Enter");
+  // Only :name: is an emote; the bare word stays text (strict locators below also
+  // ensure there's exactly one OMEGALUL image).
+  await expect(bob.getByText("and plain OMEGALUL stays text")).toBeVisible();
   for (const [name, cdn] of [
     ["OMEGALUL", "cdn.frankerfacez.com/emote/"],
     ["bttvJAM", "cdn.betterttv.net/emote/5f1b0186cf6d2144653d2970/"],
@@ -140,7 +143,11 @@ test("emotes: name clashes prompt for a new name; owners can rename", async ({ b
   await expect(serverEmotes.locator('img[alt="SevenLUL"]')).toHaveCount(1);
   await alice.keyboard.press("Escape");
 
-  await bob.getByPlaceholder("Message #general").fill("SevenLUL");
-  await bob.keyboard.press("Enter");
+  // Autocomplete inserts this server's emote as :name:.
+  const box = bob.getByPlaceholder("Message #general");
+  await box.fill(":Seven");
+  await box.press("Tab");
+  await expect(box).toHaveValue(":SevenLUL: ");
+  await box.press("Enter");
   await expect(alice.locator('img[alt="SevenLUL"]').last()).toBeVisible();
 });

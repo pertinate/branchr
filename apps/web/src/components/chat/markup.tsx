@@ -7,9 +7,8 @@ import { useEmoteCard } from "@/stores/emotes";
 
 /**
  * Discord-flavoured markdown subset: ```code blocks```, `inline code`, **bold**, *italic*,
- * _italic_, __underline__, ~~strike~~, ||spoiler||, links, and emotes: this server's as whole
- * words like on Twitch (or :name:), any server's as <:name:id> tokens resolved from the
- * message's emote snapshot.
+ * _italic_, __underline__, ~~strike~~, ||spoiler||, links, and emotes: this server's as
+ * :name:, any server's as <:name:id> tokens resolved from the message's emote snapshot.
  */
 
 type Inline = { re: RegExp; render: (m: RegExpExecArray, ctx: Ctx, key: number) => ReactNode };
@@ -82,24 +81,21 @@ function Spoiler({ children }: { children: ReactNode }) {
   );
 }
 
+const NAMED_EMOTE = /:([\w!?-]{1,64}):/g;
+
+/** `:name:` → this server's emote. Bare words are never converted: emotes are intentional. */
 function emotify(text: string, ctx: Ctx, keyBase: string): ReactNode[] {
-  if (ctx.emotes.size === 0) return [text];
+  if (ctx.emotes.size === 0 || !text.includes(":")) return [text];
   const out: ReactNode[] = [];
-  // Split on whitespace but keep it, so spacing is preserved.
-  const parts = text.split(/(\s+)/);
-  let buf = "";
-  parts.forEach((p, i) => {
-    const name = p.startsWith(":") && p.endsWith(":") && p.length > 2 ? p.slice(1, -1) : p;
-    const e = ctx.emotes.get(name);
-    if (e) {
-      if (buf) out.push(buf);
-      buf = "";
-      out.push(emoteEl(e, ctx, `${keyBase}-${i}`));
-    } else {
-      buf += p;
-    }
-  });
-  if (buf) out.push(buf);
+  let last = 0;
+  for (const m of text.matchAll(NAMED_EMOTE)) {
+    const e = ctx.emotes.get(m[1]);
+    if (!e) continue;
+    if (m.index > last) out.push(text.slice(last, m.index));
+    out.push(emoteEl(e, ctx, `${keyBase}-${m.index}`));
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) out.push(text.slice(last));
   return out;
 }
 
@@ -130,7 +126,6 @@ export const Markup = memo(function Markup({ content, emotes, refs }: { content:
     EMOTE_ONLY.test(content) &&
     words.every(
       (w) =>
-        emotes.has(w) ||
         (w.startsWith(":") && w.endsWith(":") && emotes.has(w.slice(1, -1))) ||
         byId.has(WHOLE_TOKEN.exec(w)?.[2] ?? ""),
     );

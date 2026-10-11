@@ -94,7 +94,8 @@ export function Composer({ channelId, guildId, replyTo, clearReply }: { channelI
   const suggestion = useMemo(() => {
     const caret = ta.current?.selectionStart ?? value.length;
     const m = /(?:^|\s):([\w!?-]{2,})$/.exec(value.slice(0, caret));
-    if (!m) return null;
+    // Not inside an already-closed :name: (e.g. right after picking a suggestion).
+    if (!m || /^[\w!?-]*:/.test(value.slice(caret))) return null;
     const q = m[1].toLowerCase();
     // This server's emotes rank first, then prefix matches, then shorter names.
     const rank = (e: Emote) => (e.guildId === guildId ? 0 : 2) + Number(!e.name.toLowerCase().startsWith(q));
@@ -113,8 +114,8 @@ export function Composer({ channelId, guildId, replyTo, clearReply }: { channelI
     const end = range?.end ?? el?.selectionEnd ?? value.length;
     const before = value.slice(0, start);
     const pad = before && !/\s$/.test(before) ? " " : "";
-    // This server's emotes work by name; other servers' need an explicit reference.
-    const text = e.guildId === guildId ? e.name : emoteToken(e);
+    // This server's emotes by :name:; other servers' need an explicit reference.
+    const text = e.guildId === guildId ? `:${e.name}:` : emoteToken(e);
     const next = `${before}${pad}${text} ${value.slice(end)}`;
     setValue(next);
     requestAnimationFrame(() => {
