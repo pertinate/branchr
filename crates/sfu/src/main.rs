@@ -27,6 +27,7 @@ async fn main() -> anyhow::Result<()> {
         tracing::error!(thread = thread.name().unwrap_or("?"), "panic: {info}");
     }));
 
+    raise_nofile_limit();
     let config = config::Config::from_env()?;
     let (txs, rxs): (Vec<_>, Vec<_>) = (0..config.workers).map(|_| tokio::sync::mpsc::unbounded_channel()).unzip();
     let shared = Arc::new(shared::Shared::new(txs));
@@ -45,4 +46,20 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("signaling listening on {}", config.bind);
     axum::serve(listener, signaling::router(app)).await?;
     Ok(())
+}
+
+/// Raise the open-file soft limit to the hard limit: every WebSocket/connection is a file
+/// descriptor, and container defaults (1024) cap a server at ~1000 users.
+fn raise_nofile_limit() {
+    let mut lim = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+    // SAFETY: plain syscalls with a valid out-pointer.
+    unsafe {
+        if libc::getrlimit(libc::RLIMIT_NOFILE, &mut lim) == 0 && lim.rlim_cur < lim.rlim_max {
+            let before = lim.rlim_cur;
+            lim.rlim_cur = lim.rlim_max;
+            if libc::setrlimit(libc::RLIMIT_NOFILE, &lim) == 0 {
+                tracing::info!("raised open file limit {before} -> {}", lim.rlim_cur);
+            }
+        }
+    }
 }

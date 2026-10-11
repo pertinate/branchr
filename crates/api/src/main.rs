@@ -24,7 +24,7 @@ use tower_http::services::{ServeDir, ServeFile};
 use tracing_subscriber::EnvFilter;
 
 use crate::config::Config;
-use crate::routes::{channels, emotes, guilds, messages, users};
+use crate::routes::{attachments, channels, emotes, guilds, messages, users};
 use crate::state::{AppState, State};
 
 #[tokio::main]
@@ -33,6 +33,7 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("api=info,tower_http=warn")))
         .init();
 
+    raise_nofile_limit();
     let config = Config::from_env()?;
     let db = db::connect(&config.database_url).await?;
     let worker = std::env::var("WORKER_ID").ok().and_then(|w| w.parse().ok()).unwrap_or(0);
@@ -68,7 +69,11 @@ async fn main() -> anyhow::Result<()> {
         .route("/channels/{cid}/messages/{mid}", patch(messages::edit).delete(messages::delete))
         .route("/channels/{cid}/messages/{mid}/reactions/{emoji}", put(messages::react).delete(messages::unreact))
         .route("/emotes/search", get(emotes::search))
+        .route("/channels/{cid}/attachments", post(attachments::upload))
+        .route("/attachments/{id}/{token}/{name}", get(attachments::serve))
         .route("/health", get(|| async { "ok" }));
+
+    tokio::spawn(attachments::gc(state.clone()));
 
     let mut app = Router::new().nest("/api", api).route("/gateway", get(gateway::upgrade));
 
@@ -101,4 +106,20 @@ async fn shutdown() {
     }
     #[cfg(not(unix))]
     ctrl_c.await.ok();
+}
+
+/// Raise the open-file soft limit to the hard limit: every WebSocket/connection is a file
+/// descriptor, and container defaults (1024) cap a server at ~1000 users.
+fn raise_nofile_limit() {
+    let mut lim = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+    // SAFETY: plain syscalls with a valid out-pointer.
+    unsafe {
+        if libc::getrlimit(libc::RLIMIT_NOFILE, &mut lim) == 0 && lim.rlim_cur < lim.rlim_max {
+            let before = lim.rlim_cur;
+            lim.rlim_cur = lim.rlim_max;
+            if libc::setrlimit(libc::RLIMIT_NOFILE, &lim) == 0 {
+                tracing::info!("raised open file limit {before} -> {}", lim.rlim_cur);
+            }
+        }
+    }
 }

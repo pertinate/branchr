@@ -1,5 +1,6 @@
 // Re-exports of types generated from crates/proto by ts-rs.
 export type * from "./generated/ApiError";
+export type * from "./generated/Attachment";
 export type * from "./generated/AuthResponse";
 export type * from "./generated/ChannelKind";
 export type * from "./generated/ChannelRef";

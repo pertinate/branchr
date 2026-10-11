@@ -14,6 +14,9 @@ pub struct Config {
     pub sfu_urls: Vec<String>,
     /// Allow anyone to register.
     pub open_registration: bool,
+    /// Where uploaded attachments are stored.
+    pub upload_dir: PathBuf,
+    pub max_upload_bytes: u64,
 }
 
 impl Config {
@@ -38,6 +41,13 @@ impl Config {
                 .filter(|s| !s.is_empty())
                 .collect(),
             open_registration: var("OPEN_REGISTRATION").map(|v| v != "false").unwrap_or(true),
+            upload_dir: var("UPLOAD_DIR").map(PathBuf::from).unwrap_or_else(|| {
+                // Next to the SQLite file by default, so one volume holds all state.
+                let db = var("DATABASE_URL").unwrap_or_else(|| "sqlite://data/discord.db".into());
+                let path = db.trim_start_matches("sqlite://").to_string();
+                std::path::Path::new(&path).parent().map(|p| p.join("uploads")).unwrap_or_else(|| "uploads".into())
+            }),
+            max_upload_bytes: var("MAX_UPLOAD_MB").map(|v| v.parse::<u64>()).transpose()?.unwrap_or(100) * 1024 * 1024,
         })
     }
 }

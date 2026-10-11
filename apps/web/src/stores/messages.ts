@@ -1,4 +1,4 @@
-import type { Message, ReactionEvent } from "@app/protocol";
+import type { Attachment, Message, ReactionEvent } from "@app/protocol";
 import { create } from "zustand";
 
 import { api } from "@/lib/api";
@@ -23,7 +23,7 @@ interface MessagesState {
   channels: Record<string, ChannelMessages>;
   load: (channelId: string) => Promise<void>;
   loadOlder: (channelId: string) => Promise<void>;
-  send: (channelId: string, content: string, replyTo?: string | null) => Promise<void>;
+  send: (channelId: string, content: string, replyTo?: string | null, attachments?: Attachment[]) => Promise<void>;
   retry: (channelId: string, nonce: string) => Promise<void>;
   trim: (channelId: string) => void;
   onCreate: (m: Message) => void;
@@ -52,9 +52,14 @@ export const useMessages = create<MessagesState>()((set, get) => {
   const patch = (channelId: string, f: (c: ChannelMessages) => ChannelMessages) =>
     set((s) => ({ channels: { ...s.channels, [channelId]: f(s.channels[channelId] ?? empty) } }));
 
-  const post = async (channelId: string, content: string, n: string, replyTo: string | null) => {
+  const post = async (channelId: string, content: string, n: string, replyTo: string | null, attachments: Attachment[]) => {
     try {
-      const m = await api<Message>("POST", `/channels/${channelId}/messages`, { content, nonce: n, replyTo });
+      const m = await api<Message>("POST", `/channels/${channelId}/messages`, {
+        content,
+        nonce: n,
+        replyTo,
+        attachmentIds: attachments.map((a) => a.id),
+      });
       get().onCreate({ ...m, nonce: n });
     } catch {
       patch(channelId, (c) => ({
@@ -100,7 +105,7 @@ export const useMessages = create<MessagesState>()((set, get) => {
         patch(channelId, (c) => ({ ...c, loading: false }));
       }
     },
-    send: async (channelId, content, replyTo = null) => {
+    send: async (channelId, content, replyTo = null, attachments = []) => {
       const me = useAuth.getState().user;
       if (!me) return;
       const n = nonce();
@@ -112,11 +117,12 @@ export const useMessages = create<MessagesState>()((set, get) => {
         editedAt: null,
         replyTo,
         reactions: [],
+        attachments,
         nonce: n,
         pending: true,
       };
       patch(channelId, (c) => ({ ...c, items: [...c.items, optimistic] }));
-      await post(channelId, content, n, replyTo);
+      await post(channelId, content, n, replyTo, attachments);
     },
     retry: async (channelId, n) => {
       const m = get().channels[channelId]?.items.find((x) => x.nonce === n);
@@ -125,7 +131,7 @@ export const useMessages = create<MessagesState>()((set, get) => {
         ...c,
         items: c.items.map((x) => (x.nonce === n ? { ...x, failed: false, pending: true } : x)),
       }));
-      await post(channelId, m.content, n, m.replyTo);
+      await post(channelId, m.content, n, m.replyTo, m.attachments);
     },
     trim: (channelId) => {
       const c = get().channels[channelId];

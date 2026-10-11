@@ -59,9 +59,24 @@ wire! {
         /// Present when this message is a reply.
         pub reply_to: Option<Id>,
         pub reactions: Vec<Reaction>,
+        #[serde(default)]
+        pub attachments: Vec<Attachment>,
         /// Client-generated id echoed back so optimistic sends can be reconciled.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub nonce: Option<String>,
+    }
+
+    pub struct Attachment {
+        pub id: Id,
+        pub filename: String,
+        pub content_type: String,
+        #[cfg_attr(feature = "ts", ts(type = "number"))]
+        pub size: u64,
+        /// Pixel size for images/videos when the client reported it (avoids layout shift).
+        pub width: Option<u32>,
+        pub height: Option<u32>,
+        /// Path relative to the server origin.
+        pub url: String,
     }
 
     pub struct Reaction {

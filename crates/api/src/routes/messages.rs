@@ -34,9 +34,12 @@ pub async fn list(
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateMessage {
+    #[serde(default)]
     content: String,
     nonce: Option<String>,
     reply_to: Option<Id>,
+    #[serde(default)]
+    attachment_ids: Vec<Id>,
 }
 
 pub async fn create(
@@ -50,8 +53,11 @@ pub async fn create(
     }
     let guild = channel_access(&state, cid, user).await?;
     let content = body.content.trim();
-    if content.is_empty() || content.chars().count() > MAX_LEN {
+    if (content.is_empty() && body.attachment_ids.is_empty()) || content.chars().count() > MAX_LEN {
         return Err(bad(format!("message must be 1-{MAX_LEN} characters")));
+    }
+    if body.attachment_ids.len() > 10 {
+        return Err(bad("at most 10 attachments per message"));
     }
     if body.nonce.as_ref().is_some_and(|n| n.len() > 64) {
         return Err(bad("nonce too long"));
@@ -67,6 +73,19 @@ pub async fn create(
         .execute(&mut *tx)
         .await?;
     sqlx::query("UPDATE channels SET last_message_id = ? WHERE id = ?").bind(id.0).bind(cid.0).execute(&mut *tx).await?;
+    for a in &body.attachment_ids {
+        // Only the uploader's own, unsent uploads to this channel can be attached.
+        let r = sqlx::query("UPDATE attachments SET message_id = ? WHERE id = ? AND uploader_id = ? AND channel_id = ? AND message_id IS NULL")
+            .bind(id.0)
+            .bind(a.0)
+            .bind(user.0)
+            .bind(cid.0)
+            .execute(&mut *tx)
+            .await?;
+        if r.rows_affected() == 0 {
+            return Err(bad("unknown attachment"));
+        }
+    }
     tx.commit().await?;
 
     let msg = Message {
@@ -77,6 +96,7 @@ pub async fn create(
         edited_at: None,
         reply_to: body.reply_to,
         reactions: vec![],
+        attachments: db::attachments_for(&state.db, std::iter::once(id.0)).await?.remove(&id.0).unwrap_or_default(),
         nonce: body.nonce,
     };
     state.hub.to_guild(guild, &ServerEvent::MessageCreate(msg.clone()));

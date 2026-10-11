@@ -31,10 +31,10 @@ DOCKER_BUILDKIT=1 docker build -q -t discord-clone:latest src
 [ -f .env ] || printf "VOICE_SECRET=%s\n" "\$(openssl rand -hex 32)" > .env
 chmod 600 .env; . ./.env
 docker rm -f discord-clone-api discord-clone-sfu >/dev/null 2>&1 || true
-docker run -d --name discord-clone-api --restart unless-stopped \
+docker run -d --name discord-clone-api --restart unless-stopped --ulimit nofile=1048576 \
   -e API_BIND=0.0.0.0:8080 -e VOICE_SECRET=\$VOICE_SECRET -e SFU_URLS=$SFU_URL \
   -v $APPDIR/data:/data -p $API_PORT:8080 discord-clone:latest api >/dev/null
-docker run -d --name discord-clone-sfu --restart unless-stopped \
+docker run -d --name discord-clone-sfu --restart unless-stopped --ulimit nofile=1048576 \
   -e SFU_BIND=0.0.0.0:8090 -e VOICE_SECRET=\$VOICE_SECRET -e SFU_PUBLIC_IP=$PUBLIC_IP \
   -e SFU_UDP_PORT=$UDP_PORT -e SFU_WORKERS=$SFU_WORKERS \
   -p $SFU_PORT:8090 -p $UDP_PORT-$UDP_END:$UDP_PORT-$UDP_END/udp discord-clone:latest sfu >/dev/null

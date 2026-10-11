@@ -12,6 +12,7 @@ export function ChatView({ guildId, channelId }: { guildId: string; channelId: s
   const channel = useApp((s) => s.channels[channelId]);
   const [showMembers, setShowMembers] = useState(true);
   const [replyTo, setReplyTo] = useState<UiMessage | null>(null);
+  const [dragging, setDragging] = useState(false);
   const clearReply = useCallback(() => setReplyTo(null), []);
 
   useEffect(() => {
@@ -31,7 +32,26 @@ export function ChatView({ guildId, channelId }: { guildId: string; channelId: s
         </button>
       </header>
       <div className="flex min-h-0 flex-1">
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div
+          className="relative flex min-w-0 flex-1 flex-col"
+          onDragOver={(e) => {
+            if (e.dataTransfer.types.includes("Files")) {
+              e.preventDefault();
+              setDragging(true);
+            }
+          }}
+          onDragLeave={(e) => e.currentTarget === e.target && setDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragging(false);
+            if (e.dataTransfer.files.length) window.dispatchEvent(new CustomEvent("chat-files", { detail: [...e.dataTransfer.files] }));
+          }}
+        >
+          {dragging && (
+            <div className="pointer-events-none absolute inset-2 z-10 grid place-items-center rounded-lg border-2 border-dashed border-primary bg-primary/10 text-lg font-semibold">
+              Drop files to upload to #{channel?.name}
+            </div>
+          )}
           <MessageList channelId={channelId} guildId={guildId} onReply={setReplyTo} />
           <Composer channelId={channelId} guildId={guildId} replyTo={replyTo} clearReply={clearReply} />
         </div>

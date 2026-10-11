@@ -1,3 +1,4 @@
+pub mod attachments;
 pub mod channels;
 pub mod emotes;
 pub mod guilds;

@@ -3,6 +3,7 @@ import { CornerUpLeft, Pencil, RotateCw, SmilePlus, Trash2 } from "lucide-react"
 import { memo, useState } from "react";
 import { toast } from "sonner";
 
+import { Attachments } from "@/components/chat/attachments";
 import { EmojiPicker } from "@/components/chat/emoji-picker";
 import { EmoteImage, Markup } from "@/components/chat/markup";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -122,10 +123,11 @@ export const MessageItem = memo(function MessageItem({
             <EditBox message={m} onDone={() => setEditing(null)} />
           ) : (
             <div className={cn("selectable leading-[1.375rem] break-words whitespace-pre-wrap", m.pending && "opacity-50", m.failed && "text-destructive")}>
-              <Markup content={m.content} emotes={emotes} />
+              {m.content && <Markup content={m.content} emotes={emotes} />}
               {m.editedAt && <span className="ml-1 text-[10px] text-muted-foreground">(edited)</span>}
             </div>
           )}
+          <Attachments items={m.attachments} />
           {m.failed && (
             <button className="mt-1 flex items-center gap-1 text-xs text-destructive hover:underline" onClick={() => useMessages.getState().retry(m.channelId, m.nonce!)}>
               <RotateCw className="size-3" /> Failed to send. Retry

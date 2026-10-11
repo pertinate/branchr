@@ -264,6 +264,7 @@ pub async fn messages(
     .await?;
 
     let mut reactions = reactions_for(db, rows.iter().map(|r| r.id), viewer).await?;
+    let mut attachments = attachments_for(db, rows.iter().map(|r| r.id)).await?;
     let mut out: Vec<Message> = rows
         .into_iter()
         .map(|r| Message {
@@ -274,6 +275,7 @@ pub async fn messages(
             edited_at: r.edited_at,
             reply_to: r.reply_to.map(Id),
             reactions: reactions.remove(&r.id).unwrap_or_default(),
+            attachments: attachments.remove(&r.id).unwrap_or_default(),
             nonce: None,
         })
         .collect();
@@ -292,6 +294,7 @@ pub async fn message(db: &SqlitePool, id: Id, viewer: Id) -> sqlx::Result<Messag
     .fetch_one(db)
     .await?;
     let mut reactions = reactions_for(db, std::iter::once(r.id), viewer).await?;
+    let mut attachments = attachments_for(db, std::iter::once(r.id)).await?;
     Ok(Message {
         id: Id(r.id),
         channel_id: Id(r.channel_id),
@@ -300,8 +303,49 @@ pub async fn message(db: &SqlitePool, id: Id, viewer: Id) -> sqlx::Result<Messag
         edited_at: r.edited_at,
         reply_to: r.reply_to.map(Id),
         reactions: reactions.remove(&r.id).unwrap_or_default(),
+        attachments: attachments.remove(&r.id).unwrap_or_default(),
         nonce: None,
     })
+}
+
+#[derive(FromRow)]
+struct AttachmentRow {
+    id: i64,
+    message_id: i64,
+    token: String,
+    filename: String,
+    content_type: String,
+    size: i64,
+    width: Option<i64>,
+    height: Option<i64>,
+}
+
+pub async fn attachments_for(db: &SqlitePool, ids: impl Iterator<Item = i64>) -> sqlx::Result<HashMap<i64, Vec<Attachment>>> {
+    let ids: Vec<String> = ids.map(|i| i.to_string()).collect();
+    let mut map: HashMap<i64, Vec<Attachment>> = HashMap::new();
+    if ids.is_empty() {
+        return Ok(map);
+    }
+    // Ids are integers we produced ourselves, so inlining them is safe.
+    let rows = sqlx::query_as::<_, AttachmentRow>(AssertSqlSafe(format!(
+        "SELECT id, message_id, token, filename, content_type, size, width, height FROM attachments
+         WHERE message_id IN ({}) ORDER BY id",
+        ids.join(",")
+    )))
+    .fetch_all(db)
+    .await?;
+    for r in rows {
+        map.entry(r.message_id).or_default().push(Attachment {
+            id: Id(r.id),
+            url: crate::routes::attachments::url(Id(r.id), &r.token, &r.filename),
+            filename: r.filename,
+            content_type: r.content_type,
+            size: r.size as u64,
+            width: r.width.map(|w| w as u32),
+            height: r.height.map(|h| h as u32),
+        });
+    }
+    Ok(map)
 }
 
 async fn reactions_for(
