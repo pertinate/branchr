@@ -5,6 +5,7 @@ import { EmoteCard } from "@/components/chat/emote-card";
 import { GlobalDialogs } from "@/components/global-dialogs";
 import { ServerRail } from "@/components/server-rail";
 import { AudioRenderer } from "@/components/voice/audio-renderer";
+import { syncHosts } from "@/lib/host-sync";
 import { startInstances, useSessions } from "@/lib/instances";
 import { startNotifications } from "@/lib/notify";
 
@@ -23,6 +24,7 @@ function AppLayout() {
   useEffect(() => {
     const stopInstances = startInstances();
     const stopNotifications = startNotifications();
+    void syncHosts();
     return () => {
       stopNotifications();
       stopInstances();

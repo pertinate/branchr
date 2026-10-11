@@ -7,6 +7,7 @@ import { createRoot } from "react-dom/client";
 import { toast } from "sonner";
 
 import { listenForSignIn, useBranchrId } from "@/lib/branchr-id";
+import { syncHosts } from "@/lib/host-sync";
 import { continueServerLogin } from "@/lib/server-login";
 
 import { routeTree } from "./routeTree.gen";
@@ -36,6 +37,7 @@ listenForSignIn((err) => {
   // If signing in was the first step of logging in to a server, finish that.
   continueServerLogin().then(
     (to) => {
+      void syncHosts();
       if (!to) return;
       if (to.guildId) void router.navigate({ to: "/$instance/$guildId", params: { instance: to.instance, guildId: to.guildId } });
       else void router.navigate({ to: "/$instance", params: { instance: to.instance } });

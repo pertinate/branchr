@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { createServer, forgetSessions, register, session } from "./helpers";
+import { createServer, forgetSessions, register, session, sessions } from "./helpers";
 
 test.skip(!process.env.TEST_DATABASE_URL, "branchr ID needs TEST_DATABASE_URL (Postgres)");
 
@@ -81,9 +81,6 @@ test("federated server: sign in with Discord from the login screen, claim it, co
   await expect(page.getByRole("heading", { name: "Welcome to #general!" })).toBeVisible();
   expect((await current()).user.id).toBe(first.user.id);
 
-  // A pass is for one server only: the local-only server refuses branchr logins.
-  const local = await (await fetch("http://localhost:8080/api/instance")).json();
-  expect(local.authMode).toBe("local");
   await ctx.close();
 });
 
@@ -158,4 +155,54 @@ test("federated server: a password account links to branchr and is reached by Di
 
   await fetch("http://localhost:8071/next-user", { method: "POST" });
   await ctx.close();
+});
+
+test("a new device reconnects to every host used with the branchr account", async ({ browser }) => {
+  const HOME = "http://localhost:8080";
+  const id = `7${Date.now()}`;
+  await fetch("http://localhost:8071/next-user", {
+    method: "POST",
+    body: JSON.stringify({ id, username: `roamer_${id.slice(-6)}`, global_name: "Roamer" }),
+  });
+  for (const host of [FED, HOME]) {
+    await expect.poll(async () => (await (await fetch(`${host}/api/instance`)).json()).instanceId, { timeout: 30_000 }).toBeTruthy();
+  }
+
+  // First device: Discord into one host, then connect a second the same way.
+  const one = await (await browser.newContext()).newPage();
+  await one.goto("/#/login");
+  await one.getByLabel("Server", { exact: true }).fill(FED);
+  await one.getByRole("button", { name: "Sign in with Discord" }).click();
+  await expect(one.getByRole("heading", { name: "No servers yet" })).toBeVisible();
+  await one.getByRole("button", { name: "Add a Server" }).click();
+  await one.getByRole("tab", { name: "Connect" }).click();
+  await one.getByLabel("Host address").fill(HOME);
+  await one.getByRole("button", { name: "Continue" }).click();
+  await one.getByRole("button", { name: "Sign in with Discord" }).click();
+  await expect(one.getByTestId("instance-header")).toHaveCount(2);
+
+  // A new device: sign in to one host, and the other comes along.
+  const two = await (await browser.newContext()).newPage();
+  await two.goto("/#/login");
+  await two.getByLabel("Server", { exact: true }).fill(FED);
+  await two.getByRole("button", { name: "Sign in with Discord" }).click();
+  await expect(two.getByTestId("instance-header")).toHaveCount(2);
+  expect((await sessions(two)).map((s) => s.url).sort()).toEqual([FED, HOME].sort());
+  // Still on the host it signed in to.
+  expect(two.url()).toContain("/localhost-8081");
+
+  // Logging out of a host on purpose forgets it for the account.
+  two.on("dialog", (d) => void d.accept());
+  await two.locator('[data-testid="instance-header"][data-instance="localhost-8080"]').click({ button: "right" });
+  await two.getByRole("menuitem", { name: /^Log Out of localhost:8080/ }).click();
+  await expect(two.getByTestId("instance-header")).toHaveCount(0);
+  const three = await (await browser.newContext()).newPage();
+  await three.goto("/#/login");
+  await three.getByLabel("Server", { exact: true }).fill(FED);
+  await three.getByRole("button", { name: "Sign in with Discord" }).click();
+  await expect(three.getByRole("heading", { name: "No servers yet" })).toBeVisible();
+  await three.waitForTimeout(1500);
+  expect((await sessions(three)).map((s) => s.url)).toEqual([FED]);
+
+  await fetch("http://localhost:8071/next-user", { method: "POST" });
 });

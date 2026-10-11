@@ -38,6 +38,13 @@ interface IdState {
 
 export const useBranchrId = create<IdState>()(persist((): IdState => ({ account: null, refreshToken: null }), { name: "branchr-id" }));
 
+// Another tab or window rotated the refresh token (or signed in or out): use what it saved.
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (e) => {
+    if (e.key === "branchr-id") void useBranchrId.persist.rehydrate();
+  });
+}
+
 // Access tokens live only in memory; they're short-lived and minted from the refresh token.
 let access: { token: string; expires: number } | null = null;
 

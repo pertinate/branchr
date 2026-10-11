@@ -6,7 +6,8 @@
 import type { AuthResponse, InstanceInfo, ReadyGuild } from "@app/protocol";
 
 import { ID_URL, instancePass, startSignIn, useBranchrId } from "@/lib/branchr-id";
-import { instance, instanceKey, normalizeUrl } from "@/lib/instances";
+import { rememberHost } from "@/lib/host-sync";
+import { instance, instanceKey, normalizeUrl, useSessions } from "@/lib/instances";
 import { useAuth } from "@/stores/auth";
 
 const CONTINUE_KEY = "branchr-continue";
@@ -36,13 +37,18 @@ export async function landAfterLogin(base: string, invite?: string): Promise<Lan
   return { instance: id, guildId: g.guild.id };
 }
 
-/** Logs in to `base`; returns null when it went to branchr sign-in first (see `continueServerLogin`). */
-export async function loginWithBranchr(base: string, invite?: string): Promise<Landing | null> {
+/**
+ * Logs in to `base`; returns null when it went to branchr sign-in first (see
+ * `continueServerLogin`). `background` logins (reconnecting remembered hosts) don't switch
+ * to the host.
+ */
+export async function loginWithBranchr(base: string, invite?: string, opts: { background?: boolean } = {}): Promise<Landing | null> {
   const info = await instanceInfo(base);
   if (info.authMode === "local" || !info.branchrIdUrl) throw new Error("This server doesn't accept branchr accounts");
   if (info.branchrIdUrl.replace(/\/$/, "") !== ID_URL) throw new Error(`This server uses a different branchr (${info.branchrIdUrl})`);
   if (!info.instanceId) throw new Error("This server is still connecting to branchr. Try again in a moment.");
   if (!useBranchrId.getState().refreshToken) {
+    if (opts.background) return null;
     localStorage.setItem(CONTINUE_KEY, JSON.stringify({ base, invite }));
     await startSignIn();
     return null;
@@ -58,7 +64,9 @@ export async function loginWithBranchr(base: string, invite?: string): Promise<L
     throw new Error(r.status === 403 ? "This server isn't taking new members" : (body.error ?? `login failed (${r.status})`));
   }
   const auth = (await r.json()) as AuthResponse;
-  useAuth.getState().setSession(base, auth.token, auth.user);
+  if (opts.background) useSessions.getState().add(base, auth.token, auth.user);
+  else useAuth.getState().setSession(base, auth.token, auth.user);
+  rememberHost(base);
   return landAfterLogin(base, invite);
 }
 
@@ -88,4 +96,5 @@ export async function linkToBranchr() {
     body: JSON.stringify({ token: pass }),
   });
   if (!r.ok) throw new Error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? `linking failed (${r.status})`);
+  rememberHost(serverUrl);
 }

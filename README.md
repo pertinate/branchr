@@ -144,6 +144,7 @@ How federation works:
 2. The owner signs in to branchr in the app (User Settings → My Account) and enters the code; that makes them the server's owner.
 3. People log in from the login screen with **Sign in with Discord**. The app gets a pass for that one server from branchr ID, which lasts 10 minutes. The server checks the pass against branchr ID's published keys and creates or reuses the local user tied to that branchr account.
 4. On a `both` server, someone with an existing password account can link it to their branchr account (User Settings → My Account → Link), so Discord sign-in reaches that same account from then on.
+5. branchr ID remembers which hosts you use with your branchr account. Signing in on a new device reconnects to all of them, and "Log Out of host" forgets one.
 
 Run it locally against real Discord with `scripts/dev-id.sh`. It reads `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` and a Postgres `DATABASE_URL` from `~/.config/branchr/id.env`, which stays outside the repo. Tests use `TEST_DATABASE_URL` and a throwaway schema; CI provides a Postgres container.
 

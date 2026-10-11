@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { copy } from "@/lib/actions";
+import { forgetHost } from "@/lib/host-sync";
 import { compareIds } from "@/lib/ids";
 import { type Instance, InstanceProvider, hostOf, instance, instanceKey, useActive, useInstance, useInstanceList } from "@/lib/instances";
 import { cn } from "@/lib/utils";
@@ -107,6 +108,8 @@ function InstanceHeader() {
               variant="destructive"
               onSelect={() => {
                 if (!confirm(`Log out of ${host}? Your other hosts stay connected.`)) return;
+                forgetHost(inst.url);
+                void inst.api("POST", "/auth/logout").catch(() => {});
                 inst.auth.getState().logout();
                 void navigate({ to: "/" });
               }}

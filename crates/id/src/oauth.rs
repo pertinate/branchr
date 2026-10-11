@@ -25,6 +25,8 @@ pub const ACCESS_TTL_SECS: u64 = 15 * 60;
 const REFRESH_TTL_DAYS: i32 = 90;
 const CODE_TTL_SECS: i32 = 120;
 const REQUEST_TTL_MINS: i32 = 10;
+/** A rotated refresh token still works this long (concurrent refreshes from two tabs). */
+const REUSE_GRACE_SECS: f64 = 60.0;
 /// The audience of tokens for branchr ID's own API (instances get their own).
 pub const AUDIENCE: &str = "branchr-id";
 
@@ -259,13 +261,14 @@ pub async fn token(State(s): State<AppState>, Form(f): Form<TokenForm>) -> Resul
         }
         "refresh_token" => {
             let rt = f.refresh_token.as_deref().ok_or_else(|| bad("invalid_request", "refresh_token is required"))?;
-            // Locks the row, so of two concurrent uses exactly one gets `was_rotated = false`.
+            // Locks the row; `stale` is true only for a token rotated longer ago than the grace.
             let row: Option<(Uuid, Uuid, bool)> = sqlx::query_as(
-                "WITH old AS (SELECT token_hash, rotated FROM refresh_tokens WHERE token_hash = $1 AND expires_at > now() FOR UPDATE)
-                 UPDATE refresh_tokens r SET rotated = true FROM old WHERE r.token_hash = old.token_hash
-                 RETURNING r.account_id, r.family, old.rotated",
+                "WITH old AS (SELECT token_hash, rotated, rotated_at FROM refresh_tokens WHERE token_hash = $1 AND expires_at > now() FOR UPDATE)
+                 UPDATE refresh_tokens r SET rotated = true, rotated_at = COALESCE(old.rotated_at, now()) FROM old WHERE r.token_hash = old.token_hash
+                 RETURNING r.account_id, r.family, old.rotated AND old.rotated_at < now() - make_interval(secs => $2)",
             )
             .bind(hash(rt))
+            .bind(REUSE_GRACE_SECS)
             .fetch_optional(&s.db)
             .await?;
             match row {

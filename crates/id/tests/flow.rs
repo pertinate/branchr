@@ -199,9 +199,13 @@ async fn sign_in_refresh_and_logout() {
         h.token(&[("grant_type", "authorization_code"), ("code", &code), ("redirect_uri", REDIRECT), ("code_verifier", VERIFIER)]).await.json().await.unwrap();
     assert_eq!(again.account.id, first_account);
 
-    // Refresh rotates; reusing the old token revokes the whole sign-in.
+    // Refresh rotates. Two tabs refreshing at once may both use the old token, briefly.
     let r1: TokenResponse = h.token(&[("grant_type", "refresh_token"), ("refresh_token", &t.refresh_token)]).await.json().await.unwrap();
     assert_ne!(r1.refresh_token, t.refresh_token);
+    let r = h.token(&[("grant_type", "refresh_token"), ("refresh_token", &t.refresh_token)]).await;
+    assert_eq!(r.status(), StatusCode::OK, "a concurrent refresh within the grace period works");
+    // Later, reusing a rotated token means it leaked: the whole sign-in is revoked.
+    sqlx::query("UPDATE refresh_tokens SET rotated_at = now() - interval '5 minutes' WHERE rotated").execute(&h.db).await.unwrap();
     let r = h.token(&[("grant_type", "refresh_token"), ("refresh_token", &t.refresh_token)]).await;
     assert_eq!(r.status(), StatusCode::BAD_REQUEST, "reuse is refused");
     let r = h.token(&[("grant_type", "refresh_token"), ("refresh_token", &r1.refresh_token)]).await;
@@ -346,5 +350,30 @@ async fn servers_register_get_claimed_and_issue_passes() {
 
     let r = h.http.post(format!("{}/instances/{}/token", h.base, uuid::Uuid::now_v7())).bearer_auth(&at).send().await.unwrap();
     assert_eq!(r.status(), StatusCode::BAD_REQUEST, "unknown server");
+    h.finish().await;
+}
+
+#[tokio::test]
+async fn remembers_an_accounts_hosts() {
+    let Some(h) = Harness::new().await else { return };
+    let at = h.access_token().await;
+    let url = format!("{}/me/instances", h.base);
+    let r = h.http.get(&url).send().await.unwrap();
+    assert_eq!(r.status(), StatusCode::UNAUTHORIZED);
+
+    for u in ["https://b.example.com/", "http://localhost:8081/#/invite/x", "https://b.example.com"] {
+        let r = h.http.put(&url).bearer_auth(&at).json(&serde_json::json!({ "url": u })).send().await.unwrap();
+        assert_eq!(r.status(), StatusCode::OK, "{u}");
+    }
+    let r = h.http.put(&url).bearer_auth(&at).json(&serde_json::json!({ "url": "javascript:alert(1)" })).send().await.unwrap();
+    assert_eq!(r.status(), StatusCode::BAD_REQUEST);
+    let hosts: Vec<serde_json::Value> = h.http.get(&url).bearer_auth(&at).send().await.unwrap().json().await.unwrap();
+    let urls: Vec<&str> = hosts.iter().map(|x| x["url"].as_str().unwrap()).collect();
+    assert_eq!(urls, ["https://b.example.com", "http://localhost:8081"], "normalized to origins, no duplicates");
+
+    let r = h.http.delete(&url).bearer_auth(&at).json(&serde_json::json!({ "url": "https://b.example.com/" })).send().await.unwrap();
+    assert_eq!(r.status(), StatusCode::OK);
+    let hosts: Vec<serde_json::Value> = h.http.get(&url).bearer_auth(&at).send().await.unwrap().json().await.unwrap();
+    assert_eq!(hosts.len(), 1);
     h.finish().await;
 }

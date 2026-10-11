@@ -37,7 +37,16 @@ export default defineConfig({
       url: "http://localhost:8080/api/health",
       reuseExistingServer: true,
       timeout: 300_000,
-      env: { DATABASE_URL: `sqlite://${SCRATCH}/db.sqlite`, API_BIND: "127.0.0.1:8080", SFU_URLS: "ws://127.0.0.1:8090/ws", MAX_UPLOAD_MB: "1" },
+      env: {
+        DATABASE_URL: `sqlite://${SCRATCH}/db.sqlite`,
+        API_BIND: "127.0.0.1:8080",
+        SFU_URLS: "ws://127.0.0.1:8090/ws",
+        MAX_UPLOAD_MB: "1",
+        // With branchr ID around, this host takes branchr accounts too (password logins still work).
+        ...(idDb
+          ? { AUTH_MODE: "both", BRANCHR_ID_URL: "http://localhost:8070", INSTANCE_NAME: "e2e home", CLAIM_FILE: `${SCRATCH}/claim-code.txt`, BRANCHR_POLL_SECS: "1" }
+          : {}),
+      },
     },
     {
       command: `cargo run -q -p sfu`,

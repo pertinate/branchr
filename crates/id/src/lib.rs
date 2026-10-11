@@ -4,6 +4,7 @@
 pub mod config;
 pub mod discord;
 pub mod error;
+pub mod hosts;
 pub mod instances;
 pub mod keys;
 pub mod oauth;
@@ -65,6 +66,7 @@ pub fn router(state: AppState) -> Router {
         .route("/token", post(oauth::token))
         .route("/logout", post(oauth::logout))
         .route("/me", get(oauth::me))
+        .route("/me/instances", get(hosts::list).put(hosts::add).delete(hosts::remove))
         .route("/instances", post(instances::register))
         .route("/instances/{id}", get(instances::status))
         .route("/instances/{id}/claim-code", post(instances::new_claim_code))
