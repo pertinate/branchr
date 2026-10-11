@@ -1,4 +1,4 @@
-# Tests every push/PR. On main, also publishes the server image to GHCR and deploys it.
+# Tests every push/PR (unit + browser e2e). On main, also publishes the server image to GHCR and deploys it.
 #
 # Deployment needs these repository secrets (Settings → Secrets and variables → Actions);
 # without them the deploy job is skipped:
@@ -53,9 +53,34 @@ jobs:
           docker compose -f docker-compose.yml config -q
           docker compose -f docker-compose.yml -f deploy/docker-compose.public.yml -f deploy/docker-compose.image.yml config -q
 
+  # Browser tests against a local stack (API + SFU + Vite): chat, voice, streaming through
+  # the relay, attachments. Specs that need a display (Electron) or third-party APIs
+  # (emotes) or are load tests run locally only.
+  e2e:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build -p api -p sfu
+      - run: pnpm --filter e2e exec playwright install --with-deps chromium
+      - run: pnpm --filter e2e test app.spec relay.spec attachments.spec
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-results
+          path: tests/e2e/test-results
+          if-no-files-found: ignore
+
   image:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-    needs: test
+    needs: [test, e2e]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
