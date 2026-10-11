@@ -53,9 +53,9 @@ jobs:
           docker compose -f docker-compose.yml config -q
           docker compose -f docker-compose.yml -f deploy/docker-compose.public.yml -f deploy/docker-compose.image.yml config -q
 
-  # Browser tests against a local stack (API + SFU + Vite): chat, voice, streaming through
-  # the relay, attachments. Specs that need a display (Electron) or third-party APIs
-  # (emotes) or are load tests run locally only.
+  # Browser tests against a local stack (API + SFU + Vite): chat, voice, screen streaming,
+  # attachments. Local-only: Electron (needs a display), emotes (third-party APIs), and the
+  # relay/load specs (several software video encoders at once overload a 4-vCPU runner).
   e2e:
     runs-on: ubuntu-24.04
     steps:
@@ -70,7 +70,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo build -p api -p sfu
       - run: pnpm --filter e2e exec playwright install --with-deps chromium
-      - run: pnpm --filter e2e test app.spec relay.spec attachments.spec
+      - run: pnpm --filter e2e test app.spec attachments.spec
       - if: failure()
         uses: actions/upload-artifact@v4
         with:
