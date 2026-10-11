@@ -161,3 +161,25 @@ export function listenForSignIn(onResult: (err: Error | null) => void) {
     void finish(params);
   }
 }
+
+/** A short-lived pass to log in to one server with this branchr account. */
+export async function instancePass(instanceId: string): Promise<string> {
+  const at = await accessToken();
+  if (!at) throw new Error("Sign in to branchr first");
+  const r = await fetch(`${ID_URL}/instances/${encodeURIComponent(instanceId)}/token`, { method: "POST", headers: { authorization: `Bearer ${at}` } });
+  if (!r.ok) throw new Error(await errorOf(r));
+  return ((await r.json()) as { token: string }).token;
+}
+
+/** Claims a self-hosted server with the code it showed its owner. Returns its name. */
+export async function claimServer(code: string): Promise<string> {
+  const at = await accessToken();
+  if (!at) throw new Error("Sign in to branchr first");
+  const r = await fetch(`${ID_URL}/claims`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${at}`, "content-type": "application/json" },
+    body: JSON.stringify({ code }),
+  });
+  if (!r.ok) throw new Error(await errorOf(r));
+  return ((await r.json()) as { name: string }).name;
+}

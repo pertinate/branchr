@@ -159,6 +159,18 @@ wire! {
         pub user: User,
     }
 
+    /// How to log in to this server (`GET /api/instance`).
+    pub struct InstanceInfo {
+        /// `local` (own accounts), `federated` (branchr accounts) or `both`.
+        pub auth_mode: String,
+        /// The branchr ID this server accepts accounts from, if any.
+        pub branchr_id_url: Option<String>,
+        /// This server's id at branchr ID, once registered (passes are issued for it).
+        pub instance_id: Option<String>,
+        /// Whether an owner has claimed it at branchr ID.
+        pub claimed: bool,
+    }
+
     pub struct VoiceServer {
         /// WebSocket url of the SFU for this channel.
         pub endpoint: String,

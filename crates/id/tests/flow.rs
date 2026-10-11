@@ -279,3 +279,72 @@ async fn refuses_bad_requests() {
     assert_eq!(param(&back, "state").as_deref(), Some("s2"));
     h.finish().await;
 }
+
+impl Harness {
+    /// A signed-in user's access token (the fake Discord user 42).
+    async fn access_token(&self) -> String {
+        let code = param(&self.sign_in("good").await, "code").unwrap();
+        let t: TokenResponse = self
+            .token(&[("grant_type", "authorization_code"), ("code", &code), ("redirect_uri", REDIRECT), ("code_verifier", VERIFIER)])
+            .await
+            .json()
+            .await
+            .unwrap();
+        t.access_token
+    }
+}
+
+#[tokio::test]
+async fn servers_register_get_claimed_and_issue_passes() {
+    use id::instances::{Claimed, InstanceToken, Registered, Status};
+    let Some(h) = Harness::new().await else { return };
+
+    let reg: Registered = h
+        .http
+        .post(format!("{}/instances", h.base))
+        .json(&serde_json::json!({ "name": "Home lab", "publicUrl": "https://chat.example.com" }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let status_url = format!("{}/instances/{}", h.base, reg.instance_id);
+    let st: Status = h.http.get(&status_url).bearer_auth(&reg.secret).send().await.unwrap().json().await.unwrap();
+    assert!(!st.claimed);
+    let r = h.http.get(&status_url).bearer_auth("wrong").send().await.unwrap();
+    assert_eq!(r.status(), StatusCode::UNAUTHORIZED, "status needs the server's secret");
+
+    // Claiming needs a signed-in user; the code is forgiving about how it's typed.
+    let at = h.access_token().await;
+    let r = h.http.post(format!("{}/claims", h.base)).json(&serde_json::json!({ "code": reg.claim_code })).send().await.unwrap();
+    assert_eq!(r.status(), StatusCode::UNAUTHORIZED);
+    let typed = reg.claim_code.to_lowercase().replace('-', " ");
+    let claimed: Claimed =
+        h.http.post(format!("{}/claims", h.base)).bearer_auth(&at).json(&serde_json::json!({ "code": typed })).send().await.unwrap().json().await.unwrap();
+    assert_eq!(claimed.instance_id, reg.instance_id);
+    assert_eq!(claimed.name, "Home lab");
+    let r = h.http.post(format!("{}/claims", h.base)).bearer_auth(&at).json(&serde_json::json!({ "code": reg.claim_code })).send().await.unwrap();
+    assert_eq!(r.status(), StatusCode::BAD_REQUEST, "a code works once");
+    let st: Status = h.http.get(&status_url).bearer_auth(&reg.secret).send().await.unwrap().json().await.unwrap();
+    assert!(st.claimed && st.owner_id.is_some());
+    let r = h.http.post(format!("{status_url}/claim-code")).bearer_auth(&reg.secret).send().await.unwrap();
+    assert_eq!(r.status(), StatusCode::BAD_REQUEST, "no new codes once claimed");
+
+    // A pass for this server only, saying who the user is.
+    let pass: InstanceToken = h.http.post(format!("{status_url}/token")).bearer_auth(&at).send().await.unwrap().json().await.unwrap();
+    let jwks: serde_json::Value = h.http.get(format!("{}/.well-known/jwks.json", h.base)).send().await.unwrap().json().await.unwrap();
+    let key = DecodingKey::from_ed_components(jwks["keys"][0]["x"].as_str().unwrap()).unwrap();
+    let mut v = Validation::new(Algorithm::EdDSA);
+    v.set_issuer(&[&h.base]);
+    v.set_audience(&[reg.instance_id.to_string()]);
+    let c = jsonwebtoken::decode::<serde_json::Value>(&pass.token, &key, &v).unwrap().claims;
+    assert_eq!(c["name"], "Nelly");
+    assert_eq!(c["username"], "nelly");
+    v.set_audience(&["some-other-server"]);
+    assert!(jsonwebtoken::decode::<serde_json::Value>(&pass.token, &key, &v).is_err(), "not valid for other servers");
+
+    let r = h.http.post(format!("{}/instances/{}/token", h.base, uuid::Uuid::now_v7())).bearer_auth(&at).send().await.unwrap();
+    assert_eq!(r.status(), StatusCode::BAD_REQUEST, "unknown server");
+    h.finish().await;
+}

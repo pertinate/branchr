@@ -9,6 +9,9 @@ const SCRATCH = process.env.E2E_DATA ?? "/tmp/branchr-e2e";
 const remote = process.env.E2E_BASE_URL;
 /** branchr ID needs Postgres; its tests skip without one. */
 const idDb = process.env.TEST_DATABASE_URL;
+/** Fresh each run, so the federated server registers and gets claimed anew. Tests read it. */
+process.env.E2E_FEDERATED_DIR ??= `${SCRATCH}/federated-${Date.now().toString(36)}`;
+const fedDir = process.env.E2E_FEDERATED_DIR;
 
 export default defineConfig({
   testDir: ".",
@@ -47,6 +50,24 @@ export default defineConfig({
     ...(idDb
       ? [
           { command: "node mock-discord.mjs", url: "http://localhost:8071/health", reuseExistingServer: true },
+          // A second server that accepts branchr accounts (and its own).
+          {
+            command: "cargo run -q -p api",
+            cwd: "../..",
+            url: "http://localhost:8081/api/health",
+            reuseExistingServer: true,
+            timeout: 300_000,
+            env: {
+              DATABASE_URL: `sqlite://${fedDir}/db.sqlite`,
+              API_BIND: "127.0.0.1:8081",
+              SFU_URLS: "ws://127.0.0.1:8090/ws",
+              AUTH_MODE: "both",
+              BRANCHR_ID_URL: "http://localhost:8070",
+              INSTANCE_NAME: "e2e federated",
+              CLAIM_FILE: `${fedDir}/claim-code.txt`,
+              BRANCHR_POLL_SECS: "1",
+            },
+          },
           {
             command: "cargo run -q -p id --bin branchr-id",
             cwd: "../..",

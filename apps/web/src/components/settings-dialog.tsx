@@ -12,7 +12,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MicTest } from "@/components/voice/mic-test";
 import { api } from "@/lib/api";
-import { signOut, startSignIn, useBranchrId } from "@/lib/branchr-id";
+import { claimServer, signOut, startSignIn, useBranchrId } from "@/lib/branchr-id";
 import { desktop } from "@/lib/desktop";
 import { gateway } from "@/lib/gateway";
 import { useApp } from "@/stores/app";
@@ -100,10 +100,20 @@ function Account() {
   );
 }
 
-/** The central branchr account (Discord sign-in). Servers start accepting it in the next step. */
+/** The central branchr account (Discord sign-in), and claiming servers you host. */
 function BranchrAccount() {
   const account = useBranchrId((s) => s.account);
   const [busy, setBusy] = useState(false);
+  const [code, setCode] = useState("");
+  const claim = async () => {
+    try {
+      const name = await claimServer(code.trim());
+      setCode("");
+      toast.success(`You now own ${name}`);
+    } catch (e) {
+      toast.error("Couldn't claim the server", { description: (e as Error).message });
+    }
+  };
   return (
     <div className="space-y-2 border-t border-border pt-4" data-testid="branchr-account">
       <Label>branchr account</Label>
@@ -118,7 +128,27 @@ function BranchrAccount() {
             Sign out
           </Button>
         </div>
-      ) : (
+      ) : null}
+      {account && (
+        <form
+          className="space-y-1"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void claim();
+          }}
+        >
+          <Label htmlFor="claim-code" className="text-xs text-muted-foreground">
+            Claim a server you host (the code is in its log and in claim-code.txt next to its database)
+          </Label>
+          <div className="flex gap-2">
+            <Input id="claim-code" value={code} onChange={(e) => setCode(e.target.value)} placeholder="ABCD-1234" className="w-40 font-mono uppercase" />
+            <Button type="submit" variant="outline" disabled={code.trim().length < 8}>
+              Claim
+            </Button>
+          </div>
+        </form>
+      )}
+      {account ? null : (
         <>
           <p className="text-xs text-muted-foreground">One account for every branchr server. Sign in with Discord; we only see your name and avatar.</p>
           <Button

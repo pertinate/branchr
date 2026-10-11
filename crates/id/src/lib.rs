@@ -4,6 +4,7 @@
 pub mod config;
 pub mod discord;
 pub mod error;
+pub mod instances;
 pub mod keys;
 pub mod oauth;
 
@@ -64,6 +65,11 @@ pub fn router(state: AppState) -> Router {
         .route("/token", post(oauth::token))
         .route("/logout", post(oauth::logout))
         .route("/me", get(oauth::me))
+        .route("/instances", post(instances::register))
+        .route("/instances/{id}", get(instances::status))
+        .route("/instances/{id}/claim-code", post(instances::new_claim_code))
+        .route("/instances/{id}/token", post(instances::token))
+        .route("/claims", post(instances::claim))
         .route("/.well-known/jwks.json", get(|s: axum::extract::State<AppState>| async move { axum::Json(s.keys.jwks()) }))
         .route("/health", get(|| async { "ok" }))
         .layer(cors)

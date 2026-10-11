@@ -3,6 +3,7 @@ mod config;
 mod db;
 mod emote_providers;
 mod error;
+mod federation;
 mod gateway;
 mod hub;
 mod mentions;
@@ -47,13 +48,22 @@ async fn main() -> anyhow::Result<()> {
         sessions: DashMap::new(),
         channel_guild: DashMap::new(),
         message_limiter: ratelimit::RateLimiter::new(10, 5.0),
+        federation: (config.auth_mode != config::AuthMode::Local).then(|| Arc::new(federation::Federation::new(&config))),
         config: config.clone(),
     });
+    if let Some(fed) = state.federation.clone() {
+        tokio::spawn({
+            let (db, config) = (state.db.clone(), config.clone());
+            async move { fed.run(db, config).await }
+        });
+    }
 
     let api = Router::new()
         .route("/auth/register", post(auth::register))
         .route("/auth/login", post(auth::login))
         .route("/auth/logout", post(auth::logout))
+        .route("/auth/federated", post(auth::federated))
+        .route("/instance", get(auth::instance_info))
         .route("/users/@me", get(users::me).patch(users::patch_me))
         .route("/guilds", post(guilds::create))
         .route("/guilds/{gid}", patch(guilds::patch).delete(guilds::delete))

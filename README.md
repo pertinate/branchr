@@ -118,7 +118,11 @@ Configuration is all through the environment:
 | `VOICE_SECRET` | both | dev secret | HMAC key for voice tokens; must match. |
 | `SFU_URLS` | api | `ws://localhost:8090/ws` | Comma-separated. Channels are spread across SFUs by hash. |
 | `WEB_DIR` | api | unset | Serve the web client (set in the Docker image). |
-| `OPEN_REGISTRATION` | api | `true` | |
+| `OPEN_REGISTRATION` | api | `true` | Also applies to first-time branchr logins. |
+| `AUTH_MODE` | api | `local` | `local`, `federated` (branchr accounts) or `both`. |
+| `BRANCHR_ID_URL` | api | `https://branchr.us` | The branchr ID a federated server trusts. |
+| `INSTANCE_NAME` / `PUBLIC_URL` | api | `branchr server` / empty | Shown to the owner when claiming. |
+| `CLAIM_FILE` | api | `claim-code.txt` next to the database | Where the claim code is written until the server is claimed. |
 | `UPLOAD_DIR` | api | `uploads/` next to the database | Where attachments are stored (local disk for now; S3-compatible storage such as RustFS is planned). |
 | `MAX_UPLOAD_MB` | api | `500` | Largest attachment. Sent to clients, which refuse bigger files up front. |
 | `SFU_PUBLIC_IP` | sfu | autodetected | IP put in ICE candidates. |
@@ -129,7 +133,15 @@ Configuration is all through the environment:
 
 `crates/id` is the central account service at `https://branchr.us`. Clients sign in with Discord through OAuth 2 with PKCE: the desktop app opens the browser and gets the result back through a `branchr://auth/callback` link, and the web app redirects in place. Only Discord's `identify` scope is requested. Access tokens are short-lived Ed25519 JWTs published at `/.well-known/jwks.json`, so self-hosted servers can verify them without calling branchr ID. Refresh tokens rotate on every use, and a reused one revokes that sign-in.
 
-It's optional. Servers that stay out of the federation keep their own username and password accounts, and accepting branchr accounts on servers is the next step.
+It's optional. A server chooses with `AUTH_MODE`:
+- `local` (the default): its own username and password accounts, as before.
+- `federated`: branchr accounts only.
+- `both`: either kind, for moving a community over.
+
+How federation works:
+1. A federated server registers with branchr ID in the background and writes a claim code to its log and to `claim-code.txt` next to its database.
+2. The owner signs in to branchr in the app (User Settings → My Account) and enters the code; that makes them the server's owner.
+3. People log in from the login screen with **Sign in with Discord**. The app gets a pass for that one server from branchr ID, which lasts 10 minutes. The server checks the pass against branchr ID's published keys and creates or reuses the local user tied to that branchr account.
 
 Run it locally against real Discord with `scripts/dev-id.sh`. It reads `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` and a Postgres `DATABASE_URL` from `~/.config/branchr/id.env`, which stays outside the repo. Tests use `TEST_DATABASE_URL` and a throwaway schema; CI provides a Postgres container.
 

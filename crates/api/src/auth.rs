@@ -6,11 +6,12 @@ use axum::Json;
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64;
 use proto::Id;
-use proto::models::{AuthResponse, User};
+use proto::models::{AuthResponse, InstanceInfo, User};
 use rand::RngCore;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
+use crate::config::AuthMode;
 use crate::db;
 use crate::error::{AppError, AppResult, bad};
 use crate::state::AppState;
@@ -76,7 +77,16 @@ fn valid_username(u: &str) -> bool {
     (2..=32).contains(&u.len()) && u.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
 }
 
+/// Password accounts are off when the server only takes branchr accounts.
+fn local_allowed(state: &AppState) -> AppResult<()> {
+    if state.config.auth_mode == AuthMode::Federated {
+        return Err(bad("this server uses branchr accounts: sign in with Discord"));
+    }
+    Ok(())
+}
+
 pub async fn register(State(state): State<AppState>, Json(body): Json<Register>) -> AppResult<Json<AuthResponse>> {
+    local_allowed(&state)?;
     if !state.config.open_registration {
         return Err(AppError::Forbidden);
     }
@@ -133,6 +143,7 @@ pub struct Login {
 }
 
 pub async fn login(State(state): State<AppState>, Json(body): Json<Login>) -> AppResult<Json<AuthResponse>> {
+    local_allowed(&state)?;
     let row: Option<(i64, String)> = sqlx::query_as("SELECT id, password_hash FROM users WHERE username = ?")
         .bind(body.username.trim())
         .fetch_optional(&state.db)
@@ -151,6 +162,71 @@ pub async fn login(State(state): State<AppState>, Json(body): Json<Login>) -> Ap
     let id = Id(id);
     let token = create_session(&state, id).await?;
     Ok(Json(AuthResponse { token, user: db::user(&state.db, id).await? }))
+}
+
+#[derive(Deserialize)]
+pub struct FederatedLogin {
+    /// A pass from branchr ID for this server.
+    token: String,
+}
+
+/// Logs in with a branchr account, creating the local user on first visit.
+pub async fn federated(State(state): State<AppState>, Json(body): Json<FederatedLogin>) -> AppResult<Json<AuthResponse>> {
+    let fed = state.federation.as_ref().ok_or_else(|| bad("this server doesn't accept branchr accounts"))?;
+    let pass = fed.verify(&body.token).await.ok_or(AppError::Unauthorized)?;
+    let display_name: String = pass.name.trim().chars().take(32).collect();
+    let display_name = if display_name.is_empty() { pass.username.clone() } else { display_name };
+    let existing: Option<(i64,)> = sqlx::query_as("SELECT id FROM users WHERE global_id = ?").bind(&pass.sub).fetch_optional(&state.db).await?;
+    let id = match existing {
+        Some((id,)) => {
+            // The branchr profile is the source of truth for name and avatar.
+            sqlx::query("UPDATE users SET display_name = ?, avatar_url = ? WHERE id = ?")
+                .bind(&display_name)
+                .bind(&pass.avatar)
+                .bind(id)
+                .execute(&state.db)
+                .await?;
+            Id(id)
+        }
+        None => {
+            if !state.config.open_registration {
+                return Err(AppError::Forbidden);
+            }
+            let id = state.ids.next();
+            let username = crate::federation::free_username(&state.db, &pass.username).await?;
+            // No password: "!" is never a valid hash, so password login can't match.
+            sqlx::query(
+                "INSERT INTO users (id, username, display_name, password_hash, avatar_url, created_at, global_id) VALUES (?, ?, ?, '!', ?, ?, ?)",
+            )
+            .bind(id.0)
+            .bind(&username)
+            .bind(&display_name)
+            .bind(&pass.avatar)
+            .bind(db::now_ms())
+            .bind(&pass.sub)
+            .execute(&state.db)
+            .await?;
+            id
+        }
+    };
+    let token = create_session(&state, id).await?;
+    Ok(Json(AuthResponse { token, user: db::user(&state.db, id).await? }))
+}
+
+/// Which logins this server offers, for the login screen.
+pub async fn instance_info(State(state): State<AppState>) -> Json<InstanceInfo> {
+    let mode = match state.config.auth_mode {
+        AuthMode::Local => "local",
+        AuthMode::Federated => "federated",
+        AuthMode::Both => "both",
+    };
+    let identity = state.federation.as_ref().and_then(|f| f.identity());
+    Json(InstanceInfo {
+        auth_mode: mode.into(),
+        branchr_id_url: state.federation.as_ref().map(|f| f.id_url().to_string()),
+        claimed: identity.as_ref().is_some_and(|i| i.owner.is_some()),
+        instance_id: identity.map(|i| i.instance_id),
+    })
 }
 
 pub async fn logout(State(state): State<AppState>, parts: axum::http::HeaderMap) -> AppResult<()> {

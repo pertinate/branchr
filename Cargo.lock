@@ -75,6 +75,7 @@ dependencies = [
  "base64 0.22.1",
  "dashmap",
  "futures",
+ "jsonwebtoken",
  "libc",
  "parking_lot",
  "proto",

@@ -1,10 +1,11 @@
-import type { AuthResponse } from "@app/protocol";
+import type { AuthResponse, InstanceInfo } from "@app/protocol";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { instanceInfo, loginWithBranchr } from "@/lib/server-login";
 import { useAuth } from "@/stores/auth";
 
 export const Route = createFileRoute("/login")({
@@ -22,6 +23,45 @@ function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [info, setInfo] = useState<InstanceInfo | null>(null);
+  const token = useAuth((s) => s.token);
+
+  // Logged in some other way (finishing a branchr sign-in): carry on into the app.
+  useEffect(() => {
+    if (token) void navigate({ to: redirect ?? "/" });
+  }, [token, navigate, redirect]);
+
+  // Which logins does this server offer?
+  useEffect(() => {
+    const base = server.trim().replace(/\/+$/, "");
+    setInfo(null);
+    if (!/^https?:\/\/.+/.test(base)) return;
+    let live = true;
+    const t = setTimeout(() => {
+      instanceInfo(base).then(
+        (i) => live && setInfo(i),
+        () => {},
+      );
+    }, 300);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+  }, [server]);
+  const branchr = !!info && info.authMode !== "local";
+  const passwords = !info || info.authMode !== "federated";
+
+  const withBranchr = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await loginWithBranchr(server.trim().replace(/\/+$/, ""));
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,6 +101,16 @@ function Login() {
           <Label htmlFor="server" className="text-xs font-bold uppercase text-muted-foreground">Server</Label>
           <Input id="server" value={server} onChange={(e) => setServer(e.target.value)} placeholder="https://chat.example.com" />
         </div>
+        {branchr && (
+          <>
+            <Button type="button" className="w-full bg-[#5865F2] text-white hover:bg-[#4752c4]" disabled={busy} onClick={() => void withBranchr()}>
+              Sign in with Discord
+            </Button>
+            {passwords && <div className="text-center text-xs text-muted-foreground uppercase">or use a server account</div>}
+          </>
+        )}
+        {passwords && (
+        <>
         <div className="space-y-2">
           <Label htmlFor="username" className="text-xs font-bold uppercase text-muted-foreground">Username</Label>
           <Input id="username" autoFocus value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" required />
@@ -83,7 +133,6 @@ function Login() {
             required
           />
         </div>
-        {error && <p className="text-sm text-destructive">{error}</p>}
         <Button type="submit" className="w-full" disabled={busy}>
           {mode === "login" ? "Log In" : "Continue"}
         </Button>
@@ -93,6 +142,9 @@ function Login() {
             {mode === "login" ? "Register" : "Log In"}
           </button>
         </p>
+        </>
+        )}
+        {error && <p className="text-sm text-destructive">{error}</p>}
       </form>
     </div>
   );

@@ -23,6 +23,8 @@ pub struct State {
     /// channel id -> guild id, channels never move between guilds.
     pub channel_guild: DashMap<Id, Id>,
     pub message_limiter: RateLimiter,
+    /// Set when this server accepts branchr accounts.
+    pub federation: Option<Arc<crate::federation::Federation>>,
 }
 
 impl State {

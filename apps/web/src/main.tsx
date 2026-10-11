@@ -7,6 +7,7 @@ import { createRoot } from "react-dom/client";
 import { toast } from "sonner";
 
 import { listenForSignIn, useBranchrId } from "@/lib/branchr-id";
+import { continueServerLogin } from "@/lib/server-login";
 
 import { routeTree } from "./routeTree.gen";
 
@@ -29,8 +30,10 @@ declare module "@tanstack/react-router" {
 }
 
 listenForSignIn((err) => {
-  if (err) toast.error("Couldn't sign in to branchr", { description: err.message });
-  else toast.success(`Signed in to branchr as ${useBranchrId.getState().account?.displayName}`);
+  if (err) return void toast.error("Couldn't sign in to branchr", { description: err.message });
+  toast.success(`Signed in to branchr as ${useBranchrId.getState().account?.displayName}`);
+  // If signing in was the first step of logging in to a server, finish that.
+  continueServerLogin().catch((e: Error) => toast.error("Couldn't log in to the server", { description: e.message }));
 });
 
 createRoot(document.getElementById("root")!).render(
