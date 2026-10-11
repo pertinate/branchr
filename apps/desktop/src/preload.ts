@@ -15,4 +15,10 @@ contextBridge.exposeInMainWorld("desktop", {
     close: () => ipcRenderer.send("desktop:window", "close"),
   },
   gpuInfo: () => ipcRenderer.invoke("desktop:gpu-info"),
+  audio: {
+    available: () => ipcRenderer.invoke("desktop:audio-available"),
+    list: () => ipcRenderer.invoke("desktop:audio-list"),
+    start: (appName: string | null) => ipcRenderer.invoke("desktop:audio-start", appName),
+    stop: () => ipcRenderer.invoke("desktop:audio-stop"),
+  },
 });

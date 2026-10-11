@@ -19,5 +19,8 @@
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
     "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "@vencord/venmic": "^7.2.3"
   }
 }

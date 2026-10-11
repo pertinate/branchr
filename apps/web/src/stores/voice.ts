@@ -2,6 +2,7 @@ import type { LayerPref, TrackInfo, VoiceServer } from "@app/protocol";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+import { desktop } from "@/lib/desktop";
 import { gateway } from "@/lib/gateway";
 import { useApp } from "@/stores/app";
 import { VoiceConnection } from "@/voice/connection";
@@ -77,6 +78,37 @@ interface VoiceState {
 let conn: VoiceConnection | null = null;
 let mic: MediaStreamTrack | null = null;
 let joinSeq = 0;
+let venmicActive = false;
+
+/** Captures the venmic virtual microphone (appears shortly after linking). */
+async function captureVenmic(appName: string | null): Promise<MediaStreamTrack | null> {
+  if (!desktop?.audio || !(await desktop.audio.available())) return null;
+  if (!(await desktop.audio.start(appName))) return null;
+  venmicActive = true;
+  for (let i = 0; i < 20; i++) {
+    const dev = (await navigator.mediaDevices.enumerateDevices()).find((d) => d.kind === "audioinput" && d.label.includes("vencord-screen-share"));
+    if (dev) {
+      const s = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          deviceId: { exact: dev.deviceId },
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+          channelCount: 2,
+          sampleRate: 48000,
+        },
+      });
+      return s.getAudioTracks()[0] ?? null;
+    }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return null;
+}
+
+function stopVenmic() {
+  if (venmicActive) void desktop?.audio?.stop();
+  venmicActive = false;
+}
 let retries = 0;
 
 function waitForVoiceServer(channelId: string): Promise<VoiceServer> {
@@ -179,6 +211,7 @@ export const useVoice = create<VoiceState>()((set, get) => {
     const { camera, screen } = get();
     camera?.getTracks().forEach((t) => t.stop());
     screen?.getTracks().forEach((t) => t.stop());
+    stopVenmic();
     set({
       camera: null,
       screen: null,
@@ -310,12 +343,14 @@ export const useVoice = create<VoiceState>()((set, get) => {
       const unavailable = mediaUnavailableReason();
       if (unavailable) throw new Error(unavailable);
       const heightCap = settings.resolution === "source" ? undefined : Number(settings.resolution);
+      // Linux desktop: Chromium can't capture app audio, venmic does it via PipeWire.
+      const useVenmic = settings.audio && !!desktop?.audio && desktop.platform === "linux" && (await desktop.audio.available());
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: {
           frameRate: { ideal: settings.fps, max: settings.fps },
           height: heightCap ? { max: heightCap } : undefined,
         },
-        audio: settings.audio
+        audio: settings.audio && !useVenmic
           ? { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 2 }
           : false,
         // Chromium-specific hints: don't offer the current tab, prefer whole screens.
@@ -336,7 +371,8 @@ export const useVoice = create<VoiceState>()((set, get) => {
         degradation: settings.content === "game" ? "maintain-framerate" : "maintain-resolution",
         startBitrateKbps: Math.min(Math.round(maxBitrate / 1000), 15_000),
       });
-      const audio = stream.getAudioTracks()[0];
+      const audio = useVenmic ? await captureVenmic(settings.audioApp ?? null) : stream.getAudioTracks()[0];
+      if (audio && useVenmic) stream.addTrack(audio);
       if (audio) {
         await conn.publish(audio, { source: "screen_audio", encodings: [{ maxBitrate: 256_000, priority: "high" }] });
       }
@@ -351,6 +387,7 @@ export const useVoice = create<VoiceState>()((set, get) => {
       if (!screen) return;
       set({ screen: null, screenSender: null });
       screen.getTracks().forEach((t) => t.stop());
+      stopVenmic();
       await conn?.unpublish("screen");
       await conn?.unpublish("screen_audio");
       syncState();

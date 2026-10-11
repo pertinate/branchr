@@ -13,7 +13,8 @@
     "onlyBuiltDependencies": [
       "electron",
       "esbuild",
-      "@tailwindcss/oxide"
+      "@tailwindcss/oxide",
+      "@vencord/venmic"
     ]
   }
 }

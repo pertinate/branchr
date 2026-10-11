@@ -18,6 +18,14 @@ export interface DesktopBridge {
   notify: (title: string, body: string) => void;
   window: { minimize: () => void; maximize: () => void; close: () => void };
   gpuInfo: () => Promise<{ hwEncode: string[]; hwDecode: string[]; features: Record<string, string> }>;
+  /** Linux stream audio through a PipeWire virtual mic (venmic). */
+  audio: {
+    available: () => Promise<boolean>;
+    list: () => Promise<{ name: string; binary: string }[]>;
+    /** One application by name, or everything except this app when null. */
+    start: (appName: string | null) => Promise<boolean>;
+    stop: () => Promise<void>;
+  };
 }
 
 declare global {

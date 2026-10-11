@@ -28,6 +28,7 @@ export function StreamDialog({ open, onOpenChange }: { open: boolean; onOpenChan
   const [sources, setSources] = useState<DesktopSource[] | null>(null);
   const [sourceId, setSourceId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [audioApps, setAudioApps] = useState<{ name: string; binary: string }[] | null>(null);
   const set = (p: Partial<StreamSettings>) => setS((x) => ({ ...x, ...p }));
 
   // On X11 the app shows its own picker; on Wayland the system portal does.
@@ -37,6 +38,12 @@ export function StreamDialog({ open, onOpenChange }: { open: boolean; onOpenChan
       setSources(src);
       setSourceId((cur) => cur ?? src[0]?.id ?? null);
     });
+  }, [open]);
+
+  // Linux desktop: list applications currently playing audio.
+  useEffect(() => {
+    if (!open || !desktop?.audio || desktop.platform !== "linux") return;
+    void desktop.audio.available().then(async (ok) => setAudioApps(ok ? await desktop!.audio.list() : null));
   }, [open]);
 
   const height = RESOLUTIONS.find((r) => r.value === s.resolution)?.height ?? 1440;
@@ -155,6 +162,23 @@ export function StreamDialog({ open, onOpenChange }: { open: boolean; onOpenChan
             <div className="text-sm font-medium">Stream audio</div>
             <Switch checked={s.audio} onCheckedChange={(v) => set({ audio: v })} />
           </label>
+          {s.audio && audioApps && (
+            <div className="flex items-center justify-between gap-4">
+              <div className="text-sm text-muted-foreground">Audio source</div>
+              <Select value={s.audioApp ?? "__all"} onValueChange={(v) => set({ audioApp: v === "__all" ? null : v })}>
+                <SelectTrigger className="w-64">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all">Entire system (except this app)</SelectItem>
+                  {audioApps.map((a) => (
+                    <SelectItem key={a.name} value={a.name}>{a.name}</SelectItem>
+                  ))}
+                  {s.audioApp && !audioApps.some((a) => a.name === s.audioApp) && <SelectItem value={s.audioApp}>{s.audioApp} (not running)</SelectItem>}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </div>
 
         <DialogFooter>

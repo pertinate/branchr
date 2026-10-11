@@ -12,6 +12,9 @@ extraResources:
   - from: build/icon.png
     to: icon.png
 asar: true
+# Native PipeWire addon must live outside the asar archive.
+asarUnpack:
+  - "**/node_modules/@vencord/venmic/**"
 linux:
   target:
     - AppImage

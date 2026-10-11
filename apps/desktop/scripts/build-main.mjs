@@ -15,7 +15,7 @@ export async function buildMain() {
     platform: "node",
     format: "cjs",
     target: "node22",
-    external: ["electron"],
+    external: ["electron", "@vencord/venmic"],
     sourcemap: watch ? "inline" : false,
     minify: !watch,
     logLevel: "warning",

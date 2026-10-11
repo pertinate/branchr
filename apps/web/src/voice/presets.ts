@@ -14,6 +14,11 @@ export interface StreamSettings {
   /** Publish extra lower-quality layers so viewers on weak links still get a smooth stream. */
   simulcast: boolean;
   audio: boolean;
+  /**
+   * Desktop (Linux) audio source: null = entire system except this app, otherwise an
+   * application name. Ignored where the browser can capture audio itself.
+   */
+  audioApp?: string | null;
 }
 
 export const defaultStreamSettings: StreamSettings = {

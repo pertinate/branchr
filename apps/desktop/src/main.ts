@@ -13,6 +13,8 @@ import {
   shell,
 } from "electron";
 
+import { venmic } from "./venmic";
+
 const isWayland = process.platform === "linux" && (process.env.XDG_SESSION_TYPE === "wayland" || !!process.env.WAYLAND_DISPLAY);
 const devUrl = process.env.DEV_URL;
 
@@ -169,6 +171,10 @@ function setupIpc() {
     else if (action === "maximize") (win.isMaximized() ? win.unmaximize() : win.maximize());
     else win.close();
   });
+  ipcMain.handle("desktop:audio-available", () => venmic.available());
+  ipcMain.handle("desktop:audio-list", () => venmic.list());
+  ipcMain.handle("desktop:audio-start", (_e, appName: string | null) => venmic.start(appName));
+  ipcMain.handle("desktop:audio-stop", () => venmic.stop());
   ipcMain.handle("desktop:gpu-info", async () => {
     const info = (await app.getGPUInfo("complete")) as {
       auxAttributes?: Record<string, unknown>;
@@ -212,6 +218,7 @@ app.on("second-instance", () => {
 
 app.on("before-quit", () => {
   quitting = true;
+  venmic.stop();
 });
 
 app.whenReady().then(() => {
