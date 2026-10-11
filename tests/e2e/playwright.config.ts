@@ -7,6 +7,8 @@ const SCRATCH = process.env.E2E_DATA ?? "/tmp/branchr-e2e";
  *   ssh -NL 18740:localhost:8740 root@host & E2E_BASE_URL=http://localhost:18740 pnpm test
  */
 const remote = process.env.E2E_BASE_URL;
+/** branchr ID needs Postgres; its tests skip without one. */
+const idDb = process.env.TEST_DATABASE_URL;
 
 export default defineConfig({
   testDir: ".",
@@ -42,6 +44,29 @@ export default defineConfig({
       timeout: 300_000,
       env: { SFU_PUBLIC_IP: "127.0.0.1", SFU_WORKERS: "2" },
     },
+    ...(idDb
+      ? [
+          { command: "node mock-discord.mjs", url: "http://localhost:8071/health", reuseExistingServer: true },
+          {
+            command: "cargo run -q -p id --bin branchr-id",
+            cwd: "../..",
+            url: "http://localhost:8070/health",
+            reuseExistingServer: true,
+            timeout: 300_000,
+            env: {
+              DATABASE_URL: idDb,
+              DATABASE_SCHEMA: "e2e",
+              ID_BIND: "127.0.0.1:8070",
+              PUBLIC_URL: "http://localhost:8070",
+              DISCORD_CLIENT_ID: "e2e",
+              DISCORD_CLIENT_SECRET: "e2e",
+              DISCORD_API: "http://localhost:8071/api",
+              DISCORD_AUTHORIZE: "http://localhost:8071/oauth2/authorize",
+              ALLOWED_REDIRECTS: "branchr://auth/callback,http://localhost:5173/",
+            },
+          },
+        ]
+      : []),
     {
       command: "pnpm --filter web dev",
       cwd: "../..",

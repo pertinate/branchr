@@ -13,6 +13,7 @@ apps/web        React client (also bundled into the desktop app)
 apps/desktop    Electron shell: VA-API, PipeWire capture, Linux stream audio, AppImage
 crates/api      REST + WebSocket gateway + SQLite + 7TV proxy, serves the web build
 crates/sfu      Media relay (WebRTC SFU)
+crates/id       branchr ID: central accounts (Discord sign-in), Postgres
 crates/proto    Wire types shared by Rust services and TypeScript (generated via ts-rs)
 packages/protocol  Generated TypeScript types
 tests/e2e       Playwright end-to-end tests (chat, voice, streaming, relay, desktop)
@@ -123,6 +124,14 @@ Configuration is all through the environment:
 | `SFU_PUBLIC_IP` | sfu | autodetected | IP put in ICE candidates. |
 | `SFU_UDP_PORT` / `SFU_WORKERS` | sfu | `50000` / #cores | Worker *i* uses `SFU_UDP_PORT + i`. |
 | `SFU_INITIAL_BWE` | sfu | `5000000` | Starting per-viewer estimate (bps). |
+
+## branchr ID
+
+`crates/id` is the central account service at `https://branchr.us`. Clients sign in with Discord through OAuth 2 with PKCE: the desktop app opens the browser and gets the result back through a `branchr://auth/callback` link, and the web app redirects in place. Only Discord's `identify` scope is requested. Access tokens are short-lived Ed25519 JWTs published at `/.well-known/jwks.json`, so self-hosted servers can verify them without calling branchr ID. Refresh tokens rotate on every use, and a reused one revokes that sign-in.
+
+It's optional. Servers that stay out of the federation keep their own username and password accounts, and accepting branchr accounts on servers is the next step.
+
+Run it locally against real Discord with `scripts/dev-id.sh`. It reads `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` and a Postgres `DATABASE_URL` from `~/.config/branchr/id.env`, which stays outside the repo. Tests use `TEST_DATABASE_URL` and a throwaway schema; CI provides a Postgres container.
 
 ## CI/CD
 

@@ -18,6 +18,11 @@ extraResources:
   - from: build/icon.png
     to: icon.png
 asar: true
+# branchr:// links (sign-in returning from the browser). Windows registers through NSIS;
+# the AppImage writes its own handler on first run (see src/deeplink.ts).
+protocols:
+  - name: branchr
+    schemes: [branchr]
 # Native PipeWire addon must live outside the asar archive.
 asarUnpack:
   - "**/node_modules/@vencord/venmic/**"

@@ -12,6 +12,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MicTest } from "@/components/voice/mic-test";
 import { api } from "@/lib/api";
+import { signOut, startSignIn, useBranchrId } from "@/lib/branchr-id";
 import { desktop } from "@/lib/desktop";
 import { gateway } from "@/lib/gateway";
 import { useApp } from "@/stores/app";
@@ -94,6 +95,47 @@ function Account() {
         <Button onClick={save}>Save</Button>
         <Button variant="destructive" onClick={logout}>Log Out</Button>
       </div>
+      <BranchrAccount />
+    </div>
+  );
+}
+
+/** The central branchr account (Discord sign-in). Servers start accepting it in the next step. */
+function BranchrAccount() {
+  const account = useBranchrId((s) => s.account);
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="space-y-2 border-t border-border pt-4" data-testid="branchr-account">
+      <Label>branchr account</Label>
+      {account ? (
+        <div className="flex items-center gap-3 rounded-md bg-muted p-3">
+          {account.avatarUrl && <img src={account.avatarUrl} alt="" className="size-10 rounded-full" />}
+          <div className="min-w-0 flex-1">
+            <div className="truncate font-medium">{account.displayName}</div>
+            <div className="text-xs text-muted-foreground">Signed in with Discord</div>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => void signOut()}>
+            Sign out
+          </Button>
+        </div>
+      ) : (
+        <>
+          <p className="text-xs text-muted-foreground">One account for every branchr server. Sign in with Discord; we only see your name and avatar.</p>
+          <Button
+            disabled={busy}
+            className="bg-[#5865F2] text-white hover:bg-[#4752c4]"
+            onClick={() => {
+              setBusy(true);
+              startSignIn()
+                .catch((e: Error) => toast.error(e.message))
+                // The browser takes over from here; re-enable in case they come back without finishing.
+                .finally(() => setTimeout(() => setBusy(false), 3000));
+            }}
+          >
+            Sign in with Discord
+          </Button>
+        </>
+      )}
     </div>
   );
 }

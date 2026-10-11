@@ -18,6 +18,12 @@ export interface DesktopBridge {
   notify: (title: string, body: string) => void;
   window: { minimize: () => void; maximize: () => void; close: () => void };
   gpuInfo: () => Promise<{ hwEncode: string[]; hwDecode: string[]; features: Record<string, string> }>;
+  /** `branchr://auth/callback` links from finishing sign-in in the browser. */
+  auth?: {
+    onCallback: (cb: (url: string) => void) => void;
+    /** A link that arrived before we were listening (e.g. it launched the app). */
+    pending: () => Promise<string | null>;
+  };
   /** Linux stream audio through a PipeWire virtual mic (venmic). */
   audio: {
     available: () => Promise<boolean>;

@@ -15,6 +15,10 @@ contextBridge.exposeInMainWorld("desktop", {
     close: () => ipcRenderer.send("desktop:window", "close"),
   },
   gpuInfo: () => ipcRenderer.invoke("desktop:gpu-info"),
+  auth: {
+    onCallback: (cb: (url: string) => void) => ipcRenderer.on("desktop:auth-callback", (_e, url: string) => cb(url)),
+    pending: () => ipcRenderer.invoke("desktop:auth-pending"),
+  },
   audio: {
     available: () => ipcRenderer.invoke("desktop:audio-available"),
     list: () => ipcRenderer.invoke("desktop:audio-list"),

@@ -23,6 +23,16 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-24.04
+    services:
+      # branchr ID runs on Postgres; its tests use a throwaway schema here.
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: ci
+        ports: ["5432:5432"]
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://postgres:ci@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -53,11 +63,21 @@ jobs:
           docker compose -f docker-compose.yml config -q
           docker compose -f docker-compose.yml -f deploy/docker-compose.public.yml -f deploy/docker-compose.image.yml config -q
 
-  # Browser tests against a local stack (API + SFU + Vite): chat, voice, screen streaming,
-  # attachments. Local-only: Electron (needs a display), emotes (third-party APIs), and the
+  # Browser tests against a local stack (API + SFU + Vite, plus branchr ID with a stand-in
+  # Discord): chat, voice, screen streaming, attachments, mentions, branchr sign-in. Local-only: Electron (needs a display), emotes (third-party APIs), and the
   # relay/load specs (several software video encoders at once overload a 4-vCPU runner).
   e2e:
     runs-on: ubuntu-24.04
+    services:
+      # branchr ID runs on Postgres; its tests use a throwaway schema here.
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: ci
+        ports: ["5432:5432"]
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://postgres:ci@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -68,9 +88,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo build -p api -p sfu
+      - run: cargo build -p api -p sfu -p id
       - run: pnpm --filter e2e exec playwright install --with-deps chromium
-      - run: pnpm --filter e2e test app.spec attachments.spec noise.spec
+      - run: pnpm --filter e2e test app.spec attachments.spec noise.spec mentions.spec branchr-id.spec
       - if: failure()
         uses: actions/upload-artifact@v4
         with:

@@ -14,6 +14,7 @@ import {
   shell,
 } from "electron";
 
+import { handleArgv, registerProtocol, setupDeepLinks } from "./deeplink";
 import { venmic } from "./venmic";
 
 const isWayland = process.platform === "linux" && (process.env.XDG_SESSION_TYPE === "wayland" || !!process.env.WAYLAND_DISPLAY);
@@ -66,6 +67,7 @@ if (process.env.BRANCHR_PROFILE) app.setPath("userData", process.env.BRANCHR_PRO
 if (!app.requestSingleInstanceLock()) app.quit();
 
 let win: BrowserWindow | null = null;
+setupDeepLinks(() => win);
 let tray: Tray | null = null;
 let quitting = false;
 /** Source chosen in our own picker (X11); consumed by the next getDisplayMedia call. */
@@ -239,7 +241,9 @@ function setupTray() {
   tray.on("click", () => (win?.isVisible() ? win.hide() : win?.show()));
 }
 
-app.on("second-instance", () => {
+app.on("second-instance", (_e, argv) => {
+  // A branchr:// link (sign-in finishing in the browser) arrives as the new copy's argv.
+  handleArgv(argv);
   if (!win) return;
   if (win.isMinimized()) win.restore();
   win.show();
@@ -255,6 +259,7 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   setupSession();
   setupIpc();
+  registerProtocol();
   createWindow();
   try {
     setupTray();
