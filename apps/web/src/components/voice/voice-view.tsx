@@ -10,7 +10,7 @@ import { UserAvatar, userColor } from "@/components/user-avatar";
 import { StatsOverlay, Video, useRtcStats } from "@/components/voice/video";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/stores/app";
-import { useVoice, useVoiceSettings } from "@/stores/voice";
+import { mediaUnavailableReason, useVoice, useVoiceSettings } from "@/stores/voice";
 
 type Tile = { kind: "user"; userId: string } | { kind: "stream"; track: TrackInfo } | { kind: "self-stream" };
 
@@ -44,6 +44,7 @@ export function VoiceView({ guildId, channelId }: { guildId: string; channelId: 
         <h2 className="text-2xl font-bold">{channel?.name}</h2>
         <p className="text-muted-foreground">{participants.length ? `${participants.length} in voice` : "No one is here yet."}</p>
         {error && <p className="text-sm text-destructive">{error}</p>}
+        {mediaUnavailableReason() && <p className="max-w-sm text-center text-sm text-idle">{mediaUnavailableReason()} You can still listen.</p>}
         <Button size="lg" disabled={status === "connecting"} onClick={() => void useVoice.getState().join(guildId, channelId)}>
           {status === "connecting" ? "Connecting…" : "Join Voice"}
         </Button>

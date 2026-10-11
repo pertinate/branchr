@@ -95,7 +95,16 @@ function waitForVoiceServer(channelId: string): Promise<VoiceServer> {
   });
 }
 
+/** Browsers only expose capture APIs on https (or localhost); the desktop app always has them. */
+export function mediaUnavailableReason(): string | null {
+  if (navigator.mediaDevices) return null;
+  return window.isSecureContext
+    ? "This browser doesn't support audio/video capture."
+    : "Voice and streaming need HTTPS. Serve this instance over https:// or use the desktop app.";
+}
+
 async function getMic(): Promise<MediaStreamTrack | null> {
+  if (mediaUnavailableReason()) return null;
   const s = useVoiceSettings.getState();
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
@@ -298,6 +307,8 @@ export const useVoice = create<VoiceState>()((set, get) => {
 
     startStream: async (settings) => {
       if (!conn) return;
+      const unavailable = mediaUnavailableReason();
+      if (unavailable) throw new Error(unavailable);
       const heightCap = settings.resolution === "source" ? undefined : Number(settings.resolution);
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: {
@@ -348,6 +359,8 @@ export const useVoice = create<VoiceState>()((set, get) => {
     toggleCamera: async () => {
       if (!conn) return;
       const { camera } = get();
+      const unavailable = mediaUnavailableReason();
+      if (unavailable) throw new Error(unavailable);
       if (camera) {
         set({ camera: null });
         camera.getTracks().forEach((t) => t.stop());

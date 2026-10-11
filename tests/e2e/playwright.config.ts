@@ -1,6 +1,12 @@
 import { defineConfig } from "@playwright/test";
 
 const SCRATCH = process.env.E2E_DATA ?? "/tmp/discord-clone-e2e";
+/**
+ * Point at a deployed instance instead of a local stack. Media APIs need a secure context, so
+ * for a plain-http LAN deployment tunnel it to localhost first:
+ *   ssh -NL 18740:localhost:8740 root@host & E2E_BASE_URL=http://localhost:18740 pnpm test
+ */
+const remote = process.env.E2E_BASE_URL;
 
 export default defineConfig({
   testDir: ".",
@@ -9,7 +15,7 @@ export default defineConfig({
   fullyParallel: false,
   reporter: [["list"]],
   use: {
-    baseURL: "http://localhost:5173",
+    baseURL: remote ?? "http://localhost:5173",
     launchOptions: {
       args: [
         "--use-fake-ui-for-media-stream",
@@ -19,7 +25,7 @@ export default defineConfig({
     },
   },
   // Brings up the whole stack: Rust API, Rust SFU and the Vite dev server.
-  webServer: [
+  webServer: remote ? [] : [
     {
       command: `cargo run -q -p api`,
       cwd: "../..",
