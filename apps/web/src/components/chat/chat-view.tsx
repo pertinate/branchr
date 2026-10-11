@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Composer } from "@/components/chat/composer";
 import { MessageList } from "@/components/chat/message-list";
 import { MemberList } from "@/components/guild/member-list";
+import { useInstance } from "@/lib/instances";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/stores/app";
 import type { UiMessage } from "@/stores/messages";
@@ -15,19 +16,21 @@ export function ChatView({ guildId, channelId }: { guildId: string; channelId: s
   const [dragging, setDragging] = useState(false);
   const clearReply = useCallback(() => setReplyTo(null), []);
 
+  // This view's instance; by cleanup time the active one may already be another.
+  const inst = useInstance();
   useEffect(() => {
     setReplyTo(null);
-    const app = useApp.getState();
+    const app = inst.app.getState();
     app.setViewing(channelId);
     app.markRead(channelId);
     // Reads that waited while the window was hidden.
-    const onVisible = () => document.visibilityState === "visible" && useApp.getState().markRead(channelId);
+    const onVisible = () => document.visibilityState === "visible" && inst.app.getState().markRead(channelId);
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       document.removeEventListener("visibilitychange", onVisible);
-      if (useApp.getState().viewing === channelId) useApp.getState().setViewing(null);
+      if (inst.app.getState().viewing === channelId) inst.app.getState().setViewing(null);
     };
-  }, [channelId]);
+  }, [inst, channelId]);
 
   return (
     <div className="flex min-w-0 flex-1 flex-col">

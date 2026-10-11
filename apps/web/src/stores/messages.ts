@@ -2,12 +2,10 @@ import type { Attachment, Emote, Message, ReactionEvent } from "@app/protocol";
 import { toast } from "sonner";
 import { create } from "zustand";
 
-import { api } from "@/lib/api";
 import { EMOTE_TOKEN } from "@/lib/emotes";
 import { localMentions } from "@/lib/mentions";
 import { compareIds, nonce } from "@/lib/ids";
-import { useApp } from "@/stores/app";
-import { useAuth } from "@/stores/auth";
+import { type Instance, instanceStore } from "@/lib/instances";
 
 export type UiMessage = Message & { pending?: boolean; failed?: boolean };
 
@@ -37,8 +35,8 @@ interface MessagesState {
 }
 
 /** Best-effort emote snapshot for an optimistic message, from the user's own servers. */
-function localEmoteRefs(content: string): Emote[] {
-  const all = useApp.getState().emotes;
+function localEmoteRefs(inst: Instance, content: string): Emote[] {
+  const all = inst.app.getState().emotes;
   const out: Emote[] = [];
   for (const m of content.matchAll(new RegExp(EMOTE_TOKEN.source, "g"))) {
     for (const list of Object.values(all)) {
@@ -65,7 +63,10 @@ function insertSorted(items: UiMessage[], m: UiMessage): UiMessage[] {
   return idx === -1 ? [...items, m] : [...items.slice(0, idx), m, ...items.slice(idx)];
 }
 
-export const useMessages = create<MessagesState>()((set, get) => {
+/** One instance's loaded messages. */
+export function createMessagesStore(inst: Instance) {
+  const api = inst.api;
+  return create<MessagesState>()((set, get) => {
   const patch = (channelId: string, f: (c: ChannelMessages) => ChannelMessages) =>
     set((s) => ({ channels: { ...s.channels, [channelId]: f(s.channels[channelId] ?? empty) } }));
 
@@ -124,10 +125,10 @@ export const useMessages = create<MessagesState>()((set, get) => {
       }
     },
     send: async (channelId, content, replyTo = null, attachments = []) => {
-      const me = useAuth.getState().user;
+      const me = inst.auth.getState().user;
       if (!me) return;
       const n = nonce();
-      const local = localMentions(content, useApp.getState().channels[channelId]?.guildId);
+      const local = localMentions(content, inst.app.getState().channels[channelId]?.guildId);
       const optimistic: UiMessage = {
         id: `pending-${n}`,
         channelId,
@@ -139,7 +140,7 @@ export const useMessages = create<MessagesState>()((set, get) => {
         replyTo,
         reactions: [],
         attachments,
-        emotes: localEmoteRefs(content),
+        emotes: localEmoteRefs(inst, content),
         nonce: n,
         pending: true,
       };
@@ -212,3 +213,9 @@ export const useMessages = create<MessagesState>()((set, get) => {
     },
   };
 });
+}
+
+export type MessagesStore = ReturnType<typeof createMessagesStore>;
+
+/** This instance's messages (see `useInstance`). */
+export const useMessages = instanceStore((i) => i.messages);

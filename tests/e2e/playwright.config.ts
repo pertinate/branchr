@@ -47,27 +47,31 @@ export default defineConfig({
       timeout: 300_000,
       env: { SFU_PUBLIC_IP: "127.0.0.1", SFU_WORKERS: "2" },
     },
-    ...(idDb
-      ? [
-          { command: "node mock-discord.mjs", url: "http://localhost:8071/health", reuseExistingServer: true },
-          // A second server that accepts branchr accounts (and its own).
-          {
-            command: "cargo run -q -p api",
-            cwd: "../..",
-            url: "http://localhost:8081/api/health",
-            reuseExistingServer: true,
-            timeout: 300_000,
-            env: {
-              DATABASE_URL: `sqlite://${fedDir}/db.sqlite`,
-              API_BIND: "127.0.0.1:8081",
-              SFU_URLS: "ws://127.0.0.1:8090/ws",
+    // A second instance (multi-instance tests); with branchr ID around it also accepts branchr accounts.
+    {
+      command: "cargo run -q -p api",
+      cwd: "../..",
+      url: "http://localhost:8081/api/health",
+      reuseExistingServer: true,
+      timeout: 300_000,
+      env: {
+        DATABASE_URL: `sqlite://${fedDir}/db.sqlite`,
+        API_BIND: "127.0.0.1:8081",
+        SFU_URLS: "ws://127.0.0.1:8090/ws",
+        ...(idDb
+          ? {
               AUTH_MODE: "both",
               BRANCHR_ID_URL: "http://localhost:8070",
               INSTANCE_NAME: "e2e federated",
               CLAIM_FILE: `${fedDir}/claim-code.txt`,
               BRANCHR_POLL_SECS: "1",
-            },
-          },
+            }
+          : {}),
+      },
+    },
+    ...(idDb
+      ? [
+          { command: "node mock-discord.mjs", url: "http://localhost:8071/health", reuseExistingServer: true },
           {
             command: "cargo run -q -p id --bin branchr-id",
             cwd: "../..",

@@ -11,10 +11,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MicTest } from "@/components/voice/mic-test";
+import { setStatus } from "@/lib/actions";
 import { api } from "@/lib/api";
 import { claimServer, signOut, startSignIn, useBranchrId } from "@/lib/branchr-id";
 import { desktop } from "@/lib/desktop";
-import { gateway } from "@/lib/gateway";
+import { useActive } from "@/lib/instances";
 import { instanceInfo, linkToBranchr } from "@/lib/server-login";
 import { useApp } from "@/stores/app";
 import { useAuth } from "@/stores/auth";
@@ -70,7 +71,8 @@ function Account() {
     }
   };
   const logout = async () => {
-    useVoice.getState().leave();
+    // Only this instance: voice elsewhere stays up.
+    if (useVoice.getState().instanceId === useActive.getState().id) useVoice.getState().leave();
     await api("POST", "/auth/logout").catch(() => {});
     useAuth.getState().logout();
   };
@@ -86,7 +88,7 @@ function Account() {
       </div>
       <div className="space-y-2">
         <Label>Status</Label>
-        <Select value={status} onValueChange={(v) => gateway.send({ op: "set_status", d: { status: v as Status } })}>
+        <Select value={status} onValueChange={(v) => setStatus(v as Status)}>
           <SelectTrigger className="w-48">
             <SelectValue />
           </SelectTrigger>

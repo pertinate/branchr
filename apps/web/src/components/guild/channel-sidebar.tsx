@@ -10,6 +10,7 @@ import { ChannelMenuItems, Menu, UserMenuItems } from "@/components/menus";
 import { UserAvatar } from "@/components/user-avatar";
 import { UserPanel } from "@/components/voice/user-panel";
 import { compareIds } from "@/lib/ids";
+import { useInstance } from "@/lib/instances";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/stores/app";
 import { useDialogs } from "@/stores/ui";
@@ -19,6 +20,7 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
   const channels = useApp(useShallow((s) => Object.values(s.channels).filter((c) => c.guildId === guildId)));
   const isOwner = useApp((s) => s.guilds[guildId]?.ownerId === s.me?.id);
   const openDialog = useDialogs((s) => s.open);
+  const instanceId = useInstance().id;
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   const groups = useMemo(() => {
@@ -50,7 +52,7 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
                   <button
                     className="text-muted-foreground opacity-0 hover:text-foreground group-hover:opacity-100"
                     aria-label={`Create channel in ${cat.name}`}
-                    onClick={() => openDialog({ kind: "create-channel", guildId, parentId: cat.id })}
+                    onClick={() => openDialog({ instanceId, kind: "create-channel", guildId, parentId: cat.id })}
                   >
                     <Plus className="size-4" />
                   </button>
@@ -80,11 +82,12 @@ const TextChannelRow = memo(function TextChannelRow({ channel }: { channel: Chan
     (s) => !!channel.lastMessageId && (!s.lastRead[channel.id] || compareIds(channel.lastMessageId, s.lastRead[channel.id]) > 0),
   );
   const pings = useApp((s) => s.pings[channel.id] ?? 0);
+  const instance = useInstance().id;
   return (
     <Menu items={<ChannelMenuItems channelId={channel.id} />}>
     <Link
-      to="/$guildId/$channelId"
-      params={{ guildId: channel.guildId, channelId: channel.id }}
+      to="/$instance/$guildId/$channelId"
+      params={{ instance, guildId: channel.guildId, channelId: channel.id }}
       className={cn(
         "relative flex items-center gap-1.5 rounded px-2 py-1.5 text-[15px] font-medium",
         active ? "bg-sidebar-accent text-sidebar-accent-foreground" : unread ? "text-foreground hover:bg-sidebar-accent/60" : "text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
@@ -103,16 +106,18 @@ const VoiceChannelRow = memo(function VoiceChannelRow({ channel, hidden }: { cha
   const params = useParams({ strict: false }) as { channelId?: string };
   const states = useApp(useShallow((s) => Object.values(s.voice[channel.guildId] ?? {}).filter((v) => v.channelId === channel.id)));
   const join = useVoice((s) => s.join);
-  const connected = useVoice((s) => s.channelId === channel.id);
+  const instanceId = useInstance().id;
+  const connected = useVoice((s) => s.channelId === channel.id && s.instanceId === instanceId);
+  const instance = useInstance().id;
   if (hidden && states.length === 0) return null;
   return (
     <div>
       <Menu items={<ChannelMenuItems channelId={channel.id} />}>
       <Link
-        to="/$guildId/$channelId"
-        params={{ guildId: channel.guildId, channelId: channel.id }}
+        to="/$instance/$guildId/$channelId"
+        params={{ instance, guildId: channel.guildId, channelId: channel.id }}
         onClick={() => {
-          if (!connected) void join(channel.guildId, channel.id);
+          if (!connected) void join(channel.guildId, channel.id, instanceId);
         }}
         className={cn(
           "flex items-center gap-1.5 rounded px-2 py-1.5 text-[15px] font-medium",

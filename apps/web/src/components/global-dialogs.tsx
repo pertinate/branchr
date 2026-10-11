@@ -10,16 +10,25 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { copy } from "@/lib/actions";
-import { api } from "@/lib/api";
+import { InstanceProvider, instance, useInstance } from "@/lib/instances";
 import { useApp } from "@/stores/app";
-import { useAuth } from "@/stores/auth";
-import { useDialogs } from "@/stores/ui";
+import { type DialogState, useDialogs } from "@/stores/ui";
 
 /** Dialogs opened from menus anywhere in the app. Mounted once. */
 export function GlobalDialogs() {
   const dialog = useDialogs((s) => s.dialog);
   const close = useDialogs((s) => s.close);
   if (!dialog) return null;
+  const inst = instance(dialog.instanceId);
+  if (!inst) return null;
+  return (
+    <InstanceProvider key={inst.id} instance={inst}>
+      <DialogFor dialog={dialog} close={close} />
+    </InstanceProvider>
+  );
+}
+
+function DialogFor({ dialog, close }: { dialog: DialogState; close: () => void }) {
   switch (dialog.kind) {
     case "invite":
       return <InviteDialog guildId={dialog.guildId} onClose={close} />;
@@ -35,6 +44,8 @@ export function GlobalDialogs() {
 }
 
 function InviteDialog({ guildId, onClose }: { guildId: string; onClose: () => void }) {
+  const inst = useInstance();
+  const api = inst.api;
   const guild = useApp((s) => s.guilds[guildId]);
   const [invite, setInvite] = useState<Invite | null>(null);
   useEffect(() => {
@@ -43,7 +54,7 @@ function InviteDialog({ guildId, onClose }: { guildId: string; onClose: () => vo
       onClose();
     });
   }, [guildId, onClose]);
-  const link = invite ? `${useAuth.getState().serverUrl}/#/invite/${invite.code}` : "";
+  const link = invite ? `${inst.url}/#/invite/${invite.code}` : "";
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
@@ -63,6 +74,8 @@ function InviteDialog({ guildId, onClose }: { guildId: string; onClose: () => vo
 }
 
 function NicknameDialog({ guildId, onClose }: { guildId: string; onClose: () => void }) {
+  const inst = useInstance();
+  const api = inst.api;
   const guild = useApp((s) => s.guilds[guildId]);
   const me = useApp((s) => (s.me ? s.members[guildId]?.[s.me.id] : undefined));
   const [nick, setNick] = useState(me?.nick ?? "");
@@ -70,7 +83,7 @@ function NicknameDialog({ guildId, onClose }: { guildId: string; onClose: () => 
     e.preventDefault();
     try {
       const m = await api<Member>("PATCH", `/guilds/${guildId}/members/@me`, { nick: nick.trim() || null });
-      useApp.getState().apply({ t: "MEMBER_UPDATE", d: m });
+      inst.app.getState().apply({ t: "MEMBER_UPDATE", d: m });
       onClose();
     } catch (err) {
       toast.error((err as Error).message);
@@ -100,6 +113,8 @@ function NicknameDialog({ guildId, onClose }: { guildId: string; onClose: () => 
 }
 
 function EditChannelDialog({ channelId, onClose }: { channelId: string; onClose: () => void }) {
+  const inst = useInstance();
+  const api = inst.api;
   const channel = useApp((s) => s.channels[channelId]);
   const [name, setName] = useState(channel?.name ?? "");
   const [topic, setTopic] = useState(channel?.topic ?? "");
@@ -111,7 +126,7 @@ function EditChannelDialog({ channelId, onClose }: { channelId: string; onClose:
         name: name.trim(),
         ...(channel.kind === "text" ? { topic: topic.trim() || null } : {}),
       });
-      useApp.getState().apply({ t: "CHANNEL_UPDATE", d: c });
+      inst.app.getState().apply({ t: "CHANNEL_UPDATE", d: c });
       onClose();
     } catch (err) {
       toast.error((err as Error).message);

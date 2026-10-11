@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useDebounced } from "@/hooks/use-debounced";
-import { api } from "@/lib/api";
+import { useInstance } from "@/lib/instances";
 import { type EmoteSource, emoteSource, emoteSrcSet, emoteUrl, providerNames } from "@/lib/emotes";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/stores/app";
@@ -45,13 +45,15 @@ export function GuildSettingsDialog({ guildId, tab, onClose }: { guildId: string
 }
 
 function Overview({ guildId }: { guildId: string }) {
+  const inst = useInstance();
+  const api = inst.api;
   const guild = useApp((s) => s.guilds[guildId]);
   const [name, setName] = useState(guild?.name ?? "");
   const [icon, setIcon] = useState(guild?.iconUrl ?? "");
   const setEveryone = async (everyoneMentions: boolean) => {
     try {
       const g = await api<Guild>("PATCH", `/guilds/${guildId}`, { everyoneMentions });
-      useApp.getState().apply({ t: "GUILD_UPDATE", d: g });
+      inst.app.getState().apply({ t: "GUILD_UPDATE", d: g });
     } catch (e) {
       toast.error((e as Error).message);
     }
@@ -59,7 +61,7 @@ function Overview({ guildId }: { guildId: string }) {
   const save = async () => {
     try {
       const g = await api<Guild>("PATCH", `/guilds/${guildId}`, { name, iconUrl: icon.trim() || null });
-      useApp.getState().apply({ t: "GUILD_UPDATE", d: g });
+      inst.app.getState().apply({ t: "GUILD_UPDATE", d: g });
       toast.success("Saved");
     } catch (e) {
       toast.error((e as Error).message);
@@ -95,6 +97,8 @@ function EmoteImg({ source, name, size = 32 }: { source: EmoteSource; name: stri
 const SEARCHABLE: EmoteProvider[] = ["7tv", "ffz"];
 
 function Emotes({ guildId, isOwner }: { guildId: string; isOwner: boolean }) {
+  const inst = useInstance();
+  const api = inst.api;
   const emotes = useApp(useShallow((s) => s.emotes[guildId] ?? []));
   const [provider, setProvider] = useState<EmoteProvider>("7tv");
   const [query, setQuery] = useState("");
@@ -116,7 +120,7 @@ function Emotes({ guildId, isOwner }: { guildId: string; isOwner: boolean }) {
   const isLinkBttv = /betterttv\.(com|net)/i.test(link);
 
   const added = (emote: Emote) => {
-    useApp.getState().apply({ t: "EMOTE_CREATE", d: emote });
+    inst.app.getState().apply({ t: "EMOTE_CREATE", d: emote });
     toast.success(`Added ${emote.name}`);
   };
 
@@ -147,7 +151,7 @@ function Emotes({ guildId, isOwner }: { guildId: string; isOwner: boolean }) {
   const remove = async (e: Emote) => {
     try {
       await api("DELETE", `/guilds/${guildId}/emotes/${e.id}`);
-      useApp.getState().apply({ t: "EMOTE_DELETE", d: { id: e.id, guildId } });
+      inst.app.getState().apply({ t: "EMOTE_DELETE", d: { id: e.id, guildId } });
     } catch (err) {
       toast.error((err as Error).message);
     }
@@ -301,6 +305,8 @@ function Emotes({ guildId, isOwner }: { guildId: string; isOwner: boolean }) {
 
 /** The emote's name in this server; owners click it to rename (e.g. to fix a clash). */
 function EmoteName({ emote, guildId, canEdit }: { emote: Emote; guildId: string; canEdit: boolean }) {
+  const inst = useInstance();
+  const api = inst.api;
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(emote.name);
   const save = async () => {
@@ -309,7 +315,7 @@ function EmoteName({ emote, guildId, canEdit }: { emote: Emote; guildId: string;
     if (!name || name === emote.name) return setValue(emote.name);
     try {
       const updated = await api<Emote>("PATCH", `/guilds/${guildId}/emotes/${emote.id}`, { name });
-      useApp.getState().apply({ t: "EMOTE_UPDATE", d: updated });
+      inst.app.getState().apply({ t: "EMOTE_UPDATE", d: updated });
     } catch (err) {
       setValue(emote.name);
       toast.error((err as Error).message);

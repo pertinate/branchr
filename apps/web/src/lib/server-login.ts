@@ -3,9 +3,10 @@
  * trade it for a session. If we aren't signed in to branchr yet, sign in first and pick
  * this up again when that finishes (`continueServerLogin`).
  */
-import type { AuthResponse, InstanceInfo } from "@app/protocol";
+import type { AuthResponse, InstanceInfo, ReadyGuild } from "@app/protocol";
 
 import { ID_URL, instancePass, startSignIn, useBranchrId } from "@/lib/branchr-id";
+import { instance, instanceKey, normalizeUrl } from "@/lib/instances";
 import { useAuth } from "@/stores/auth";
 
 const CONTINUE_KEY = "branchr-continue";
@@ -16,16 +17,35 @@ export async function instanceInfo(base: string): Promise<InstanceInfo> {
   return r.json();
 }
 
-/** Logs in to `base`; returns false when it went to branchr sign-in first. */
-export async function loginWithBranchr(base: string): Promise<boolean> {
+/** Where to go after logging in: the instance, or a server just joined there. */
+export interface Landing {
+  instance: string;
+  guildId?: string;
+}
+
+/**
+ * Finishes a login to `base` (now saved as an instance): joins `invite` there if given.
+ * The instance connects in the background; the join uses its API directly.
+ */
+export async function landAfterLogin(base: string, invite?: string): Promise<Landing> {
+  const id = instanceKey(normalizeUrl(base));
+  const inst = instance(id);
+  if (!invite || !inst) return { instance: id };
+  const g = await inst.api<ReadyGuild>("POST", `/invites/${encodeURIComponent(invite)}`);
+  inst.app.getState().apply({ t: "GUILD_CREATE", d: g });
+  return { instance: id, guildId: g.guild.id };
+}
+
+/** Logs in to `base`; returns null when it went to branchr sign-in first (see `continueServerLogin`). */
+export async function loginWithBranchr(base: string, invite?: string): Promise<Landing | null> {
   const info = await instanceInfo(base);
   if (info.authMode === "local" || !info.branchrIdUrl) throw new Error("This server doesn't accept branchr accounts");
   if (info.branchrIdUrl.replace(/\/$/, "") !== ID_URL) throw new Error(`This server uses a different branchr (${info.branchrIdUrl})`);
   if (!info.instanceId) throw new Error("This server is still connecting to branchr. Try again in a moment.");
   if (!useBranchrId.getState().refreshToken) {
-    localStorage.setItem(CONTINUE_KEY, base);
+    localStorage.setItem(CONTINUE_KEY, JSON.stringify({ base, invite }));
     await startSignIn();
-    return false;
+    return null;
   }
   const pass = await instancePass(info.instanceId);
   const r = await fetch(`${base}/api/auth/federated`, {
@@ -39,15 +59,21 @@ export async function loginWithBranchr(base: string): Promise<boolean> {
   }
   const auth = (await r.json()) as AuthResponse;
   useAuth.getState().setSession(base, auth.token, auth.user);
-  return true;
+  return landAfterLogin(base, invite);
 }
 
 /** After branchr sign-in: finish the server login that started it, if any. */
-export async function continueServerLogin() {
-  const base = localStorage.getItem(CONTINUE_KEY);
-  if (!base) return;
+export async function continueServerLogin(): Promise<Landing | null> {
+  const raw = localStorage.getItem(CONTINUE_KEY);
+  if (!raw) return null;
   localStorage.removeItem(CONTINUE_KEY);
-  await loginWithBranchr(base);
+  let pending: { base: string; invite?: string };
+  try {
+    pending = JSON.parse(raw);
+  } catch {
+    pending = { base: raw };
+  }
+  return loginWithBranchr(pending.base, pending.invite);
 }
 
 /** Ties the logged-in user on the current server to the signed-in branchr account. */

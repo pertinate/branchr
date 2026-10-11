@@ -71,3 +71,25 @@ export async function outboundVideoKbps(page: Page, ms = 3000): Promise<number> 
   const b = await total();
   return Math.round(((b.bytes - a.bytes) * 8) / (b.t - a.t));
 }
+
+export interface StoredSession {
+  id: string;
+  url: string;
+  token: string;
+  user: { id: string; username: string; displayName: string };
+}
+
+/** The page's saved logins, one per instance, in rail order. */
+export function sessions(page: Page): Promise<StoredSession[]> {
+  return page.evaluate(() => JSON.parse(localStorage.getItem("sessions") ?? "{}").state?.sessions ?? []);
+}
+
+/** The first (or only) saved login. */
+export async function session(page: Page): Promise<StoredSession> {
+  return (await sessions(page))[0];
+}
+
+/** Forgets every saved login (as if logged out everywhere); reload to take effect. */
+export function forgetSessions(page: Page) {
+  return page.evaluate(() => localStorage.setItem("sessions", JSON.stringify({ state: { sessions: [] }, version: 0 })));
+}

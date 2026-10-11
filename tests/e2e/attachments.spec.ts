@@ -60,7 +60,7 @@ test("attachments: files over the server's limit are refused with a clear error"
 
   // The server enforces it too, before reading the body.
   const res = await alice.evaluate(async () => {
-    const { serverUrl, token } = JSON.parse(localStorage.getItem("auth") ?? "{}").state ?? {};
+    const { url: serverUrl, token } = JSON.parse(localStorage.getItem("sessions") ?? "{}").state?.sessions?.[0] ?? {};
     const channel = (location.hash || location.pathname).split("/").pop();
     const r = await fetch(`${serverUrl ?? ""}/api/channels/${channel}/attachments`, {
       method: "POST",

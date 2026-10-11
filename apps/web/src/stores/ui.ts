@@ -1,13 +1,14 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-/** Dialogs any menu can open; rendered once by `GlobalDialogs`. */
-export type DialogState =
+/** Dialogs any menu can open; rendered once by `GlobalDialogs`, for `instanceId`. */
+export type DialogState = { instanceId: string } & (
   | { kind: "invite"; guildId: string }
   | { kind: "guild-settings"; guildId: string; tab: "overview" | "emotes" }
   | { kind: "nickname"; guildId: string }
   | { kind: "create-channel"; guildId: string; parentId: string | null }
-  | { kind: "edit-channel"; channelId: string };
+  | { kind: "edit-channel"; channelId: string }
+);
 
 export const useDialogs = create<{ dialog: DialogState | null; open: (d: DialogState) => void; close: () => void }>()((set) => ({
   dialog: null,

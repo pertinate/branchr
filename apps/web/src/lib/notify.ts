@@ -1,9 +1,8 @@
 import type { Message } from "@app/protocol";
 
 import { desktop } from "@/lib/desktop";
-import { gateway } from "@/lib/gateway";
+import { type Instance, instance, instances, useActive, useInstanceList } from "@/lib/instances";
 import { mentionsMe, plainText } from "@/lib/mentions";
-import { useApp } from "@/stores/app";
 
 /** A short two-note chime, synthesized so there's no asset to ship. */
 let audio: AudioContext | null = null;
@@ -30,16 +29,17 @@ function chime() {
 }
 
 /** Notifies about a message that mentions us, unless it's on screen in a focused window. */
-function notifyMention(m: Message) {
-  const s = useApp.getState();
-  if (s.viewing === m.channelId && document.hasFocus()) return;
+function notifyMention(inst: Instance, m: Message) {
+  const s = inst.app.getState();
+  const onScreen = useActive.getState().id === inst.id && s.viewing === m.channelId;
+  if (onScreen && document.hasFocus()) return;
   chime();
   const channel = s.channels[m.channelId];
   const guildId = channel?.guildId;
   const guild = guildId ? s.guilds[guildId] : undefined;
   const author = (guildId && s.members[guildId]?.[m.author.id]?.nick) || m.author.displayName;
   const title = `${author} (#${channel?.name ?? "unknown"}${guild ? `, ${guild.name}` : ""})`;
-  const body = plainText(m, guildId) || (m.attachments.length ? "Sent an attachment" : "");
+  const body = plainText(m, guildId, s) || (m.attachments.length ? "Sent an attachment" : "");
   if (desktop) return desktop.notify(title, body);
   if (typeof Notification === "undefined" || document.hasFocus()) return;
   if (Notification.permission === "granted") {
@@ -52,32 +52,50 @@ function notifyMention(m: Message) {
 }
 
 /**
- * Mention notifications, plus the unread-mention count on the taskbar badge and in the
- * title. Returns a stop function.
+ * Mention notifications from every instance, plus the unread-mention count across all of
+ * them on the taskbar badge and in the title. Returns a stop function.
  */
 export function startNotifications(): () => void {
   // Browsers ask once; desktop builds always may.
   if (!desktop && typeof Notification !== "undefined" && Notification.permission === "default") {
     void Notification.requestPermission().catch(() => {});
   }
-  const offGateway = gateway.on((ev) => {
-    if (ev.t === "MESSAGE_CREATE" && mentionsMe(ev.d, useApp.getState().me?.id)) notifyMention(ev.d);
-  });
   const base = document.title;
   let last = -1;
-  const badge = (pings: Record<string, number>) => {
+  const badge = () => {
     let total = 0;
-    for (const n of Object.values(pings)) total += n;
+    for (const i of instances()) for (const n of Object.values(i.app.getState().pings)) total += n;
     if (total === last) return;
     last = total;
     desktop?.setBadge(total);
     document.title = total ? `(${total}) ${base}` : base;
   };
-  badge(useApp.getState().pings);
-  const offStore = useApp.subscribe((s) => badge(s.pings));
+  // Instances come and go (log in, log out); follow them.
+  const attached = new Map<string, () => void>();
+  const attach = () => {
+    for (const inst of instances()) {
+      if (attached.has(inst.id)) continue;
+      const offGateway = inst.gateway.on((ev) => {
+        if (ev.t === "MESSAGE_CREATE" && mentionsMe(ev.d, inst.app.getState().me?.id)) notifyMention(inst, ev.d);
+      });
+      const offStore = inst.app.subscribe((s, prev) => s.pings !== prev.pings && badge());
+      attached.set(inst.id, () => {
+        offGateway();
+        offStore();
+      });
+    }
+    for (const [id, off] of attached) {
+      if (instance(id)) continue;
+      off();
+      attached.delete(id);
+    }
+    badge();
+  };
+  attach();
+  const offList = useInstanceList.subscribe(attach);
   return () => {
-    offGateway();
-    offStore();
+    offList();
+    for (const off of attached.values()) off();
     desktop?.setBadge(0);
     document.title = base;
   };

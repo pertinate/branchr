@@ -1,6 +1,6 @@
 import { type Page, expect, test } from "@playwright/test";
 
-import { createServer, joinServer, register } from "./helpers";
+import { createServer, joinServer, register, session } from "./helpers";
 
 // 1x1 PNG
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
@@ -70,7 +70,7 @@ test("context menus: messages, people, channels, servers", async ({ browser }) =
   await bob.keyboard.press("Escape");
 
   // People: Mention types @username into the message box.
-  const bobName = await bob.evaluate(() => JSON.parse(localStorage.getItem("auth") ?? "{}").state.user.username);
+  const bobName = (await session(bob)).user.username;
   await alice.locator("aside").last().getByText("ctx_b").click({ button: "right" });
   await item(alice, "Mention").click();
   await expect(box).toHaveValue(`@${bobName} `);

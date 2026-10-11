@@ -56,10 +56,14 @@ test("chat, voice and screen streaming between two users", async ({ browser }) =
   const bob = await register(browser, "bob");
   await bob.getByRole("button", { name: "Add a Server" }).click();
   await bob.getByRole("tab", { name: "Join" }).click();
-  // An invite from a different server explains itself instead of "invalid".
+  // An invite from a host we're not on offers to connect to it (here: cancel).
   await bob.getByPlaceholder("Invite code or link").fill(`http://other-server.example:8740/#/invite/${code}`);
   await bob.getByRole("button", { name: "Join Server" }).click();
-  await expect(bob.getByText(/That invite is for http:\/\/other-server\.example:8740/)).toBeVisible();
+  await expect(bob.getByRole("heading", { name: "Connect another host" })).toBeVisible();
+  await expect(bob.getByLabel("Server", { exact: true })).toHaveValue("http://other-server.example:8740");
+  await bob.getByRole("button", { name: "Cancel" }).click();
+  await bob.getByRole("button", { name: "Add a Server" }).click();
+  await bob.getByRole("tab", { name: "Join" }).click();
   await bob.getByPlaceholder("Invite code or link").fill(code);
   await bob.getByRole("button", { name: "Join Server" }).click();
   await expect(bob.getByRole("heading", { name: "Welcome to #general!" })).toBeVisible();

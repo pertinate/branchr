@@ -7,9 +7,8 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { api } from "@/lib/api";
+import { useInstance } from "@/lib/instances";
 import { cn } from "@/lib/utils";
-import { useApp } from "@/stores/app";
 
 export function CreateChannelDialog(props: {
   guildId: string;
@@ -20,15 +19,17 @@ export function CreateChannelDialog(props: {
   const [kind, setKind] = useState<ChannelKind>("text");
   const [name, setName] = useState("");
   const navigate = useNavigate();
+  // The rail can open this for an instance other than the one on screen.
+  const inst = useInstance();
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const c = await api<Channel>("POST", `/guilds/${props.guildId}/channels`, { name, kind, parentId: props.parentId });
-      useApp.getState().apply({ t: "CHANNEL_CREATE", d: c });
+      const c = await inst.api<Channel>("POST", `/guilds/${props.guildId}/channels`, { name, kind, parentId: props.parentId });
+      inst.app.getState().apply({ t: "CHANNEL_CREATE", d: c });
       props.onOpenChange(false);
       setName("");
-      if (c.kind === "text") void navigate({ to: "/$guildId/$channelId", params: { guildId: c.guildId, channelId: c.id } });
+      if (c.kind === "text") void navigate({ to: "/$instance/$guildId/$channelId", params: { instance: inst.id, guildId: c.guildId, channelId: c.id } });
     } catch (err) {
       toast.error((err as Error).message);
     }

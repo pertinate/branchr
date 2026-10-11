@@ -1,8 +1,9 @@
 /** Actions shared by menus, buttons and shortcuts. */
 import { toast } from "sonner";
 
-import { api } from "@/lib/api";
-import { useApp } from "@/stores/app";
+import type { Status } from "@app/protocol";
+
+import { type Instance, instances } from "@/lib/instances";
 
 export async function copy(text: string, what = "Copied") {
   try {
@@ -51,8 +52,8 @@ export function insertIntoComposer(text: string) {
   window.dispatchEvent(new CustomEvent("composer-insert", { detail: text }));
 }
 
-export function markGuildRead(guildId: string) {
-  const { channels, markRead } = useApp.getState();
+export function markGuildRead(inst: Instance, guildId: string) {
+  const { channels, markRead } = inst.app.getState();
   for (const c of Object.values(channels)) if (c.guildId === guildId && c.kind === "text") markRead(c.id);
 }
 
@@ -67,26 +68,31 @@ async function attempt(fn: () => Promise<unknown>) {
 }
 
 /** Leaves (or, for its owner, deletes) a server after confirming. */
-export async function leaveGuild(guildId: string): Promise<boolean> {
-  const s = useApp.getState();
+export async function leaveGuild(inst: Instance, guildId: string): Promise<boolean> {
+  const s = inst.app.getState();
   const guild = s.guilds[guildId];
   const owner = guild?.ownerId === s.me?.id;
   if (!guild || !confirm(`${owner ? "Delete" : "Leave"} "${guild.name}"?${owner ? " This can't be undone." : ""}`)) return false;
-  const ok = await attempt(() => api("DELETE", owner ? `/guilds/${guildId}` : `/guilds/${guildId}/members/@me`));
-  if (ok) useApp.getState().apply({ t: "GUILD_DELETE", d: { id: guildId } });
+  const ok = await attempt(() => inst.api("DELETE", owner ? `/guilds/${guildId}` : `/guilds/${guildId}/members/@me`));
+  if (ok) inst.app.getState().apply({ t: "GUILD_DELETE", d: { id: guildId } });
   return ok;
 }
 
-export async function deleteChannel(channelId: string) {
-  const c = useApp.getState().channels[channelId];
+export async function deleteChannel(inst: Instance, channelId: string) {
+  const c = inst.app.getState().channels[channelId];
   if (!c || !confirm(`Delete ${c.kind === "category" ? "category" : "channel"} "${c.name}"? This can't be undone.`)) return;
-  if (await attempt(() => api("DELETE", `/channels/${channelId}`))) useApp.getState().apply({ t: "CHANNEL_DELETE", d: { id: channelId, guildId: c.guildId } });
+  if (await attempt(() => inst.api("DELETE", `/channels/${channelId}`))) inst.app.getState().apply({ t: "CHANNEL_DELETE", d: { id: channelId, guildId: c.guildId } });
 }
 
-export async function kick(guildId: string, userId: string) {
-  const s = useApp.getState();
+export async function kick(inst: Instance, guildId: string, userId: string) {
+  const s = inst.app.getState();
   const m = s.members[guildId]?.[userId];
   const name = m?.nick ?? m?.user.displayName ?? "this member";
   if (!confirm(`Kick ${name} from ${s.guilds[guildId]?.name ?? "the server"}? They can rejoin with an invite.`)) return;
-  if (await attempt(() => api("DELETE", `/guilds/${guildId}/members/${userId}`))) toast.success(`Kicked ${name}`);
+  if (await attempt(() => inst.api("DELETE", `/guilds/${guildId}/members/${userId}`))) toast.success(`Kicked ${name}`);
+}
+
+/** Your status is the same everywhere: set it on every instance. */
+export function setStatus(status: Status) {
+  for (const i of instances()) i.gateway.send({ op: "set_status", d: { status } });
 }

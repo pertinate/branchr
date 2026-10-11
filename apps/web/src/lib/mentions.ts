@@ -1,6 +1,6 @@
 import type { Message, User } from "@app/protocol";
 
-import { useApp } from "@/stores/app";
+import { type AppState, useApp } from "@/stores/app";
 
 /**
  * Mentions as stored: `<@userId>`, `<@&roleId>` (roles, not implemented yet), and
@@ -11,8 +11,7 @@ export const ROLE_MENTION = /<@&(\d+)>/;
 export const EVERYONE_MENTION = /(?<![\w<])@(everyone|here)\b/;
 
 /** What a mentioned user is called in a guild: nick, then display name, then the snapshot. */
-export function mentionName(guildId: string | undefined, id: string, snapshot?: User): string {
-  const s = useApp.getState();
+export function mentionName(guildId: string | undefined, id: string, snapshot?: User, s: AppState = useApp.getState()): string {
   const member = guildId ? s.members[guildId]?.[id] : undefined;
   return member?.nick ?? member?.user.displayName ?? snapshot?.displayName ?? "unknown-user";
 }
@@ -55,9 +54,9 @@ export function editableMentions(content: string, mentions: User[]): string {
 }
 
 /** One line of plain text for previews and notifications. */
-export function plainText(m: Pick<Message, "content" | "mentions">, guildId: string | undefined): string {
+export function plainText(m: Pick<Message, "content" | "mentions">, guildId: string | undefined, s: AppState = useApp.getState()): string {
   return m.content
-    .replace(new RegExp(USER_MENTION.source, "g"), (_, id: string) => `@${mentionName(guildId, id, m.mentions.find((u) => u.id === id))}`)
+    .replace(new RegExp(USER_MENTION.source, "g"), (_, id: string) => `@${mentionName(guildId, id, m.mentions.find((u) => u.id === id), s)}`)
     .replace(new RegExp(ROLE_MENTION.source, "g"), "@unknown-role")
     .replace(/<:([\w!?-]+):\d+>/g, ":$1:")
     .replace(/\s+/g, " ")

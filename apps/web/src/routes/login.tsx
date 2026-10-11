@@ -5,31 +5,40 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { instanceInfo, loginWithBranchr } from "@/lib/server-login";
+import { useSessions } from "@/lib/instances";
+import { type Landing, instanceInfo, landAfterLogin, loginWithBranchr } from "@/lib/server-login";
 import { useAuth } from "@/stores/auth";
 
 export const Route = createFileRoute("/login")({
-  validateSearch: (s: Record<string, unknown>) => ({ redirect: typeof s.redirect === "string" ? s.redirect : undefined }),
+  validateSearch: (s: Record<string, unknown>): { redirect?: string; server?: string; invite?: string } => ({
+    redirect: typeof s.redirect === "string" ? s.redirect : undefined,
+    /** A host to log in to (adding it alongside the ones you're on). */
+    server: typeof s.server === "string" ? s.server : undefined,
+    /** An invite to join there once logged in. */
+    invite: typeof s.invite === "string" ? s.invite : undefined,
+  }),
   component: Login,
 });
 
 function Login() {
   const navigate = useNavigate();
-  const { redirect } = Route.useSearch();
+  const { redirect, server: wanted, invite } = Route.useSearch();
   const [mode, setMode] = useState<"login" | "register">("login");
-  const [server, setServer] = useState(useAuth.getState().serverUrl);
+  // Already logged in somewhere: this adds another host.
+  const adding = useSessions((s) => s.sessions.length > 0);
+  const [server, setServer] = useState(wanted ?? (adding ? "" : useAuth.getState().serverUrl));
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [info, setInfo] = useState<InstanceInfo | null>(null);
-  const token = useAuth((s) => s.token);
 
-  // Logged in some other way (finishing a branchr sign-in): carry on into the app.
-  useEffect(() => {
-    if (token) void navigate({ to: redirect ?? "/" });
-  }, [token, navigate, redirect]);
+  const land = (to: Landing) => {
+    if (to.guildId) void navigate({ to: "/$instance/$guildId", params: { instance: to.instance, guildId: to.guildId } });
+    else if (redirect && !adding) void navigate({ to: redirect });
+    else void navigate({ to: "/$instance", params: { instance: to.instance } });
+  };
 
   // Which logins does this server offer?
   useEffect(() => {
@@ -55,7 +64,8 @@ function Login() {
     setBusy(true);
     setError(null);
     try {
-      await loginWithBranchr(server.trim().replace(/\/+$/, ""));
+      const to = await loginWithBranchr(server.trim().replace(/\/+$/, ""), invite);
+      if (to) land(to);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -80,7 +90,7 @@ function Login() {
       }
       const auth = (await res.json()) as AuthResponse;
       useAuth.getState().setSession(base, auth.token, auth.user);
-      void navigate({ to: redirect ?? "/" });
+      land(await landAfterLogin(base, invite));
     } catch (err) {
       setError(err instanceof TypeError ? `Can't reach ${base}` : (err as Error).message);
     } finally {
@@ -92,9 +102,13 @@ function Login() {
     <div className="grid h-full place-items-center bg-[radial-gradient(ellipse_at_top,_var(--primary)_0%,_transparent_60%)]">
       <form onSubmit={submit} className="w-full max-w-md space-y-4 rounded-lg bg-background p-8 shadow-2xl">
         <div className="text-center">
-          <h1 className="text-2xl font-semibold">{mode === "login" ? "Welcome back!" : "Create an account"}</h1>
+          <h1 className="text-2xl font-semibold">{adding ? "Connect another host" : mode === "login" ? "Welcome back!" : "Create an account"}</h1>
           <p className="text-sm text-muted-foreground">
-            {mode === "login" ? "We're so excited to see you again!" : "Join your self-hosted community."}
+            {adding
+              ? "Log in to another self-hosted branchr. You stay connected to the others."
+              : mode === "login"
+                ? "We're so excited to see you again!"
+                : "Join your self-hosted community."}
           </p>
         </div>
         <div className="space-y-2">
@@ -145,6 +159,13 @@ function Login() {
         </>
         )}
         {error && <p className="text-sm text-destructive">{error}</p>}
+        {adding && (
+          <p className="text-center text-sm">
+            <button type="button" className="text-muted-foreground hover:underline" onClick={() => void navigate({ to: "/" })}>
+              Cancel
+            </button>
+          </p>
+        )}
       </form>
     </div>
   );

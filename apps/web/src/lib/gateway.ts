@@ -1,14 +1,14 @@
 import type { ClientOp, ServerEvent } from "@app/protocol";
 
+import { toast } from "sonner";
+
 import { gatewayUrl } from "@/lib/api";
-import { useApp } from "@/stores/app";
-import { useAuth } from "@/stores/auth";
-import { useMessages } from "@/stores/messages";
+import { type Instance, activeInstance, instances } from "@/lib/instances";
 
 type Listener = (ev: ServerEvent) => void;
 
-/** Single gateway connection with heartbeats and exponential-backoff reconnects. */
-class Gateway {
+/** One instance's gateway connection, with heartbeats and exponential-backoff reconnects. */
+export class Gateway {
   private ws: WebSocket | null = null;
   private heartbeat: ReturnType<typeof setInterval> | undefined;
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
@@ -16,6 +16,8 @@ class Gateway {
   private wanted = false;
   private awaitingAck = false;
   private listeners = new Set<Listener>();
+
+  constructor(private inst: Instance) {}
 
   start() {
     if (this.wanted) return;
@@ -27,7 +29,7 @@ class Gateway {
     this.wanted = false;
     clearTimeout(this.reconnectTimer);
     this.teardown();
-    useApp.getState().setConnection("idle");
+    this.inst.app.getState().setConnection("idle");
   }
 
   send(op: ClientOp) {
@@ -51,9 +53,9 @@ class Gateway {
   }
 
   private connect() {
-    const { serverUrl, token } = useAuth.getState();
+    const { serverUrl, token } = this.inst.auth.getState();
     if (!token) return;
-    useApp.getState().setConnection(this.attempts === 0 ? "connecting" : "reconnecting");
+    this.inst.app.getState().setConnection(this.attempts === 0 ? "connecting" : "reconnecting");
     const ws = new WebSocket(gatewayUrl(serverUrl));
     this.ws = ws;
     ws.onmessage = (e) => {
@@ -68,15 +70,16 @@ class Gateway {
           return;
         case "INVALID_SESSION":
           this.wanted = false;
-          useAuth.getState().logout();
+          toast.error(`Logged out of ${new URL(serverUrl).host}`, { description: "Your session there ended. Log in again to reconnect." });
+          this.inst.auth.getState().logout();
           return;
         case "READY":
           this.attempts = 0;
           // Messages may have been missed while disconnected; reload lazily on view.
-          useMessages.setState({ channels: {} });
+          this.inst.messages.setState({ channels: {} });
           break;
       }
-      useApp.getState().apply(ev);
+      this.inst.app.getState().apply(ev);
       for (const l of this.listeners) l(ev);
     };
     ws.onclose = () => this.scheduleReconnect();
@@ -100,19 +103,23 @@ class Gateway {
   private scheduleReconnect() {
     this.teardown();
     if (!this.wanted) return;
-    useApp.getState().setConnection("reconnecting");
+    this.inst.app.getState().setConnection("reconnecting");
     const delay = Math.min(30_000, 500 * 2 ** this.attempts) * (0.75 + Math.random() * 0.5);
     this.attempts++;
     this.reconnectTimer = setTimeout(() => this.connect(), delay);
   }
 }
 
-export const gateway = new Gateway();
+/** The active instance's gateway (the one on screen). */
+export const gateway = {
+  send: (op: ClientOp) => activeInstance().gateway.send(op),
+};
 
 // Reconnect quickly when the network comes back.
 window.addEventListener("online", () => {
-  if (useAuth.getState().token) {
-    gateway.stop();
-    gateway.start();
+  for (const i of instances()) {
+    if (!i.auth.getState().token) continue;
+    i.gateway.stop();
+    i.gateway.start();
   }
 });

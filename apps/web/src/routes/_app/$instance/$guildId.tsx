@@ -3,14 +3,14 @@ import { Navigate, Outlet, createFileRoute } from "@tanstack/react-router";
 import { ChannelSidebar } from "@/components/guild/channel-sidebar";
 import { useApp } from "@/stores/app";
 
-export const Route = createFileRoute("/_app/$guildId")({
+export const Route = createFileRoute("/_app/$instance/$guildId")({
   component: GuildLayout,
 });
 
 function GuildLayout() {
-  const { guildId } = Route.useParams();
+  const { instance, guildId } = Route.useParams();
   const exists = useApp((s) => !!s.guilds[guildId]);
-  if (!exists) return <Navigate to="/" replace />;
+  if (!exists) return <Navigate to="/$instance" params={{ instance }} replace />;
   return (
     <>
       <ChannelSidebar guildId={guildId} />

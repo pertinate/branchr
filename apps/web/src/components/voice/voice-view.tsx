@@ -19,6 +19,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenu
 import { Slider } from "@/components/ui/slider";
 import { UserAvatar, userColor } from "@/components/user-avatar";
 import { StatsOverlay, Video, useRtcStats } from "@/components/voice/video";
+import { useInstance } from "@/lib/instances";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/stores/app";
 import { mediaUnavailableReason, useVoice, useVoiceSettings } from "@/stores/voice";
@@ -32,7 +33,8 @@ function tileKey(t: Tile) {
 export function VoiceView({ guildId, channelId }: { guildId: string; channelId: string }) {
   const channel = useApp((s) => s.channels[channelId]);
   const participants = useApp(useShallow((s) => Object.values(s.voice[guildId] ?? {}).filter((v) => v.channelId === channelId).map((v) => v.userId)));
-  const connected = useVoice((s) => s.channelId === channelId);
+  const instanceId = useInstance().id;
+  const connected = useVoice((s) => s.channelId === channelId && s.instanceId === instanceId);
   const status = useVoice((s) => s.status);
   const error = useVoice((s) => s.error);
   const screens = useVoice(useShallow((s) => Object.values(s.tracks).filter((t) => t.source === "screen")));
@@ -56,7 +58,7 @@ export function VoiceView({ guildId, channelId }: { guildId: string; channelId: 
         <p className="text-muted-foreground">{participants.length ? `${participants.length} in voice` : "No one is here yet."}</p>
         {error && <p className="text-sm text-destructive">{error}</p>}
         {mediaUnavailableReason() && <p className="max-w-sm text-center text-sm text-idle">{mediaUnavailableReason()} You can still listen.</p>}
-        <Button size="lg" disabled={status === "connecting"} onClick={() => void useVoice.getState().join(guildId, channelId)}>
+        <Button size="lg" disabled={status === "connecting"} onClick={() => void useVoice.getState().join(guildId, channelId, instanceId)}>
           {status === "connecting" ? "Connecting…" : "Join Voice"}
         </Button>
       </div>

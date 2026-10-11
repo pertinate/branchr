@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { createServer, register } from "./helpers";
+import { createServer, forgetSessions, register, session } from "./helpers";
 
 test.skip(!process.env.TEST_DATABASE_URL, "branchr ID needs TEST_DATABASE_URL (Postgres)");
 
@@ -54,9 +54,9 @@ test("federated server: sign in with Discord from the login screen, claim it, co
   // Not signed in to branchr yet: Discord first, then straight on into the server.
   await page.getByRole("button", { name: "Sign in with Discord" }).click();
   await expect(page.getByRole("heading", { name: "No servers yet" })).toBeVisible();
-  const session = () => page.evaluate(() => JSON.parse(localStorage.getItem("auth") ?? "{}").state);
-  const first = await session();
-  expect(first.serverUrl).toBe(FED);
+  const current = () => session(page);
+  const first = await current();
+  expect(first.url).toBe(FED);
   expect(first.user.displayName).toBe("E2E Nelly");
   expect(first.user.username).toMatch(/^e2e_nelly\d*$/);
 
@@ -73,18 +73,13 @@ test("federated server: sign in with Discord from the login screen, claim it, co
   await expect.poll(() => existsSync(claimFile)).toBe(false);
 
   // Log out of the server and back in: same user, no second Discord trip (already signed in).
-  await page.evaluate(() => {
-    const a = JSON.parse(localStorage.getItem("auth") ?? "{}");
-    a.state.token = null;
-    a.state.user = null;
-    localStorage.setItem("auth", JSON.stringify(a));
-  });
+  await forgetSessions(page);
   await page.goto("/#/login");
   await page.reload();
   await page.getByLabel("Server", { exact: true }).fill(FED);
   await page.getByRole("button", { name: "Sign in with Discord" }).click();
   await expect(page.getByRole("heading", { name: "Welcome to #general!" })).toBeVisible();
-  expect((await session()).user.id).toBe(first.user.id);
+  expect((await current()).user.id).toBe(first.user.id);
 
   // A pass is for one server only: the local-only server refuses branchr logins.
   const local = await (await fetch("http://localhost:8080/api/instance")).json();
@@ -111,8 +106,8 @@ test("federated server: a password account links to branchr and is reached by Di
   await page.getByLabel("Password").fill("correct horse battery");
   await page.getByRole("button", { name: "Continue" }).click();
   await createServer(page, "Linked home");
-  const session = () => page.evaluate(() => JSON.parse(localStorage.getItem("auth") ?? "{}").state);
-  const local = await session();
+  const current = () => session(page);
+  const local = await current();
 
   // Sign in to branchr from Settings (a full redirect; still logged in to the server after).
   await page.getByRole("button", { name: "User Settings" }).click();
@@ -149,18 +144,13 @@ test("federated server: a password account links to branchr and is reached by Di
   expect(conflict).toBe(409);
 
   // Log out of the server; Discord sign-in now reaches the password account.
-  await page.evaluate(() => {
-    const a = JSON.parse(localStorage.getItem("auth") ?? "{}");
-    a.state.token = null;
-    a.state.user = null;
-    localStorage.setItem("auth", JSON.stringify(a));
-  });
+  await forgetSessions(page);
   await page.goto("/#/login");
   await page.reload();
   await page.getByLabel("Server", { exact: true }).fill(FED);
   await page.getByRole("button", { name: "Sign in with Discord" }).click();
   await expect(page.getByRole("heading", { name: "Welcome to #general!" })).toBeVisible();
-  const back = await session();
+  const back = await current();
   expect(back.user.id).toBe(local.user.id);
   expect(back.user.username).toBe(`pw_${run}`);
   // Now carrying the branchr profile.

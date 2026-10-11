@@ -1,12 +1,14 @@
 import { Headphones, HeadphoneOff, Mic, MicOff, MonitorUp, PhoneOff, Settings, Signal, Video, VideoOff } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { useStore } from "zustand";
 
 import { SettingsDialog } from "@/components/settings-dialog";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Menu, SelfMenuItems } from "@/components/menus";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { UserAvatar } from "@/components/user-avatar";
 import { StreamDialog } from "@/components/voice/stream-dialog";
+import { hostOf, instance, useInstance } from "@/lib/instances";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/stores/app";
 import { useVoice } from "@/stores/voice";
@@ -35,8 +37,12 @@ export function UserPanel() {
   const me = useApp((s) => s.me);
   const status = useApp((s) => (s.me ? (s.presences[s.me.id] ?? "online") : "offline"));
   const v = useVoice();
-  const channel = useApp((s) => (v.channelId ? s.channels[v.channelId] : undefined));
-  const guild = useApp((s) => (v.guildId ? s.guilds[v.guildId] : undefined));
+  // Voice can be on another instance than the one on screen; name it from there.
+  const here = useInstance();
+  const voiceInst = instance(v.instanceId) ?? here;
+  const channel = useStore(voiceInst.app, (s) => (v.channelId ? s.channels[v.channelId] : undefined));
+  const guild = useStore(voiceInst.app, (s) => (v.guildId ? s.guilds[v.guildId] : undefined));
+  const elsewhere = voiceInst.id !== here.id ? ` · ${hostOf(voiceInst.url)}` : "";
   const [streamOpen, setStreamOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const speaking = useVoice((s) => (me ? !!s.speaking[me.id] : false));
@@ -55,6 +61,7 @@ export function UserPanel() {
               </div>
               <div className="truncate text-xs text-muted-foreground">
                 {channel?.name} / {guild?.name}
+                {elsewhere}
               </div>
             </div>
             <IconButton label="Disconnect" onClick={() => v.leave()} danger>

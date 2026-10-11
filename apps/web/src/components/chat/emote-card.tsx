@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { GuildBadge } from "@/components/guild/guild-badge";
 import { emotePage, emoteSource, emoteSrcSet, emoteUrl, providerNames } from "@/lib/emotes";
+import { useInstance } from "@/lib/instances";
 import { useApp } from "@/stores/app";
 import { useEmoteCard } from "@/stores/emotes";
 
@@ -16,6 +17,7 @@ export function EmoteCard() {
   const close = useEmoteCard((s) => s.close);
   const guild = useApp((s) => (card ? s.guilds[card.emote.guildId] : undefined));
   const current = (useParams({ strict: false }) as { guildId?: string }).guildId;
+  const instanceId = useInstance().id;
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
 
@@ -76,8 +78,8 @@ export function EmoteCard() {
         <div className="mb-1 text-[11px] font-semibold text-muted-foreground uppercase">From</div>
         {guild ? (
           <Link
-            to="/$guildId"
-            params={{ guildId: guild.id }}
+            to="/$instance/$guildId"
+            params={{ instance: instanceId, guildId: guild.id }}
             onClick={close}
             className="-mx-1 flex items-center gap-2 rounded px-1 py-1 hover:bg-accent"
             data-testid="emote-card-guild"

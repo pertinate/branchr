@@ -4,8 +4,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 import { desktop } from "@/lib/desktop";
-import { gateway } from "@/lib/gateway";
-import { useApp } from "@/stores/app";
+import { type Instance, activeInstance, instance, useInstanceList } from "@/lib/instances";
 import { VoiceConnection } from "@/voice/connection";
 import { type Mic, type NoiseSuppression, openMic } from "@/voice/mic";
 import { type StreamSettings, cameraEncodings, defaultStreamSettings, layersFor, pickCodec } from "@/voice/presets";
@@ -58,6 +57,8 @@ export const useVoiceSettings = create<VoiceSettings>()(
 
 interface VoiceState {
   status: VoiceStatus;
+  /** The instance this voice channel is on (voice stays up while browsing others). */
+  instanceId: string | null;
   guildId: string | null;
   channelId: string | null;
   error: string | null;
@@ -73,7 +74,8 @@ interface VoiceState {
   speaking: Record<string, boolean>;
   estimateBps: number;
 
-  join: (guildId: string, channelId: string) => Promise<void>;
+  /** Joins a channel on `instanceId` (default: the instance on screen). */
+  join: (guildId: string, channelId: string, instanceId?: string) => Promise<void>;
   leave: () => void;
   toggleMute: () => void;
   toggleDeafen: () => void;
@@ -123,13 +125,13 @@ function stopVenmic() {
 }
 let retries = 0;
 
-function waitForVoiceServer(channelId: string): Promise<VoiceServer> {
+function waitForVoiceServer(inst: Instance, channelId: string): Promise<VoiceServer> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       off();
       reject(new Error("voice server did not respond"));
     }, 10_000);
-    const off = gateway.on((ev) => {
+    const off = inst.gateway.on((ev) => {
       if (ev.t === "VOICE_SERVER" && ev.d.channelId === channelId) {
         clearTimeout(timer);
         off();
@@ -171,11 +173,16 @@ function autoSubscribe(t: TrackInfo): boolean {
   return t.source === "mic" || t.source === "camera";
 }
 
+const leaveOp = (guildId: string) =>
+  ({ op: "voice_state_update", d: { guildId, channelId: null, selfMute: false, selfDeaf: false, selfVideo: false, selfStream: false } }) as const;
+
 export const useVoice = create<VoiceState>()((set, get) => {
+  /** The instance the current voice channel is on. */
+  const voiceInstance = () => instance(get().instanceId);
   const syncState = () => {
     const s = get();
     if (!s.guildId || !s.channelId) return;
-    gateway.send({
+    voiceInstance()?.gateway.send({
       op: "voice_state_update",
       d: {
         guildId: s.guildId,
@@ -237,6 +244,7 @@ export const useVoice = create<VoiceState>()((set, get) => {
 
   return {
     status: "disconnected",
+    instanceId: null,
     guildId: null,
     channelId: null,
     error: null,
@@ -253,19 +261,22 @@ export const useVoice = create<VoiceState>()((set, get) => {
 
     connection: () => conn,
 
-    join: async (guildId, channelId) => {
+    join: async (guildId, channelId, instanceId) => {
       const s = get();
-      if (s.channelId === channelId && (s.status === "connected" || s.status === "connecting")) return;
+      const inst = instance(instanceId) ?? activeInstance();
+      if (s.instanceId === inst.id && s.channelId === channelId && (s.status === "connected" || s.status === "connecting")) return;
       const seq = ++joinSeq;
       cleanup();
-      set({ status: s.status === "reconnecting" ? "reconnecting" : "connecting", guildId, channelId, error: null });
+      // Moving to another instance's voice: leave the old one there.
+      if (s.instanceId && s.instanceId !== inst.id && s.guildId) instance(s.instanceId)?.gateway.send(leaveOp(s.guildId));
+      set({ status: s.status === "reconnecting" ? "reconnecting" : "connecting", instanceId: inst.id, guildId, channelId, error: null });
 
       // Leaving first guarantees the API issues a fresh voice token even for the same channel.
-      const me = useApp.getState().me;
-      const inVoice = me && Object.values(useApp.getState().voice).some((g) => g[me.id]);
-      if (inVoice) gateway.send({ op: "voice_state_update", d: { guildId, channelId: null, selfMute: false, selfDeaf: false, selfVideo: false, selfStream: false } });
+      const app = inst.app.getState();
+      const inVoice = app.me && Object.values(app.voice).some((g) => g[app.me!.id]);
+      if (inVoice) inst.gateway.send(leaveOp(guildId));
 
-      const server = waitForVoiceServer(channelId);
+      const server = waitForVoiceServer(inst, channelId);
       syncState();
       try {
         const [vs, opened] = await Promise.all([server, getMic()]);
@@ -302,7 +313,7 @@ export const useVoice = create<VoiceState>()((set, get) => {
             conn = null;
             if (reason.startsWith("replaced")) {
               cleanup();
-              set({ status: "disconnected", guildId: null, channelId: null });
+              set({ status: "disconnected", instanceId: null, guildId: null, channelId: null });
               return;
             }
             // Unexpected drop: rejoin with backoff.
@@ -313,7 +324,7 @@ export const useVoice = create<VoiceState>()((set, get) => {
               const mySeq = joinSeq;
               setTimeout(() => {
                 // Skip if the user left or switched channels meanwhile.
-                if (joinSeq === mySeq && get().channelId === ch) void get().join(g, ch);
+                if (joinSeq === mySeq && get().channelId === ch) void get().join(g, ch, get().instanceId ?? undefined);
               }, 1000 * retries);
             } else {
               get().leave();
@@ -333,8 +344,8 @@ export const useVoice = create<VoiceState>()((set, get) => {
       } catch (e) {
         if (seq !== joinSeq) return;
         cleanup();
-        gateway.send({ op: "voice_state_update", d: { guildId, channelId: null, selfMute: false, selfDeaf: false, selfVideo: false, selfStream: false } });
-        set({ status: "disconnected", guildId: null, channelId: null, error: (e as Error).message });
+        inst.gateway.send(leaveOp(guildId));
+        set({ status: "disconnected", instanceId: null, guildId: null, channelId: null, error: (e as Error).message });
         toast.error("Couldn't join voice", { description: (e as Error).message });
       }
     },
@@ -343,10 +354,8 @@ export const useVoice = create<VoiceState>()((set, get) => {
       joinSeq++;
       const { guildId } = get();
       cleanup();
-      if (guildId) {
-        gateway.send({ op: "voice_state_update", d: { guildId, channelId: null, selfMute: false, selfDeaf: false, selfVideo: false, selfStream: false } });
-      }
-      set({ status: "disconnected", guildId: null, channelId: null });
+      if (guildId) voiceInstance()?.gateway.send(leaveOp(guildId));
+      set({ status: "disconnected", instanceId: null, guildId: null, channelId: null });
     },
 
     toggleMute: () => {
@@ -475,4 +484,10 @@ export const useVoice = create<VoiceState>()((set, get) => {
       mic = next;
     },
   };
+});
+
+// Logging out of the instance the call is on hangs up.
+useInstanceList.subscribe(({ ids }) => {
+  const { instanceId, leave } = useVoice.getState();
+  if (instanceId && !ids.includes(instanceId)) leave();
 });

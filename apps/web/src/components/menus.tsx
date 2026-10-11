@@ -21,8 +21,8 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { Slider } from "@/components/ui/slider";
-import { copy, deleteChannel, insertIntoComposer, kick, leaveGuild, markGuildRead } from "@/lib/actions";
-import { gateway } from "@/lib/gateway";
+import { copy, deleteChannel, insertIntoComposer, kick, leaveGuild, markGuildRead, setStatus } from "@/lib/actions";
+import { useInstance } from "@/lib/instances";
 import { useApp } from "@/stores/app";
 import { useDialogs, usePrefs } from "@/stores/ui";
 import { useVoice, useVoiceSettings } from "@/stores/voice";
@@ -51,38 +51,40 @@ function CopyId({ id, label }: { id: string; label: string }) {
 }
 
 export function GuildMenuItems({ guildId }: { guildId: string }) {
+  const inst = useInstance();
+  const instanceId = inst.id;
   const isOwner = useApp((s) => s.guilds[guildId]?.ownerId === s.me?.id);
   const open = useDialogs((s) => s.open);
   const navigate = useNavigate();
   return (
     <>
-      <ContextMenuItem onSelect={() => markGuildRead(guildId)}>
+      <ContextMenuItem onSelect={() => markGuildRead(inst, guildId)}>
         Mark As Read <CheckCheck className="ml-auto" />
       </ContextMenuItem>
       <ContextMenuSeparator />
-      <ContextMenuItem className="text-primary" onSelect={() => open({ kind: "invite", guildId })}>
+      <ContextMenuItem className="text-primary" onSelect={() => open({ instanceId, kind: "invite", guildId })}>
         Invite People <UserPlus className="ml-auto" />
       </ContextMenuItem>
       {isOwner && (
-        <ContextMenuItem onSelect={() => open({ kind: "guild-settings", guildId, tab: "overview" })}>
+        <ContextMenuItem onSelect={() => open({ instanceId, kind: "guild-settings", guildId, tab: "overview" })}>
           Server Settings <Settings className="ml-auto" />
         </ContextMenuItem>
       )}
-      <ContextMenuItem onSelect={() => open({ kind: "guild-settings", guildId, tab: "emotes" })}>
+      <ContextMenuItem onSelect={() => open({ instanceId, kind: "guild-settings", guildId, tab: "emotes" })}>
         Emotes <Smile className="ml-auto" />
       </ContextMenuItem>
       {isOwner && (
-        <ContextMenuItem onSelect={() => open({ kind: "create-channel", guildId, parentId: null })}>
+        <ContextMenuItem onSelect={() => open({ instanceId, kind: "create-channel", guildId, parentId: null })}>
           Create Channel <PlusCircle className="ml-auto" />
         </ContextMenuItem>
       )}
-      <ContextMenuItem onSelect={() => open({ kind: "nickname", guildId })}>
+      <ContextMenuItem onSelect={() => open({ instanceId, kind: "nickname", guildId })}>
         Change Nickname <Pencil className="ml-auto" />
       </ContextMenuItem>
       <ContextMenuSeparator />
       <ContextMenuItem
         variant="destructive"
-        onSelect={() => void leaveGuild(guildId).then((left) => { if (left) void navigate({ to: "/" }); })}
+        onSelect={() => void leaveGuild(inst, guildId).then((left) => { if (left) void navigate({ to: "/" }); })}
       >
         {isOwner ? "Delete Server" : "Leave Server"} {isOwner ? <Trash2 className="ml-auto" /> : <LogOut className="ml-auto" />}
       </ContextMenuItem>
@@ -92,16 +94,18 @@ export function GuildMenuItems({ guildId }: { guildId: string }) {
 }
 
 export function ChannelMenuItems({ channelId }: { channelId: string }) {
+  const inst = useInstance();
+  const instanceId = inst.id;
   const channel = useApp((s) => s.channels[channelId]);
   const isOwner = useApp((s) => !!channel && s.guilds[channel.guildId]?.ownerId === s.me?.id);
-  const inThis = useVoice((s) => s.channelId === channelId);
+  const inThis = useVoice((s) => s.channelId === channelId && s.instanceId === instanceId);
   const open = useDialogs((s) => s.open);
   if (!channel) return null;
   const what = channel.kind === "category" ? "Category" : "Channel";
   return (
     <>
       {channel.kind === "text" && (
-        <ContextMenuItem onSelect={() => useApp.getState().markRead(channelId)}>
+        <ContextMenuItem onSelect={() => inst.app.getState().markRead(channelId)}>
           Mark As Read <CheckCheck className="ml-auto" />
         </ContextMenuItem>
       )}
@@ -111,22 +115,22 @@ export function ChannelMenuItems({ channelId }: { channelId: string }) {
             Disconnect <PhoneOff className="ml-auto" />
           </ContextMenuItem>
         ) : (
-          <ContextMenuItem onSelect={() => void useVoice.getState().join(channel.guildId, channelId)}>
+          <ContextMenuItem onSelect={() => void useVoice.getState().join(channel.guildId, channelId, instanceId)}>
             Join Voice <Volume2 className="ml-auto" />
           </ContextMenuItem>
         ))}
       {channel.kind === "category" && isOwner && (
-        <ContextMenuItem onSelect={() => open({ kind: "create-channel", guildId: channel.guildId, parentId: channelId })}>
+        <ContextMenuItem onSelect={() => open({ instanceId, kind: "create-channel", guildId: channel.guildId, parentId: channelId })}>
           Create Channel <PlusCircle className="ml-auto" />
         </ContextMenuItem>
       )}
       {isOwner && (
         <>
           <ContextMenuSeparator />
-          <ContextMenuItem onSelect={() => open({ kind: "edit-channel", channelId })}>
+          <ContextMenuItem onSelect={() => open({ instanceId, kind: "edit-channel", channelId })}>
             Edit {what} <Pencil className="ml-auto" />
           </ContextMenuItem>
-          <ContextMenuItem variant="destructive" onSelect={() => void deleteChannel(channelId)}>
+          <ContextMenuItem variant="destructive" onSelect={() => void deleteChannel(inst, channelId)}>
             Delete {what} <Trash2 className="ml-auto" />
           </ContextMenuItem>
         </>
@@ -137,16 +141,16 @@ export function ChannelMenuItems({ channelId }: { channelId: string }) {
 }
 
 export function UserMenuItems({ guildId, userId }: { guildId: string; userId: string }) {
+  const inst = useInstance();
+  const instanceId = inst.id;
   const member = useApp((s) => s.members[guildId]?.[userId]);
   const me = useApp((s) => s.me?.id);
   const isOwner = useApp((s) => s.guilds[guildId]?.ownerId === me);
   const ownerId = useApp((s) => s.guilds[guildId]?.ownerId);
   const viewing = useApp((s) => s.viewing);
   // Volume applies to people in our voice channel.
-  const together = useApp((s) => {
-    const mine = useVoice.getState().channelId;
-    return !!mine && s.voice[guildId]?.[userId]?.channelId === mine;
-  });
+  const myVoice = useVoice((s) => (s.instanceId === instanceId ? s.channelId : null));
+  const together = useApp((s) => !!myVoice && s.voice[guildId]?.[userId]?.channelId === myVoice);
   const volume = useVoiceSettings((s) => s.userVolumes[userId] ?? 1);
   const open = useDialogs((s) => s.open);
   if (!member) return null;
@@ -160,7 +164,7 @@ export function UserMenuItems({ guildId, userId }: { guildId: string; userId: st
         </ContextMenuItem>
       )}
       {self && (
-        <ContextMenuItem onSelect={() => open({ kind: "nickname", guildId })}>
+        <ContextMenuItem onSelect={() => open({ instanceId, kind: "nickname", guildId })}>
           Change Nickname <Pencil className="ml-auto" />
         </ContextMenuItem>
       )}
@@ -187,7 +191,7 @@ export function UserMenuItems({ guildId, userId }: { guildId: string; userId: st
       {isOwner && !self && userId !== ownerId && (
         <>
           <ContextMenuSeparator />
-          <ContextMenuItem variant="destructive" onSelect={() => void kick(guildId, userId)}>
+          <ContextMenuItem variant="destructive" onSelect={() => void kick(inst, guildId, userId)}>
             Kick {member.nick ?? member.user.displayName} <UserMinus className="ml-auto" />
           </ContextMenuItem>
         </>
@@ -199,6 +203,7 @@ export function UserMenuItems({ guildId, userId }: { guildId: string; userId: st
 
 /** Your own avatar in the user panel. */
 export function SelfMenuItems() {
+  const instanceId = useInstance().id;
   const me = useApp((s) => s.me);
   const status = useApp((s) => (s.me ? (s.presences[s.me.id] ?? "online") : "online"));
   const { guildId } = useParams({ strict: false }) as { guildId?: string };
@@ -210,7 +215,7 @@ export function SelfMenuItems() {
       <ContextMenuSub>
         <ContextMenuSubTrigger>Status</ContextMenuSubTrigger>
         <ContextMenuSubContent>
-          <ContextMenuRadioGroup value={status} onValueChange={(v) => gateway.send({ op: "set_status", d: { status: v as Status } })}>
+          <ContextMenuRadioGroup value={status} onValueChange={(v) => setStatus(v as Status)}>
             <ContextMenuRadioItem value="online">Online</ContextMenuRadioItem>
             <ContextMenuRadioItem value="idle">Idle</ContextMenuRadioItem>
             <ContextMenuRadioItem value="dnd">Do Not Disturb</ContextMenuRadioItem>
@@ -218,7 +223,7 @@ export function SelfMenuItems() {
         </ContextMenuSubContent>
       </ContextMenuSub>
       {guildId && (
-        <ContextMenuItem onSelect={() => open({ kind: "nickname", guildId })}>
+        <ContextMenuItem onSelect={() => open({ instanceId, kind: "nickname", guildId })}>
           Change Nickname <Pencil className="ml-auto" />
         </ContextMenuItem>
       )}

@@ -12,14 +12,13 @@ import type {
 } from "@app/protocol";
 import { create } from "zustand";
 
-import { gateway } from "@/lib/gateway";
 import { compareIds } from "@/lib/ids";
+import { type Instance, instanceStore } from "@/lib/instances";
 import { mentionsMe } from "@/lib/mentions";
-import { useMessages } from "@/stores/messages";
 
 export type ConnectionState = "idle" | "connecting" | "ready" | "reconnecting";
 
-interface AppState {
+export interface AppState {
   connection: ConnectionState;
   me: User | null;
   guildOrder: string[];
@@ -67,8 +66,6 @@ function save(key: string, v: unknown) {
     }
   }, 500);
 }
-const LAST_READ_KEY = "lastRead";
-const saveLastRead = (v: Record<string, string>) => save(LAST_READ_KEY, v);
 const later = (a: string | undefined, b: string | undefined) => (!a ? b : !b ? a : compareIds(a, b) >= 0 ? a : b);
 
 function withGuild(s: AppState, rg: ReadyGuild): Partial<AppState> {
@@ -107,7 +104,12 @@ function updateUserEverywhere(s: AppState, u: User): Partial<AppState> {
   return { members, me: s.me?.id === u.id ? u : s.me };
 }
 
-export const useApp = create<AppState>()((set, get) => ({
+/** One instance's state, fed by its gateway. */
+export function createAppStore(inst: Instance) {
+  // Read positions are per instance (ids are only unique within one).
+  const LAST_READ_KEY = `lastRead:${inst.id}`;
+  const saveLastRead = (v: Record<string, string>) => save(LAST_READ_KEY, v);
+  const store = create<AppState>()((set, get) => ({
   connection: "idle",
   me: null,
   guildOrder: [],
@@ -135,7 +137,7 @@ export const useApp = create<AppState>()((set, get) => ({
     saveLastRead(lastRead);
     set({ lastRead, pings: without(s.pings, channelId) });
     // Synced so other devices and the next login agree.
-    gateway.send({ op: "ack", d: { channelId, messageId: last } });
+    inst.gateway.send({ op: "ack", d: { channelId, messageId: last } });
   },
   apply: (ev) => {
     switch (ev.t) {
@@ -237,7 +239,7 @@ export const useApp = create<AppState>()((set, get) => ({
       }
       case "MESSAGE_CREATE": {
         const m = ev.d;
-        useMessages.getState().onCreate(m);
+        inst.messages.getState().onCreate(m);
         set((s) => {
           const c = s.channels[m.channelId];
           const patch: Partial<AppState> = {};
@@ -260,10 +262,10 @@ export const useApp = create<AppState>()((set, get) => ({
         return;
       }
       case "MESSAGE_UPDATE":
-        useMessages.getState().onUpdate(ev.d);
+        inst.messages.getState().onUpdate(ev.d);
         return;
       case "MESSAGE_DELETE":
-        useMessages.getState().onDelete(ev.d.channelId, ev.d.id);
+        inst.messages.getState().onDelete(ev.d.channelId, ev.d.id);
         return;
       case "READ_STATE_UPDATE":
         // Read on another device (or our own ack echoing back).
@@ -277,7 +279,7 @@ export const useApp = create<AppState>()((set, get) => ({
         return;
       case "REACTION_ADD":
       case "REACTION_REMOVE":
-        useMessages.getState().onReaction(ev.d, ev.t === "REACTION_ADD", get().me?.id);
+        inst.messages.getState().onReaction(ev.d, ev.t === "REACTION_ADD", get().me?.id);
         return;
       case "VOICE_STATE_UPDATE":
         set((s) => {
@@ -303,10 +305,19 @@ export const useApp = create<AppState>()((set, get) => ({
     }
   },
 }));
+  expireTyping(store);
+  return store;
+}
+
+export type AppStore = ReturnType<typeof createAppStore>;
+
+/** This instance's state (see `useInstance`). */
+export const useApp = instanceStore((i) => i.app);
 
 // Expire typing indicators.
+function expireTyping(store: AppStore) {
 setInterval(() => {
-  const { typing } = useApp.getState();
+  const { typing } = store.getState();
   const now = Date.now();
   let changed = false;
   const next: Record<string, Record<string, number>> = {};
@@ -315,8 +326,9 @@ setInterval(() => {
     if (Object.keys(kept).length !== Object.keys(users).length) changed = true;
     if (Object.keys(kept).length) next[cid] = kept;
   }
-  if (changed) useApp.setState({ typing: next });
+  if (changed) store.setState({ typing: next });
 }, 1000);
+}
 
 export function displayName(guildId: string | undefined, user: User): string {
   if (!guildId) return user.displayName;

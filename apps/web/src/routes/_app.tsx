@@ -3,51 +3,35 @@ import { useEffect } from "react";
 
 import { EmoteCard } from "@/components/chat/emote-card";
 import { GlobalDialogs } from "@/components/global-dialogs";
-import { AudioRenderer } from "@/components/voice/audio-renderer";
 import { ServerRail } from "@/components/server-rail";
-import { gateway } from "@/lib/gateway";
+import { AudioRenderer } from "@/components/voice/audio-renderer";
+import { startInstances, useSessions } from "@/lib/instances";
 import { startNotifications } from "@/lib/notify";
-import { useApp } from "@/stores/app";
-import { useAuth } from "@/stores/auth";
-import { useVoice } from "@/stores/voice";
 
 export const Route = createFileRoute("/_app")({
   beforeLoad: ({ location }) => {
-    if (!useAuth.getState().token) throw redirect({ to: "/login", search: { redirect: location.href } });
+    if (!useSessions.getState().sessions.length) throw redirect({ to: "/login", search: { redirect: location.href } });
   },
   component: AppLayout,
 });
 
 function AppLayout() {
-  const token = useAuth((s) => s.token);
+  const loggedIn = useSessions((s) => s.sessions.length > 0);
   const navigate = Route.useNavigate();
-  const ready = useApp((s) => s.connection === "ready" || s.me !== null);
 
+  // Every instance stays connected (badges, notifications, voice), not just the one on screen.
   useEffect(() => {
-    if (!token) {
-      useVoice.getState().leave();
-      gateway.stop();
-      void navigate({ to: "/login", search: { redirect: undefined } });
-      return;
-    }
-    gateway.start();
+    const stopInstances = startInstances();
     const stopNotifications = startNotifications();
     return () => {
       stopNotifications();
-      gateway.stop();
+      stopInstances();
     };
-  }, [token, navigate]);
+  }, []);
 
-  if (!ready) {
-    return (
-      <div className="grid h-full place-items-center bg-background">
-        <div className="flex flex-col items-center gap-3 text-muted-foreground">
-          <div className="size-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-          Connecting…
-        </div>
-      </div>
-    );
-  }
+  useEffect(() => {
+    if (!loggedIn) void navigate({ to: "/login", search: { redirect: undefined } });
+  }, [loggedIn, navigate]);
 
   return (
     <div className="flex h-full">
