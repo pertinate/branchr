@@ -9,4 +9,8 @@ width: number | null, height: number | null,
 /**
  * Path relative to the server origin.
  */
-url: string, };
+url: string, 
+/**
+ * A small preview for images too big to show as they are (same origin rule).
+ */
+thumbUrl: string | null, };

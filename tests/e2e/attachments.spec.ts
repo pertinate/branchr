@@ -71,3 +71,31 @@ test("attachments: files over the server's limit are refused with a clear error"
   });
   expect(res).toMatch(/^413 /);
 });
+
+test("attachments: big images show a small preview in chat and the original in the viewer", async ({ browser }) => {
+  const alice = await register(browser, "att_thumb");
+  await createServer(alice, "Thumbs");
+  // A 2000×1200 PNG, drawn in the page (it compresses to a few KB).
+  const b64 = await alice.evaluate(() => {
+    const c = document.createElement("canvas");
+    [c.width, c.height] = [2000, 1200];
+    const g = c.getContext("2d")!;
+    g.fillStyle = "#3366cc";
+    g.fillRect(0, 0, 2000, 1200);
+    g.fillStyle = "#ffcc00";
+    g.fillRect(500, 300, 1000, 600);
+    return c.toDataURL("image/png").split(",")[1];
+  });
+  await alice.locator('input[type="file"]').setInputFiles({ name: "wide.png", mimeType: "image/png", buffer: Buffer.from(b64, "base64") });
+  await expect(alice.locator('[data-upload="done"]')).toHaveCount(1);
+  await alice.getByPlaceholder("Message #general").press("Enter");
+
+  const img = alice.locator('img[alt="wide.png"]').first();
+  await expect(img).toBeVisible();
+  expect(await img.getAttribute("src")).toContain("/thumb/");
+  await expect.poll(() => img.evaluate((i: HTMLImageElement) => i.naturalWidth)).toBe(800);
+
+  await img.click();
+  const full = alice.getByTestId("image-viewer").locator('img[alt="wide.png"]');
+  await expect.poll(() => full.evaluate((i: HTMLImageElement) => i.naturalWidth)).toBe(2000);
+});

@@ -40,7 +40,7 @@ export const Attachments = memo(function Attachments({ items }: { items: Attachm
               className="block cursor-zoom-in overflow-hidden rounded-md bg-muted"
               style={s}
             >
-              <img src={url} alt={a.filename} loading="lazy" decoding="async" width={s.width} height={s.height} className="size-full object-contain" />
+              <img src={attachmentUrl(a.thumbUrl ?? a.url)} alt={a.filename} loading="lazy" decoding="async" width={s.width} height={s.height} className="size-full object-contain" />
             </button>
           );
         }

@@ -433,6 +433,7 @@ struct AttachmentRow {
     size: i64,
     width: Option<i64>,
     height: Option<i64>,
+    thumb_type: Option<String>,
 }
 
 pub async fn attachments_for(db: &Db, ids: impl Iterator<Item = i64>) -> sqlx::Result<HashMap<i64, Vec<Attachment>>> {
@@ -443,7 +444,7 @@ pub async fn attachments_for(db: &Db, ids: impl Iterator<Item = i64>) -> sqlx::R
     }
     // Ids are integers we produced ourselves, so inlining them is safe.
     let rows = sqlx::query_as::<_, AttachmentRow>(AssertSqlSafe(format!(
-        "SELECT id, message_id, token, filename, content_type, size, width, height FROM attachments
+        "SELECT id, message_id, token, filename, content_type, size, width, height, thumb_type FROM attachments
          WHERE message_id IN ({}) ORDER BY id",
         ids.join(",")
     )))
@@ -453,6 +454,7 @@ pub async fn attachments_for(db: &Db, ids: impl Iterator<Item = i64>) -> sqlx::R
         map.entry(r.message_id).or_default().push(Attachment {
             id: Id(r.id),
             url: crate::routes::attachments::url(Id(r.id), &r.token, &r.filename),
+            thumb_url: r.thumb_type.map(|_| crate::routes::attachments::thumb_url(Id(r.id), &r.token)),
             filename: r.filename,
             content_type: r.content_type,
             size: r.size as u64,

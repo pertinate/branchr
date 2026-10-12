@@ -11,6 +11,7 @@ mod ratelimit;
 mod routes;
 mod state;
 mod storage;
+mod thumbs;
 
 use std::sync::Arc;
 
@@ -110,6 +111,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/emotes/lookup", get(emotes::lookup))
         .route("/channels/{cid}/attachments", post(attachments::upload))
         .route("/attachments/{id}/{token}/{name}", get(attachments::serve))
+        .route("/attachments/{id}/{token}/thumb/{name}", get(attachments::serve_thumb))
         .route("/health", get(|| async { "ok" }));
 
     tokio::spawn(attachments::gc(state.clone()));

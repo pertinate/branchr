@@ -28,3 +28,4 @@ tower = { version = "0.5", features = ["util"] }
 rusty-s3 = "0.10"
 url = "2.5.8"
 tokio-util = { version = "0.7.20", features = ["io"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }

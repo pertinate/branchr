@@ -28,3 +28,11 @@ tower-http = { version = "0.7", features = ["cors", "fs", "compression-full", "t
 [profile.release]
 lto = "thin"
 codegen-units = 1
+
+# Image previews are made at upload time; unoptimized decoders make dev uploads crawl.
+[profile.dev.package]
+image = { opt-level = 3 }
+zune-jpeg = { opt-level = 3 }
+png = { opt-level = 3 }
+image-webp = { opt-level = 3 }
+fdeflate = { opt-level = 3 }

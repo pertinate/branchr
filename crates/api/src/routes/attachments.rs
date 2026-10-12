@@ -1,7 +1,9 @@
 //! File attachments: streamed to storage on upload, linked to a message on send.
 
 use axum::Json;
-use axum::body::Body;
+use std::sync::Arc;
+
+use axum::body::{Body, Bytes};
 use axum::extract::{Path, Request, State};
 use axum::http::{HeaderMap, header};
 use axum::response::Response;
@@ -18,6 +20,8 @@ use crate::db;
 use crate::error::{AppError, AppResult, bad};
 use crate::state::AppState;
 use crate::storage::Presentation;
+use crate::thumbs;
+use parking_lot::Mutex;
 
 /// Content types safe to render inline on the app's own origin. Anything else (HTML, SVG,
 /// …) is served as a download so it can't run script in the client's origin.
@@ -29,6 +33,15 @@ fn inline_safe(ct: &str) -> bool {
 /// Where an attachment's file is stored.
 fn key(id: impl std::fmt::Display) -> String {
     format!("att/{id}")
+}
+
+/// Where its preview is stored, if it has one.
+fn thumb_key(id: impl std::fmt::Display) -> String {
+    format!("thumb/{id}")
+}
+
+pub fn thumb_url(id: Id, token: &str) -> String {
+    format!("/api/attachments/{id}/{token}/thumb/preview")
 }
 
 pub fn url(id: Id, token: &str, filename: &str) -> String {
@@ -76,23 +89,49 @@ pub async fn upload(
     let key = key(id);
     let mut seen: u64 = 0;
     let limit = state.config.max_upload_bytes;
-    let stream = body.into_data_stream().map(move |chunk| {
-        let chunk = chunk.map_err(|e| bad(format!("upload interrupted: {e}")))?;
-        seen += chunk.len() as u64;
-        if seen > limit {
-            return Err(too_large());
+    // Images we can preview are also kept in memory as they stream past.
+    let copy = Arc::new(Mutex::new(thumbs::previewable(&content_type).then(Vec::<Bytes>::new)));
+    let stream = body.into_data_stream().map({
+        let copy = copy.clone();
+        move |chunk| {
+            let chunk = chunk.map_err(|e| bad(format!("upload interrupted: {e}")))?;
+            seen += chunk.len() as u64;
+            if seen > limit {
+                return Err(too_large());
+            }
+            let mut copy = copy.lock();
+            if seen as usize > thumbs::MAX_SOURCE {
+                *copy = None;
+            } else if let Some(parts) = copy.as_mut() {
+                parts.push(chunk.clone());
+            }
+            Ok(chunk)
         }
-        Ok(chunk)
     });
     let size = state.storage.put(&key, &content_type, stream).await?;
     if size == 0 {
         let _ = state.storage.delete(&key).await;
         return Err(bad("empty file"));
     }
+    let (mut width, mut height) = (width, height);
+    let mut thumb_type = None;
+    let parts = copy.lock().take();
+    if let Some(parts) = parts {
+        let thumb = tokio::task::spawn_blocking(move || thumbs::make(&parts.concat())).await.ok().flatten();
+        if let Some(t) = thumb {
+            let len = t.bytes.len();
+            let body = futures::stream::iter([Ok::<_, AppError>(Bytes::from(t.bytes))]);
+            if state.storage.put(&thumb_key(id), t.content_type, body).await.is_ok() {
+                thumb_type = Some(t.content_type);
+                tracing::debug!("preview of {id}: {size} -> {len} bytes");
+            }
+            (width, height) = (Some(t.width), Some(t.height));
+        }
+    }
 
     sqlx::query(
-        "INSERT INTO attachments (id, token, uploader_id, channel_id, filename, content_type, size, width, height, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+        "INSERT INTO attachments (id, token, uploader_id, channel_id, filename, content_type, size, width, height, created_at, thumb_type)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
     )
     .bind(id.0)
     .bind(&token)
@@ -104,9 +143,19 @@ pub async fn upload(
     .bind(width.map(|w| w as i64))
     .bind(height.map(|h| h as i64))
     .bind(db::now_ms())
+    .bind(thumb_type)
     .execute(&state.db)
     .await?;
-    Ok(Json(Attachment { id, url: url(id, &token, &filename), filename, content_type, size, width, height }))
+    Ok(Json(Attachment {
+        id,
+        url: url(id, &token, &filename),
+        thumb_url: thumb_type.map(|_| thumb_url(id, &token)),
+        filename,
+        content_type,
+        size,
+        width,
+        height,
+    }))
 }
 
 fn percent_decode(s: &str) -> String {
@@ -149,6 +198,19 @@ pub async fn serve(
     state.storage.serve(&key(id), req, Presentation { content_type, disposition: &disposition }).await
 }
 
+pub async fn serve_thumb(
+    State(state): State<AppState>,
+    Path((id, token, _name)): Path<(Id, String, String)>,
+    req: Request,
+) -> AppResult<Response> {
+    let row: Option<(String, Option<String>)> = sqlx::query_as("SELECT token, thumb_type FROM attachments WHERE id = $1").bind(id.0).fetch_optional(&state.db).await?;
+    let Some((expected, Some(content_type))) = row else { return Err(AppError::NotFound) };
+    if expected != token {
+        return Err(AppError::NotFound);
+    }
+    state.storage.serve(&thumb_key(id), req, Presentation { content_type: &content_type, disposition: "inline" }).await
+}
+
 /// Deletes files for attachments that were never sent (24h) or whose message is gone.
 pub async fn gc(state: AppState) {
     let mut tick = tokio::time::interval(std::time::Duration::from_secs(3600));
@@ -161,20 +223,21 @@ pub async fn gc(state: AppState) {
             .await
             .unwrap_or_default();
         for (id,) in stale {
+            let _ = state.storage.delete(&thumb_key(id)).await;
             if state.storage.delete(&key(id)).await.is_ok() {
                 let _ = sqlx::query("DELETE FROM attachments WHERE id = $1").bind(id).execute(&state.db).await;
             }
         }
         // Files whose rows were removed by cascade (deleted messages/channels/guilds).
-        let keys = match state.storage.list("att/").await {
-            Ok(keys) => keys,
-            Err(e) => {
-                tracing::warn!("attachment gc: listing files failed: {e:?}");
-                continue;
+        let mut keys = Vec::new();
+        for prefix in ["att/", "thumb/"] {
+            match state.storage.list(prefix).await {
+                Ok(k) => keys.extend(k),
+                Err(e) => tracing::warn!("attachment gc: listing {prefix} failed: {e:?}"),
             }
-        };
+        }
         for k in keys {
-            let Some(id) = k.strip_prefix("att/").and_then(|n| n.parse::<i64>().ok()) else { continue };
+            let Some(id) = k.split_once('/').and_then(|(_, n)| n.parse::<i64>().ok()) else { continue };
             let exists: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM attachments WHERE id = $1").bind(id).fetch_optional(&state.db).await.unwrap_or(Some((1,)));
             if exists.is_none() {
                 let _ = state.storage.delete(&k).await;

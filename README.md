@@ -135,7 +135,7 @@ Configuration is all through the environment:
 
 ### File storage
 
-Uploads go to `UPLOAD_DIR` on local disk unless `S3_ENDPOINT` points at an S3-compatible bucket. `deploy/docker-compose.rustfs.yml` adds a [rustfs](https://rustfs.com) container on the internal network (set `RUSTFS_ACCESS_KEY` and `RUSTFS_SECRET_KEY`). Uploads stream through the API either way, in 8 MB parts, so memory stays flat for large videos. To move existing uploads into a bucket, run `api migrate-storage` with the S3 variables set. It copies `UPLOAD_DIR` across, skips files already there, and leaves the originals in place.
+Uploads go to `UPLOAD_DIR` on local disk unless `S3_ENDPOINT` points at an S3-compatible bucket. `deploy/docker-compose.rustfs.yml` adds a [rustfs](https://rustfs.com) container on the internal network (set `RUSTFS_ACCESS_KEY` and `RUSTFS_SECRET_KEY`). Uploads stream through the API either way, in 8 MB parts, so memory stays flat for large videos. Large PNG, JPEG and WebP images also get a preview (up to 800×600) at upload time, which chat shows instead of the original. To move existing uploads into a bucket, run `api migrate-storage` with the S3 variables set. It copies `UPLOAD_DIR` across, skips files already there, and leaves the originals in place.
 
 ## branchr ID
 

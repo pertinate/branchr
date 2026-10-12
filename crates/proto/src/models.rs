@@ -90,6 +90,8 @@ wire! {
         pub height: Option<u32>,
         /// Path relative to the server origin.
         pub url: String,
+        /// A small preview for images too big to show as they are (same origin rule).
+        pub thumb_url: Option<String>,
     }
 
     pub struct Reaction {
