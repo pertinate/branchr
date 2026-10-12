@@ -65,7 +65,11 @@ export function Composer({ channelId, guildId, replyTo, clearReply }: { channelI
   const channelName = useApp((s) => s.channels[channelId]?.name);
   const canSend = useChannelCan(channelId, P.SEND_MESSAGES);
   const canAttach = useChannelCan(channelId, P.ATTACH_FILES);
-  const slowmode = useApp((s) => s.channels[channelId]?.slowmodeSecs ?? 0);
+  // A thread goes at its channel's pace.
+  const slowmode = useApp((s) => {
+    const c = s.channels[channelId];
+    return (c?.kind === "thread" && c.parentId ? s.channels[c.parentId]?.slowmodeSecs : c?.slowmodeSecs) ?? 0;
+  });
   const manageMessages = useChannelCan(channelId, P.MANAGE_MESSAGES);
   const manageChannel = useChannelCan(channelId, P.MANAGE_CHANNELS);
   const exempt = manageMessages || manageChannel;

@@ -47,6 +47,13 @@ test("threads: start one from a message, talk in it, and private channels keep t
   await expect(alice.getByText("let's plan the trip")).toBeVisible();
   await expect(alice.getByText("sounds good")).toHaveCount(0);
 
+  // Threads go at their channel's pace (slow mode).
+  const general = alice.url().split("/").pop()!;
+  const paced = await call(alice, "POST", `/channels/${general}/threads`, { name: "paced" });
+  expect((await call(alice, "PATCH", `/channels/${general}`, { slowmodeSecs: 30 })).status).toBe(200);
+  expect((await call(bob, "POST", `/channels/${paced.body.id}/messages`, { content: "one" })).status).toBe(200);
+  expect((await call(bob, "POST", `/channels/${paced.body.id}/messages`, { content: "two" })).status).toBe(429);
+
   // A thread in a channel Bob can't see is invisible to him too.
   const gid = alice.url().split("/").slice(-2)[0];
   const staff = await call(alice, "POST", `/guilds/${gid}/channels`, { name: "staff", kind: "text" });

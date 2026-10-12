@@ -20,7 +20,7 @@ import { useVoice } from "@/stores/voice";
 
 export function guildUnread(s: AppState, guildId: string) {
   return Object.values(s.channels).some(
-    (c) => c.guildId === guildId && c.kind === "text" && c.lastMessageId && (!s.lastRead[c.id] || compareIds(c.lastMessageId, s.lastRead[c.id]) > 0),
+    (c) => c.guildId === guildId && (c.kind === "text" || c.kind === "thread") && c.lastMessageId && (!s.lastRead[c.id] || compareIds(c.lastMessageId, s.lastRead[c.id]) > 0),
   );
 }
 

@@ -110,7 +110,8 @@ pub async fn patch(
             return Err(bad("slow mode is at most 6 hours"));
         }
         sqlx::query("UPDATE channels SET slowmode = $1 WHERE id = $2").bind(secs as i64).bind(cid.0).execute(&state.db).await?;
-        state.slowmode.insert(cid, secs);
+        // Its threads' cached values too (they follow it).
+        state.slowmode.clear();
     }
     if let Some(pos) = body.position {
         sqlx::query("UPDATE channels SET position = $1 WHERE id = $2").bind(pos).bind(cid.0).execute(&state.db).await?;

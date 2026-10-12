@@ -51,7 +51,13 @@ impl State {
         if let Some(s) = self.slowmode.get(&channel) {
             return Ok(*s);
         }
-        let (s,): (i64,) = sqlx::query_as("SELECT slowmode FROM channels WHERE id = $1").bind(channel.0).fetch_one(&self.db).await?;
+        // A thread goes at its channel's pace.
+        let (s,): (i64,) = sqlx::query_as(
+            "SELECT COALESCE((SELECT p.slowmode FROM channels p WHERE p.id = c.parent_id AND c.kind = 'thread'), c.slowmode) FROM channels c WHERE c.id = $1",
+        )
+        .bind(channel.0)
+        .fetch_one(&self.db)
+        .await?;
         let s = s.clamp(0, u32::MAX as i64) as u32;
         self.slowmode.insert(channel, s);
         Ok(s)
