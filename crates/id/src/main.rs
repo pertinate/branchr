@@ -12,7 +12,9 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(id::gc(db.clone()));
     let bind = config.bind;
     tracing::info!("branchr ID on {bind}, public at {}", config.public_url);
-    let app = id::router(id::state(config, db).await?);
+    let state = id::state(config, db.clone()).await?;
+    tokio::spawn(id::keys::rotate_loop(db, state.keys.clone()));
+    let app = id::router(state);
     let listener = tokio::net::TcpListener::bind(bind).await?;
     axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>()).with_graceful_shutdown(async { tokio::signal::ctrl_c().await.ok(); }).await?;
     Ok(())
