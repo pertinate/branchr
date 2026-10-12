@@ -38,6 +38,7 @@ test("desktop streamer stays connected while streaming with camera", async ({ br
   await s.getByRole("button", { name: "Create" }).click();
   await s.getByRole("button", { name: "Soak" }).click();
   await s.getByRole("menuitem", { name: "Invite People" }).click();
+  await expect(s.locator("input[readonly]")).not.toHaveValue("");
   const code = await s.locator("input[readonly]").inputValue();
   await s.keyboard.press("Escape");
   await joinVoice(s);

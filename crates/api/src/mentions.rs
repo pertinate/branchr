@@ -9,9 +9,9 @@ use std::ops::Range;
 
 use proto::Id;
 use proto::models::User;
-use sqlx::{AssertSqlSafe, SqlitePool};
+use sqlx::AssertSqlSafe;
 
-use crate::db;
+use crate::db::{self, Db};
 
 /// Distinct users one message can mention.
 pub const MAX_MENTIONS: usize = 50;
@@ -111,28 +111,34 @@ fn tokens(s: &str) -> Vec<Token<'_>> {
 }
 
 /// Members of `guild` among `ids` and `names` (usernames, case-insensitive).
-async fn members(pool: &SqlitePool, guild: Id, ids: &[i64], names: &[&str]) -> sqlx::Result<Vec<User>> {
+async fn members(pool: &Db, guild: Id, ids: &[i64], names: &[&str]) -> sqlx::Result<Vec<User>> {
     if ids.is_empty() && names.is_empty() {
         return Ok(vec![]);
     }
-    // Ids are integers, so inlining them is injection-safe; names are bound.
-    let id_list = ids.iter().map(i64::to_string).collect::<Vec<_>>().join(",");
-    let name_list = (0..names.len()).map(|i| format!("?{}", i + 2)).collect::<Vec<_>>().join(",");
+    // Ids are integers, so inlining them is injection-safe; names are bound. Only non-empty
+    // lists go in: Postgres rejects `IN ()`.
+    let mut wanted = Vec::new();
+    if !ids.is_empty() {
+        wanted.push(format!("u.id IN ({})", ids.iter().map(i64::to_string).collect::<Vec<_>>().join(",")));
+    }
+    if !names.is_empty() {
+        wanted.push(format!("lower(u.username) IN ({})", (0..names.len()).map(|i| format!("${}", i + 2)).collect::<Vec<_>>().join(",")));
+    }
     let sql = format!(
-        "SELECT {} FROM users u JOIN members m ON m.user_id = u.id AND m.guild_id = ?1
-         WHERE u.id IN ({id_list}) OR u.username IN ({name_list})",
-        db::USER_COLS
+        "SELECT {} FROM users u JOIN members m ON m.user_id = u.id AND m.guild_id = $1 WHERE {}",
+        db::USER_COLS,
+        wanted.join(" OR ")
     );
     let mut q = sqlx::query_as::<_, db::UserRow>(AssertSqlSafe(sql)).bind(guild.0);
     for n in names {
-        q = q.bind(*n);
+        q = q.bind(n.to_ascii_lowercase());
     }
     Ok(q.fetch_all(pool).await?.into_iter().map(Into::into).collect())
 }
 
 /// Resolves mentions in `content` for a message in `guild`. `also` (e.g. the author of
 /// the message being replied to) is mentioned without appearing in the text.
-pub async fn resolve(pool: &SqlitePool, guild: Id, content: &str, also: Option<Id>) -> sqlx::Result<Mentions> {
+pub async fn resolve(pool: &Db, guild: Id, content: &str, also: Option<Id>) -> sqlx::Result<Mentions> {
     let toks = tokens(content);
     let mut ids: Vec<i64> = toks.iter().filter_map(|t| if let Token::Id(id) = t { Some(*id) } else { None }).collect();
     ids.extend(also.map(|a| a.0));

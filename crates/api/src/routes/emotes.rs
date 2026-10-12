@@ -48,8 +48,8 @@ async fn insert(state: &AppState, gid: Id, e: &ExternalEmote) -> AppResult<Optio
     }
     let id = state.ids.next();
     let r = sqlx::query(
-        "INSERT OR IGNORE INTO emotes (id, guild_id, name, provider, provider_id, animated, width, height)
-         SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8 WHERE (SELECT COUNT(*) FROM emotes WHERE guild_id = ?2) < ?9",
+        "INSERT INTO emotes (id, guild_id, name, provider, provider_id, animated, width, height)
+         SELECT $1, $2, $3, $4, $5, $6, $7, $8 WHERE (SELECT COUNT(*) FROM emotes WHERE guild_id = $2) < $9 ON CONFLICT DO NOTHING",
     )
     .bind(id.0)
     .bind(gid.0)
@@ -182,7 +182,7 @@ pub async fn rename(
     if !valid_name(name) {
         return Err(bad("emote names are 1-64 letters, numbers, _ - ! ?"));
     }
-    let r = sqlx::query("UPDATE emotes SET name = ?1 WHERE id = ?2 AND guild_id = ?3")
+    let r = sqlx::query("UPDATE emotes SET name = $1 WHERE id = $2 AND guild_id = $3")
         .bind(name)
         .bind(eid.0)
         .bind(gid.0)
@@ -206,7 +206,7 @@ pub async fn remove(
     Path((gid, eid)): Path<(Id, Id)>,
 ) -> AppResult<()> {
     require_owner(&state, gid, user).await?;
-    let r = sqlx::query("DELETE FROM emotes WHERE id = ? AND guild_id = ?").bind(eid.0).bind(gid.0).execute(&state.db).await?;
+    let r = sqlx::query("DELETE FROM emotes WHERE id = $1 AND guild_id = $2").bind(eid.0).bind(gid.0).execute(&state.db).await?;
     if r.rows_affected() == 0 {
         return Err(AppError::NotFound);
     }

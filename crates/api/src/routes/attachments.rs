@@ -98,7 +98,7 @@ pub async fn upload(
 
     sqlx::query(
         "INSERT INTO attachments (id, token, uploader_id, channel_id, filename, content_type, size, width, height, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
     )
     .bind(id.0)
     .bind(&token)
@@ -138,7 +138,7 @@ pub async fn serve(
     Path((id, token, _name)): Path<(Id, String, String)>,
     req: Request,
 ) -> AppResult<Response> {
-    let row: Option<(String, String, String)> = sqlx::query_as("SELECT token, content_type, filename FROM attachments WHERE id = ?")
+    let row: Option<(String, String, String)> = sqlx::query_as("SELECT token, content_type, filename FROM attachments WHERE id = $1")
         .bind(id.0)
         .fetch_optional(&state.db)
         .await?;
@@ -175,20 +175,20 @@ pub async fn gc(state: AppState) {
     loop {
         tick.tick().await;
         let cutoff = db::now_ms() - 24 * 3600 * 1000;
-        let stale: Vec<(i64,)> = sqlx::query_as("SELECT id FROM attachments WHERE message_id IS NULL AND created_at < ?")
+        let stale: Vec<(i64,)> = sqlx::query_as("SELECT id FROM attachments WHERE message_id IS NULL AND created_at < $1")
             .bind(cutoff)
             .fetch_all(&state.db)
             .await
             .unwrap_or_default();
         for (id,) in stale {
             let _ = tokio::fs::remove_file(state.config.upload_dir.join(id.to_string())).await;
-            let _ = sqlx::query("DELETE FROM attachments WHERE id = ?").bind(id).execute(&state.db).await;
+            let _ = sqlx::query("DELETE FROM attachments WHERE id = $1").bind(id).execute(&state.db).await;
         }
         // Files whose rows were removed by cascade (deleted messages/channels/guilds).
         if let Ok(mut dir) = tokio::fs::read_dir(&state.config.upload_dir).await {
             while let Ok(Some(entry)) = dir.next_entry().await {
                 let Some(id) = entry.file_name().to_str().and_then(|n| n.parse::<i64>().ok()) else { continue };
-                let exists: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM attachments WHERE id = ?").bind(id).fetch_optional(&state.db).await.unwrap_or(Some((1,)));
+                let exists: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM attachments WHERE id = $1").bind(id).fetch_optional(&state.db).await.unwrap_or(Some((1,)));
                 if exists.is_none() {
                     let _ = tokio::fs::remove_file(entry.path()).await;
                 }

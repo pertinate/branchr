@@ -42,7 +42,7 @@ pub async fn user_for_token(state: &AppState, token: &str) -> AppResult<Option<I
     if let Some(id) = state.sessions.get(&h) {
         return Ok(Some(*id));
     }
-    let row: Option<(i64,)> = sqlx::query_as("SELECT user_id FROM sessions WHERE token_hash = ?")
+    let row: Option<(i64,)> = sqlx::query_as("SELECT user_id FROM sessions WHERE token_hash = $1")
         .bind(&h[..])
         .fetch_optional(&state.db)
         .await?;
@@ -56,7 +56,7 @@ async fn create_session(state: &AppState, user: Id) -> AppResult<String> {
     let mut raw = [0u8; 32];
     rand::rng().fill_bytes(&mut raw);
     let token = B64.encode(raw);
-    sqlx::query("INSERT INTO sessions (token_hash, user_id, created_at) VALUES (?, ?, ?)")
+    sqlx::query("INSERT INTO sessions (token_hash, user_id, created_at) VALUES ($1, $2, $3)")
         .bind(&hash_token(&token)[..])
         .bind(user.0)
         .bind(db::now_ms())
@@ -79,7 +79,7 @@ fn valid_username(u: &str) -> bool {
 
 /// Banned from this host by its owner.
 async fn refuse_banned(state: &AppState, user: Id) -> AppResult<()> {
-    let banned: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM instance_bans WHERE user_id = ?").bind(user.0).fetch_optional(&state.db).await?;
+    let banned: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM instance_bans WHERE user_id = $1").bind(user.0).fetch_optional(&state.db).await?;
     match banned {
         Some(_) => Err(AppError::BadRequest("you're banned from this host".into())),
         None => Ok(()),
@@ -125,7 +125,7 @@ pub async fn register(State(state): State<AppState>, Json(body): Json<Register>)
 
     let id = state.ids.next();
     let res = sqlx::query(
-        "INSERT INTO users (id, username, display_name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO users (id, username, display_name, password_hash, created_at) VALUES ($1, $2, $3, $4, $5)",
     )
     .bind(id.0)
     .bind(&username)
@@ -153,7 +153,7 @@ pub struct Login {
 
 pub async fn login(State(state): State<AppState>, Json(body): Json<Login>) -> AppResult<Json<AuthResponse>> {
     local_allowed(&state)?;
-    let row: Option<(i64, String)> = sqlx::query_as("SELECT id, password_hash FROM users WHERE username = ?")
+    let row: Option<(i64, String)> = sqlx::query_as("SELECT id, password_hash FROM users WHERE lower(username) = lower($1)")
         .bind(body.username.trim())
         .fetch_optional(&state.db)
         .await?;
@@ -186,12 +186,12 @@ pub async fn federated(State(state): State<AppState>, Json(body): Json<Federated
     let pass = fed.verify(&body.token).await.ok_or(AppError::Unauthorized)?;
     let display_name: String = pass.name.trim().chars().take(32).collect();
     let display_name = if display_name.is_empty() { pass.username.clone() } else { display_name };
-    let existing: Option<(i64,)> = sqlx::query_as("SELECT id FROM users WHERE global_id = ?").bind(&pass.sub).fetch_optional(&state.db).await?;
+    let existing: Option<(i64,)> = sqlx::query_as("SELECT id FROM users WHERE global_id = $1").bind(&pass.sub).fetch_optional(&state.db).await?;
     let id = match existing {
         Some((id,)) => {
             refuse_banned(&state, Id(id)).await?;
             // The branchr profile is the source of truth for name and avatar.
-            sqlx::query("UPDATE users SET display_name = ?, avatar_url = ? WHERE id = ?")
+            sqlx::query("UPDATE users SET display_name = $1, avatar_url = $2 WHERE id = $3")
                 .bind(&display_name)
                 .bind(&pass.avatar)
                 .bind(id)
@@ -207,7 +207,7 @@ pub async fn federated(State(state): State<AppState>, Json(body): Json<Federated
             let username = crate::federation::free_username(&state.db, &pass.username).await?;
             // No password: "!" is never a valid hash, so password login can't match.
             sqlx::query(
-                "INSERT INTO users (id, username, display_name, password_hash, avatar_url, created_at, global_id) VALUES (?, ?, ?, '!', ?, ?, ?)",
+                "INSERT INTO users (id, username, display_name, password_hash, avatar_url, created_at, global_id) VALUES ($1, $2, $3, '!', $4, $5, $6)",
             )
             .bind(id.0)
             .bind(&username)
@@ -231,7 +231,7 @@ pub struct LinkStatus {
 
 /// Whether the logged-in user is tied to a branchr account.
 pub async fn link_status(State(state): State<AppState>, Auth(user): Auth) -> AppResult<Json<LinkStatus>> {
-    let (global,): (Option<String>,) = sqlx::query_as("SELECT global_id FROM users WHERE id = ?").bind(user.0).fetch_one(&state.db).await?;
+    let (global,): (Option<String>,) = sqlx::query_as("SELECT global_id FROM users WHERE id = $1").bind(user.0).fetch_one(&state.db).await?;
     Ok(Json(LinkStatus { linked: global.is_some() }))
 }
 
@@ -240,13 +240,13 @@ pub async fn link_status(State(state): State<AppState>, Auth(user): Auth) -> App
 pub async fn link(State(state): State<AppState>, Auth(user): Auth, Json(body): Json<FederatedLogin>) -> AppResult<Json<LinkStatus>> {
     let fed = state.federation.as_ref().ok_or_else(|| bad("this server doesn't accept branchr accounts"))?;
     let pass = fed.verify(&body.token).await.ok_or(AppError::Unauthorized)?;
-    let owner: Option<(i64,)> = sqlx::query_as("SELECT id FROM users WHERE global_id = ?").bind(&pass.sub).fetch_optional(&state.db).await?;
+    let owner: Option<(i64,)> = sqlx::query_as("SELECT id FROM users WHERE global_id = $1").bind(&pass.sub).fetch_optional(&state.db).await?;
     match owner {
         Some((id,)) if id == user.0 => return Ok(Json(LinkStatus { linked: true })),
         Some(_) => return Err(AppError::Conflict("that branchr account already has a user on this server".into())),
         None => {}
     }
-    let r = sqlx::query("UPDATE users SET global_id = ? WHERE id = ? AND global_id IS NULL").bind(&pass.sub).bind(user.0).execute(&state.db).await;
+    let r = sqlx::query("UPDATE users SET global_id = $1 WHERE id = $2 AND global_id IS NULL").bind(&pass.sub).bind(user.0).execute(&state.db).await;
     match r {
         Err(sqlx::Error::Database(e)) if e.is_unique_violation() => {
             return Err(AppError::Conflict("that branchr account already has a user on this server".into()));
@@ -283,7 +283,7 @@ pub async fn logout(State(state): State<AppState>, parts: axum::http::HeaderMap)
     {
         let h = hash_token(token);
         state.sessions.remove(&h);
-        sqlx::query("DELETE FROM sessions WHERE token_hash = ?").bind(&h[..]).execute(&state.db).await?;
+        sqlx::query("DELETE FROM sessions WHERE token_hash = $1").bind(&h[..]).execute(&state.db).await?;
     }
     Ok(())
 }

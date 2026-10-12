@@ -15,6 +15,11 @@ export async function register(browser: Browser, name: string): Promise<Page> {
       }
     } as typeof RTCPeerConnection;
   });
+  // Emote images come from the providers' CDNs; serve them locally so tests stay offline.
+  const pixel = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+  await ctx.route(/^https:\/\/cdn\.(7tv\.app|frankerfacez\.com|betterttv\.net)\//, (route) =>
+    route.fulfill({ status: 200, contentType: "image/png", body: pixel }),
+  );
   const page = await ctx.newPage();
   page.on("console", (m) => {
     if (m.type() === "error") console.log(`[${name}] ${m.type()}: ${m.text()}`);
@@ -35,6 +40,8 @@ export async function createServer(page: Page, name: string): Promise<string> {
   await expect(page.getByRole("heading", { name: "Welcome to #general!" })).toBeVisible();
   await page.getByRole("button", { name }).click();
   await page.getByRole("menuitem", { name: "Invite People" }).click();
+  // The dialog creates the invite after it opens.
+  await expect(page.locator("input[readonly]")).not.toHaveValue("");
   const code = await page.locator("input[readonly]").inputValue();
   await page.keyboard.press("Escape");
   return code;

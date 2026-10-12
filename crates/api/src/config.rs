@@ -61,12 +61,7 @@ impl Config {
                 .filter(|s| !s.is_empty())
                 .collect(),
             open_registration: var("OPEN_REGISTRATION").map(|v| v != "false").unwrap_or(true),
-            upload_dir: var("UPLOAD_DIR").map(PathBuf::from).unwrap_or_else(|| {
-                // Next to the SQLite file by default, so one volume holds all state.
-                let db = var("DATABASE_URL").unwrap_or_else(|| "sqlite://data/discord.db".into());
-                let path = db.trim_start_matches("sqlite://").to_string();
-                std::path::Path::new(&path).parent().map(|p| p.join("uploads")).unwrap_or_else(|| "uploads".into())
-            }),
+            upload_dir: var("UPLOAD_DIR").map(PathBuf::from).unwrap_or_else(|| data_dir().join("uploads")),
             max_upload_bytes: var("MAX_UPLOAD_MB").map(|v| v.parse::<u64>()).transpose()?.unwrap_or(500) * 1024 * 1024,
             auth_mode: match var("AUTH_MODE").as_deref() {
                 None | Some("local") => AuthMode::Local,
@@ -77,11 +72,17 @@ impl Config {
             branchr_id_url: var("BRANCHR_ID_URL").unwrap_or_else(|| "https://branchr.us".into()).trim_end_matches('/').into(),
             instance_name: var("INSTANCE_NAME").unwrap_or_else(|| "branchr server".into()),
             public_url: var("PUBLIC_URL").unwrap_or_default(),
-            claim_file: var("CLAIM_FILE").map(PathBuf::from).unwrap_or_else(|| {
-                let db = var("DATABASE_URL").unwrap_or_else(|| "sqlite://data/discord.db".into());
-                let path = db.trim_start_matches("sqlite://").to_string();
-                std::path::Path::new(&path).parent().map(|p| p.join("claim-code.txt")).unwrap_or_else(|| "claim-code.txt".into())
-            }),
+            claim_file: var("CLAIM_FILE").map(PathBuf::from).unwrap_or_else(|| data_dir().join("claim-code.txt")),
         })
+    }
+}
+
+/// Where files live by default: next to the SQLite file, so one volume holds all state;
+/// `data/` when the database is Postgres.
+fn data_dir() -> PathBuf {
+    let db = std::env::var("DATABASE_URL").ok().filter(|v| !v.is_empty()).unwrap_or_else(|| "sqlite://data/discord.db".into());
+    match db.strip_prefix("sqlite://").or_else(|| db.strip_prefix("sqlite:")) {
+        Some(path) => std::path::Path::new(path.split('?').next().unwrap_or(path)).parent().map(PathBuf::from).unwrap_or_default(),
+        None => "data".into(),
     }
 }

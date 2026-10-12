@@ -141,7 +141,7 @@ pub async fn create(
     let mut tx = state.db.begin().await?;
     sqlx::query(
         "INSERT INTO messages (id, channel_id, author_id, content, reply_to, emotes, mentions, mention_everyone)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
     )
     .bind(id.0)
     .bind(cid.0)
@@ -153,10 +153,10 @@ pub async fn create(
     .bind(mentions.everyone || mentions.here)
     .execute(&mut *tx)
     .await?;
-    sqlx::query("UPDATE channels SET last_message_id = ? WHERE id = ?").bind(id.0).bind(cid.0).execute(&mut *tx).await?;
+    sqlx::query("UPDATE channels SET last_message_id = $1 WHERE id = $2").bind(id.0).bind(cid.0).execute(&mut *tx).await?;
     for a in &body.attachment_ids {
         // Only the uploader's own, unsent uploads to this channel can be attached.
-        let r = sqlx::query("UPDATE attachments SET message_id = ? WHERE id = ? AND uploader_id = ? AND channel_id = ? AND message_id IS NULL")
+        let r = sqlx::query("UPDATE attachments SET message_id = $1 WHERE id = $2 AND uploader_id = $3 AND channel_id = $4 AND message_id IS NULL")
             .bind(id.0)
             .bind(a.0)
             .bind(user.0)
@@ -214,8 +214,8 @@ pub async fn edit(
     restrict_everyone(&state, guild, user, &mut mentions).await?;
     let content = mentions.content;
     let r = sqlx::query(
-        "UPDATE messages SET content = ?1, emotes = ?2, mentions = ?3, mention_everyone = ?4, edited_at = ?5
-         WHERE id = ?6 AND channel_id = ?7 AND author_id = ?8",
+        "UPDATE messages SET content = $1, emotes = $2, mentions = $3, mention_everyone = $4, edited_at = $5
+         WHERE id = $6 AND channel_id = $7 AND author_id = $8",
     )
     .bind(&content)
     .bind(snapshot_json(&emotes))
@@ -242,7 +242,7 @@ pub async fn delete(
 ) -> AppResult<()> {
     let guild = channel_access(&state, cid, user).await?;
     let owner = db::guild(&state.db, guild).await?.owner_id;
-    let r = sqlx::query("DELETE FROM messages WHERE id = ? AND channel_id = ? AND (author_id = ? OR ? = ?)")
+    let r = sqlx::query("DELETE FROM messages WHERE id = $1 AND channel_id = $2 AND (author_id = $3 OR $4 = $5)")
         .bind(mid.0)
         .bind(cid.0)
         .bind(user.0)
@@ -282,7 +282,7 @@ async fn bump_mentions(state: &AppState, guild: Id, channel: Id, author: Id, m: 
     } else {
         let mut users: Vec<Id> = m.users.iter().map(|u| u.id).collect();
         if m.here {
-            let members: Vec<i64> = sqlx::query_scalar("SELECT user_id FROM members WHERE guild_id = ?")
+            let members: Vec<i64> = sqlx::query_scalar("SELECT user_id FROM members WHERE guild_id = $1")
                 .bind(guild.0)
                 .fetch_all(&state.db)
                 .await
@@ -302,7 +302,7 @@ async fn bump_mentions(state: &AppState, guild: Id, channel: Id, author: Id, m: 
 /// Replies ping the author replied to (unless replying to yourself), as on Discord.
 async fn replied_author(state: &AppState, cid: Id, reply_to: Option<Id>, user: Id) -> AppResult<Option<Id>> {
     let Some(r) = reply_to else { return Ok(None) };
-    let author: Option<i64> = sqlx::query_scalar("SELECT author_id FROM messages WHERE id = ? AND channel_id = ?")
+    let author: Option<i64> = sqlx::query_scalar("SELECT author_id FROM messages WHERE id = $1 AND channel_id = $2")
         .bind(r.0)
         .bind(cid.0)
         .fetch_optional(&state.db)
@@ -331,7 +331,7 @@ pub async fn react(
         // Emotes from any server the user is in, or joining a reaction someone already
         // added (so non-members can +1 it, like on Discord).
         let usable = !db::emotes_by_ids(&state.db, &[eid], Some(user)).await?.is_empty()
-            || sqlx::query("SELECT 1 FROM reactions WHERE message_id = ?1 AND emoji = ?2 LIMIT 1")
+            || sqlx::query("SELECT 1 FROM reactions WHERE message_id = $1 AND emoji = $2 LIMIT 1")
                 .bind(mid.0)
                 .bind(&emoji)
                 .fetch_optional(&state.db)
@@ -342,8 +342,8 @@ pub async fn react(
         }
     }
     let r = sqlx::query(
-        "INSERT OR IGNORE INTO reactions (message_id, emoji, user_id, created_at)
-         SELECT id, ?, ?, ? FROM messages WHERE id = ? AND channel_id = ?",
+        "INSERT INTO reactions (message_id, emoji, user_id, created_at)
+         SELECT id, $1, $2, $3 FROM messages WHERE id = $4 AND channel_id = $5 ON CONFLICT DO NOTHING",
     )
     .bind(&emoji)
     .bind(user.0)
@@ -365,7 +365,7 @@ pub async fn unreact(
     Path((cid, mid, emoji)): Path<(Id, Id, String)>,
 ) -> AppResult<()> {
     let guild = channel_access(&state, cid, user).await?;
-    let r = sqlx::query("DELETE FROM reactions WHERE message_id = ? AND emoji = ? AND user_id = ?")
+    let r = sqlx::query("DELETE FROM reactions WHERE message_id = $1 AND emoji = $2 AND user_id = $3")
         .bind(mid.0)
         .bind(&emoji)
         .bind(user.0)

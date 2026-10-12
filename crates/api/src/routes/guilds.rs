@@ -37,14 +37,14 @@ pub async fn create(
     let gid = state.ids.next();
     let now = db::now_ms();
     let mut tx = state.db.begin().await?;
-    sqlx::query("INSERT INTO guilds (id, name, icon_url, owner_id) VALUES (?, ?, ?, ?)")
+    sqlx::query("INSERT INTO guilds (id, name, icon_url, owner_id) VALUES ($1, $2, $3, $4)")
         .bind(gid.0)
         .bind(&name)
         .bind(&body.icon_url)
         .bind(user.0)
         .execute(&mut *tx)
         .await?;
-    sqlx::query("INSERT INTO members (guild_id, user_id, joined_at) VALUES (?, ?, ?)")
+    sqlx::query("INSERT INTO members (guild_id, user_id, joined_at) VALUES ($1, $2, $3)")
         .bind(gid.0)
         .bind(user.0)
         .bind(now)
@@ -60,7 +60,7 @@ pub async fn create(
         (state.ids.next(), "Streaming", ChannelKind::Voice, Some(voice_cat), 1),
     ];
     for (id, name, kind, parent, pos) in defaults {
-        sqlx::query("INSERT INTO channels (id, guild_id, name, kind, parent_id, position) VALUES (?, ?, ?, ?, ?, ?)")
+        sqlx::query("INSERT INTO channels (id, guild_id, name, kind, parent_id, position) VALUES ($1, $2, $3, $4, $5, $6)")
             .bind(id.0)
             .bind(gid.0)
             .bind(name)
@@ -95,13 +95,13 @@ pub async fn patch(
     require_owner(&state, gid, user).await?;
     if let Some(name) = body.name {
         let name = check_name(&name)?;
-        sqlx::query("UPDATE guilds SET name = ? WHERE id = ?").bind(name).bind(gid.0).execute(&state.db).await?;
+        sqlx::query("UPDATE guilds SET name = $1 WHERE id = $2").bind(name).bind(gid.0).execute(&state.db).await?;
     }
     if let Some(icon) = body.icon_url {
-        sqlx::query("UPDATE guilds SET icon_url = ? WHERE id = ?").bind(icon).bind(gid.0).execute(&state.db).await?;
+        sqlx::query("UPDATE guilds SET icon_url = $1 WHERE id = $2").bind(icon).bind(gid.0).execute(&state.db).await?;
     }
     if let Some(on) = body.everyone_mentions {
-        sqlx::query("UPDATE guilds SET everyone_mentions = ? WHERE id = ?").bind(on).bind(gid.0).execute(&state.db).await?;
+        sqlx::query("UPDATE guilds SET everyone_mentions = $1 WHERE id = $2").bind(on).bind(gid.0).execute(&state.db).await?;
     }
     let g = db::guild(&state.db, gid).await?;
     state.hub.to_guild(gid, &ServerEvent::GuildUpdate(g.clone()));
@@ -110,7 +110,7 @@ pub async fn patch(
 
 pub async fn delete(State(state): State<AppState>, Auth(user): Auth, Path(gid): Path<Id>) -> AppResult<()> {
     require_owner(&state, gid, user).await?;
-    sqlx::query("DELETE FROM guilds WHERE id = ?").bind(gid.0).execute(&state.db).await?;
+    sqlx::query("DELETE FROM guilds WHERE id = $1").bind(gid.0).execute(&state.db).await?;
     state.hub.to_guild(gid, &ServerEvent::GuildDelete(GuildRef { id: gid }));
     state.hub.drop_guild(gid);
     state.channel_guild.retain(|_, g| *g != gid);
@@ -138,7 +138,7 @@ pub async fn kick(
 }
 
 async fn remove_member(state: &AppState, gid: Id, user: Id) -> AppResult<()> {
-    let r = sqlx::query("DELETE FROM members WHERE guild_id = ? AND user_id = ?")
+    let r = sqlx::query("DELETE FROM members WHERE guild_id = $1 AND user_id = $2")
         .bind(gid.0)
         .bind(user.0)
         .execute(&state.db)
@@ -172,7 +172,7 @@ pub async fn patch_me_member(
     if nick.as_ref().is_some_and(|n| n.chars().count() > 32) {
         return Err(bad("nickname must be at most 32 characters"));
     }
-    sqlx::query("UPDATE members SET nick = ? WHERE guild_id = ? AND user_id = ?")
+    sqlx::query("UPDATE members SET nick = $1 WHERE guild_id = $2 AND user_id = $3")
         .bind(nick)
         .bind(gid.0)
         .bind(user.0)
@@ -190,7 +190,7 @@ pub async fn create_invite(State(state): State<AppState>, Auth(user): Auth, Path
         let mut rng = rand::rng();
         (0..8).map(|_| ALPHABET[rng.random_range(0..ALPHABET.len())] as char).collect()
     };
-    sqlx::query("INSERT INTO invites (code, guild_id, creator_id, created_at) VALUES (?, ?, ?, ?)")
+    sqlx::query("INSERT INTO invites (code, guild_id, creator_id, created_at) VALUES ($1, $2, $3, $4)")
         .bind(&code)
         .bind(gid.0)
         .bind(user.0)
@@ -203,7 +203,7 @@ pub async fn create_invite(State(state): State<AppState>, Auth(user): Auth, Path
 pub async fn get_invite(State(state): State<AppState>, Path(code): Path<String>) -> AppResult<Json<Invite>> {
     let (gid, name, count): (i64, String, i64) = sqlx::query_as(
         "SELECT g.id, g.name, (SELECT COUNT(*) FROM members m WHERE m.guild_id = g.id)
-         FROM invites i JOIN guilds g ON g.id = i.guild_id WHERE i.code = ?",
+         FROM invites i JOIN guilds g ON g.id = i.guild_id WHERE i.code = $1",
     )
     .bind(&code)
     .fetch_one(&state.db)
@@ -216,12 +216,12 @@ pub async fn accept_invite(
     Auth(user): Auth,
     Path(code): Path<String>,
 ) -> AppResult<Json<ReadyGuild>> {
-    let (gid,): (i64,) = sqlx::query_as("SELECT guild_id FROM invites WHERE code = ?")
+    let (gid,): (i64,) = sqlx::query_as("SELECT guild_id FROM invites WHERE code = $1")
         .bind(&code)
         .fetch_one(&state.db)
         .await?;
     let gid = Id(gid);
-    let inserted = sqlx::query("INSERT OR IGNORE INTO members (guild_id, user_id, joined_at) VALUES (?, ?, ?)")
+    let inserted = sqlx::query("INSERT INTO members (guild_id, user_id, joined_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING")
         .bind(gid.0)
         .bind(user.0)
         .bind(db::now_ms())
@@ -230,7 +230,7 @@ pub async fn accept_invite(
         .rows_affected()
         > 0;
     if inserted {
-        sqlx::query("UPDATE invites SET uses = uses + 1 WHERE code = ?").bind(&code).execute(&state.db).await?;
+        sqlx::query("UPDATE invites SET uses = uses + 1 WHERE code = $1").bind(&code).execute(&state.db).await?;
         let m = db::member(&state.db, gid, user).await?;
         state.hub.to_guild(gid, &ServerEvent::MemberAdd(m));
         // Others need to see the newcomer as online.

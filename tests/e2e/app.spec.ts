@@ -48,6 +48,7 @@ test("chat, voice and screen streaming between two users", async ({ browser }) =
   // Alice creates an invite.
   await alice.getByRole("button", { name: "E2E Server" }).click();
   await alice.getByRole("menuitem", { name: "Invite People" }).click();
+  await expect(alice.locator("input[readonly]")).not.toHaveValue("");
   const code = await alice.locator("input[readonly]").inputValue();
   expect(code).toHaveLength(8);
   await alice.keyboard.press("Escape");

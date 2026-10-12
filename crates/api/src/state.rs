@@ -3,9 +3,9 @@ use std::sync::Arc;
 use dashmap::DashMap;
 use proto::Id;
 use proto::id::IdGen;
-use sqlx::SqlitePool;
 
 use crate::config::Config;
+use crate::db::Db;
 use crate::hub::Hub;
 use crate::ratelimit::RateLimiter;
 use crate::emote_providers::EmoteProviders;
@@ -13,7 +13,7 @@ use crate::emote_providers::EmoteProviders;
 pub type AppState = Arc<State>;
 
 pub struct State {
-    pub db: SqlitePool,
+    pub db: Db,
     pub hub: Hub,
     pub config: Config,
     pub ids: IdGen,
@@ -34,7 +34,7 @@ impl State {
         if let Some(g) = self.channel_guild.get(&channel) {
             return Ok(*g);
         }
-        let (g,): (i64,) = sqlx::query_as("SELECT guild_id FROM channels WHERE id = ?")
+        let (g,): (i64,) = sqlx::query_as("SELECT guild_id FROM channels WHERE id = $1")
             .bind(channel.0)
             .fetch_one(&self.db)
             .await?;

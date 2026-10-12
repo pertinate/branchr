@@ -1,32 +1,106 @@
-//! SQLite access. All queries live here so routes stay thin.
+//! Database access. All queries live here so routes stay thin.
+//!
+//! An instance runs on SQLite (the default) or Postgres, chosen by `DATABASE_URL`. Queries
+//! are written once in SQL both accept (`$N` placeholders, no dialect-only syntax) and run
+//! through sqlx's `Any` driver; each backend has its own migrations.
 
 use std::collections::HashMap;
-use std::str::FromStr;
 use std::time::Duration;
 
 use proto::Id;
 use proto::models::*;
-use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
-use sqlx::{AssertSqlSafe, FromRow, SqlitePool};
+use sqlx::any::{AnyPoolOptions, AnyTypeInfo, AnyTypeInfoKind};
+use sqlx::{Any, AssertSqlSafe, Decode, FromRow, Type};
 
-pub async fn connect(url: &str) -> anyhow::Result<SqlitePool> {
-    if let Some(path) = url.strip_prefix("sqlite://")
-        && let Some(dir) = std::path::Path::new(path).parent()
-    {
-        std::fs::create_dir_all(dir)?;
+pub type Db = sqlx::AnyPool;
+
+pub fn is_postgres(url: &str) -> bool {
+    url.starts_with("postgres://") || url.starts_with("postgresql://")
+}
+
+/// SQLite tuning, applied to every connection.
+const SQLITE_PRAGMAS: &[&str] = &[
+    "PRAGMA journal_mode = WAL",
+    "PRAGMA synchronous = NORMAL",
+    "PRAGMA foreign_keys = ON",
+    "PRAGMA busy_timeout = 5000",
+    "PRAGMA cache_size = -65536",
+    "PRAGMA temp_store = MEMORY",
+    "PRAGMA mmap_size = 268435456",
+];
+
+pub async fn connect(url: &str) -> anyhow::Result<Db> {
+    sqlx::any::install_default_drivers();
+    let postgres = is_postgres(url);
+    let url = if postgres {
+        url.to_string()
+    } else {
+        let path = url.strip_prefix("sqlite://").unwrap_or(url);
+        if let Some(dir) = std::path::Path::new(path.split('?').next().unwrap_or(path)).parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        // Create the file on first start.
+        if url.contains("mode=") { url.to_string() } else { format!("{url}{}mode=rwc", if url.contains('?') { "&" } else { "?" }) }
+    };
+    // For tests: keep everything in its own Postgres schema.
+    let schema = std::env::var("DATABASE_SCHEMA").ok().filter(|s| !s.is_empty() && postgres);
+    if let Some(schema) = &schema {
+        anyhow::ensure!(schema.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'), "bad DATABASE_SCHEMA");
+        let admin = AnyPoolOptions::new().max_connections(1).connect(&url).await?;
+        sqlx::query(AssertSqlSafe(format!("CREATE SCHEMA IF NOT EXISTS {schema}"))).execute(&admin).await?;
+        admin.close().await;
     }
-    let opts = SqliteConnectOptions::from_str(url)?
-        .create_if_missing(true)
-        .journal_mode(SqliteJournalMode::Wal)
-        .synchronous(SqliteSynchronous::Normal)
-        .foreign_keys(true)
-        .busy_timeout(Duration::from_secs(5))
-        .pragma("cache_size", "-65536")
-        .pragma("temp_store", "memory")
-        .pragma("mmap_size", "268435456");
-    let pool = SqlitePoolOptions::new().max_connections(8).connect_with(opts).await?;
-    sqlx::migrate!("./migrations").run(&pool).await?;
+    let pool = AnyPoolOptions::new()
+        .max_connections(if postgres { 16 } else { 8 })
+        .acquire_timeout(Duration::from_secs(10))
+        .after_connect(move |conn, _| {
+            let schema = schema.clone();
+            Box::pin(async move {
+                if postgres {
+                    if let Some(schema) = schema {
+                        sqlx::query(AssertSqlSafe(format!("SET search_path TO {schema}"))).execute(&mut *conn).await?;
+                    }
+                } else {
+                    for p in SQLITE_PRAGMAS {
+                        sqlx::query(*p).execute(&mut *conn).await?;
+                    }
+                }
+                Ok(())
+            })
+        })
+        .connect(&url)
+        .await?;
+    if postgres {
+        sqlx::migrate!("./migrations/postgres").run(&pool).await?;
+    } else {
+        sqlx::migrate!("./migrations/sqlite").run(&pool).await?;
+    }
     Ok(pool)
+}
+
+/// A boolean column or expression: Postgres has a real boolean, SQLite stores 0/1.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct DbBool(pub bool);
+
+impl Type<Any> for DbBool {
+    fn type_info() -> AnyTypeInfo {
+        <bool as Type<Any>>::type_info()
+    }
+
+    fn compatible(ty: &AnyTypeInfo) -> bool {
+        matches!(ty.kind, AnyTypeInfoKind::Bool | AnyTypeInfoKind::SmallInt | AnyTypeInfoKind::Integer | AnyTypeInfoKind::BigInt | AnyTypeInfoKind::Null)
+    }
+}
+
+impl<'r> Decode<'r, Any> for DbBool {
+    fn decode(value: <Any as sqlx::Database>::ValueRef<'r>) -> Result<Self, sqlx::error::BoxDynError> {
+        use sqlx::ValueRef;
+        if value.type_info().kind == AnyTypeInfoKind::Bool {
+            Ok(DbBool(<bool as Decode<Any>>::decode(value)?))
+        } else {
+            Ok(DbBool(<i64 as Decode<Any>>::decode(value)? != 0))
+        }
+    }
 }
 
 pub fn now_ms() -> i64 {
@@ -53,12 +127,12 @@ struct GuildRow {
     name: String,
     icon_url: Option<String>,
     owner_id: i64,
-    everyone_mentions: bool,
+    everyone_mentions: DbBool,
 }
 
 impl From<GuildRow> for Guild {
     fn from(r: GuildRow) -> Self {
-        Guild { id: Id(r.id), name: r.name, icon_url: r.icon_url, owner_id: Id(r.owner_id), everyone_mentions: r.everyone_mentions }
+        Guild { id: Id(r.id), name: r.name, icon_url: r.icon_url, owner_id: Id(r.owner_id), everyone_mentions: r.everyone_mentions.0 }
     }
 }
 
@@ -111,7 +185,7 @@ struct EmoteRow {
     name: String,
     provider: String,
     provider_id: String,
-    animated: bool,
+    animated: DbBool,
     width: i64,
     height: i64,
 }
@@ -124,7 +198,7 @@ impl From<EmoteRow> for Emote {
             name: r.name,
             provider: EmoteProvider::parse(&r.provider).unwrap_or(EmoteProvider::SevenTv),
             provider_id: r.provider_id,
-            animated: r.animated,
+            animated: r.animated.0,
             width: r.width as u32,
             height: r.height as u32,
         }
@@ -142,7 +216,7 @@ struct MessageRow {
     reply_to: Option<i64>,
     emotes: Option<String>,
     mentions: Option<String>,
-    mention_everyone: bool,
+    mention_everyone: DbBool,
     #[sqlx(flatten)]
     author: UserRow,
 }
@@ -154,32 +228,32 @@ fn snapshot<T: serde::de::DeserializeOwned>(json: Option<&str>) -> Vec<T> {
 
 pub const USER_COLS: &str = "u.id, u.username, u.display_name, u.avatar_url";
 
-pub async fn user(db: &SqlitePool, id: Id) -> sqlx::Result<User> {
-    sqlx::query_as::<_, UserRow>(AssertSqlSafe(format!("SELECT {USER_COLS} FROM users u WHERE u.id = ?")))
+pub async fn user(db: &Db, id: Id) -> sqlx::Result<User> {
+    sqlx::query_as::<_, UserRow>(AssertSqlSafe(format!("SELECT {USER_COLS} FROM users u WHERE u.id = $1")))
         .bind(id.0)
         .fetch_one(db)
         .await
         .map(Into::into)
 }
 
-pub async fn guild(db: &SqlitePool, id: Id) -> sqlx::Result<Guild> {
-    sqlx::query_as::<_, GuildRow>("SELECT id, name, icon_url, owner_id, everyone_mentions FROM guilds WHERE id = ?")
+pub async fn guild(db: &Db, id: Id) -> sqlx::Result<Guild> {
+    sqlx::query_as::<_, GuildRow>("SELECT id, name, icon_url, owner_id, everyone_mentions FROM guilds WHERE id = $1")
         .bind(id.0)
         .fetch_one(db)
         .await
         .map(Into::into)
 }
 
-pub async fn guild_ids_for_user(db: &SqlitePool, user: Id) -> sqlx::Result<Vec<Id>> {
-    let rows: Vec<(i64,)> = sqlx::query_as("SELECT guild_id FROM members WHERE user_id = ?")
+pub async fn guild_ids_for_user(db: &Db, user: Id) -> sqlx::Result<Vec<Id>> {
+    let rows: Vec<(i64,)> = sqlx::query_as("SELECT guild_id FROM members WHERE user_id = $1")
         .bind(user.0)
         .fetch_all(db)
         .await?;
     Ok(rows.into_iter().map(|r| Id(r.0)).collect())
 }
 
-pub async fn is_member(db: &SqlitePool, guild: Id, user: Id) -> sqlx::Result<bool> {
-    let row: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM members WHERE guild_id = ? AND user_id = ?")
+pub async fn is_member(db: &Db, guild: Id, user: Id) -> sqlx::Result<bool> {
+    let row: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM members WHERE guild_id = $1 AND user_id = $2")
         .bind(guild.0)
         .bind(user.0)
         .fetch_optional(db)
@@ -187,10 +261,10 @@ pub async fn is_member(db: &SqlitePool, guild: Id, user: Id) -> sqlx::Result<boo
     Ok(row.is_some())
 }
 
-pub async fn channels(db: &SqlitePool, guild: Id) -> sqlx::Result<Vec<Channel>> {
+pub async fn channels(db: &Db, guild: Id) -> sqlx::Result<Vec<Channel>> {
     let rows = sqlx::query_as::<_, ChannelRow>(
         "SELECT id, guild_id, name, kind, parent_id, position, topic, last_message_id
-         FROM channels WHERE guild_id = ? ORDER BY position, id",
+         FROM channels WHERE guild_id = $1 ORDER BY position, id",
     )
     .bind(guild.0)
     .fetch_all(db)
@@ -198,9 +272,9 @@ pub async fn channels(db: &SqlitePool, guild: Id) -> sqlx::Result<Vec<Channel>> 
     Ok(rows.into_iter().map(Into::into).collect())
 }
 
-pub async fn channel(db: &SqlitePool, id: Id) -> sqlx::Result<Channel> {
+pub async fn channel(db: &Db, id: Id) -> sqlx::Result<Channel> {
     sqlx::query_as::<_, ChannelRow>(
-        "SELECT id, guild_id, name, kind, parent_id, position, topic, last_message_id FROM channels WHERE id = ?",
+        "SELECT id, guild_id, name, kind, parent_id, position, topic, last_message_id FROM channels WHERE id = $1",
     )
     .bind(id.0)
     .fetch_one(db)
@@ -208,10 +282,10 @@ pub async fn channel(db: &SqlitePool, id: Id) -> sqlx::Result<Channel> {
     .map(Into::into)
 }
 
-pub async fn members(db: &SqlitePool, guild: Id) -> sqlx::Result<Vec<Member>> {
+pub async fn members(db: &Db, guild: Id) -> sqlx::Result<Vec<Member>> {
     let rows = sqlx::query_as::<_, MemberRow>(AssertSqlSafe(format!(
         "SELECT m.guild_id, m.nick, m.joined_at, {USER_COLS}
-         FROM members m JOIN users u ON u.id = m.user_id WHERE m.guild_id = ?"
+         FROM members m JOIN users u ON u.id = m.user_id WHERE m.guild_id = $1"
     )))
     .bind(guild.0)
     .fetch_all(db)
@@ -219,10 +293,10 @@ pub async fn members(db: &SqlitePool, guild: Id) -> sqlx::Result<Vec<Member>> {
     Ok(rows.into_iter().map(Into::into).collect())
 }
 
-pub async fn member(db: &SqlitePool, guild: Id, user: Id) -> sqlx::Result<Member> {
+pub async fn member(db: &Db, guild: Id, user: Id) -> sqlx::Result<Member> {
     sqlx::query_as::<_, MemberRow>(AssertSqlSafe(format!(
         "SELECT m.guild_id, m.nick, m.joined_at, {USER_COLS}
-         FROM members m JOIN users u ON u.id = m.user_id WHERE m.guild_id = ? AND m.user_id = ?"
+         FROM members m JOIN users u ON u.id = m.user_id WHERE m.guild_id = $1 AND m.user_id = $2"
     )))
     .bind(guild.0)
     .bind(user.0)
@@ -231,9 +305,9 @@ pub async fn member(db: &SqlitePool, guild: Id, user: Id) -> sqlx::Result<Member
     .map(Into::into)
 }
 
-pub async fn emotes(db: &SqlitePool, guild: Id) -> sqlx::Result<Vec<Emote>> {
+pub async fn emotes(db: &Db, guild: Id) -> sqlx::Result<Vec<Emote>> {
     let rows = sqlx::query_as::<_, EmoteRow>(
-        "SELECT id, guild_id, name, provider, provider_id, animated, width, height FROM emotes WHERE guild_id = ? ORDER BY name",
+        "SELECT id, guild_id, name, provider, provider_id, animated, width, height FROM emotes WHERE guild_id = $1 ORDER BY name",
     )
     .bind(guild.0)
     .fetch_all(db)
@@ -242,7 +316,7 @@ pub async fn emotes(db: &SqlitePool, guild: Id) -> sqlx::Result<Vec<Emote>> {
 }
 
 /// Emotes by id. With `member`, only those from guilds that user belongs to.
-pub async fn emotes_by_ids(db: &SqlitePool, ids: &[i64], member: Option<Id>) -> sqlx::Result<Vec<Emote>> {
+pub async fn emotes_by_ids(db: &Db, ids: &[i64], member: Option<Id>) -> sqlx::Result<Vec<Emote>> {
     if ids.is_empty() {
         return Ok(vec![]);
     }
@@ -251,7 +325,7 @@ pub async fn emotes_by_ids(db: &SqlitePool, ids: &[i64], member: Option<Id>) -> 
     let sql = match member {
         Some(_) => format!(
             "SELECT e.id, e.guild_id, e.name, e.provider, e.provider_id, e.animated, e.width, e.height
-             FROM emotes e JOIN members m ON m.guild_id = e.guild_id AND m.user_id = ?1 WHERE e.id IN ({list})"
+             FROM emotes e JOIN members m ON m.guild_id = e.guild_id AND m.user_id = $1 WHERE e.id IN ({list})"
         ),
         None => format!(
             "SELECT id, guild_id, name, provider, provider_id, animated, width, height FROM emotes WHERE id IN ({list})"
@@ -265,9 +339,9 @@ pub async fn emotes_by_ids(db: &SqlitePool, ids: &[i64], member: Option<Id>) -> 
     Ok(q.fetch_all(db).await?.into_iter().map(Into::into).collect())
 }
 
-pub async fn emote(db: &SqlitePool, id: Id) -> sqlx::Result<Emote> {
+pub async fn emote(db: &Db, id: Id) -> sqlx::Result<Emote> {
     sqlx::query_as::<_, EmoteRow>(
-        "SELECT id, guild_id, name, provider, provider_id, animated, width, height FROM emotes WHERE id = ?",
+        "SELECT id, guild_id, name, provider, provider_id, animated, width, height FROM emotes WHERE id = $1",
     )
     .bind(id.0)
     .fetch_one(db)
@@ -277,7 +351,7 @@ pub async fn emote(db: &SqlitePool, id: Id) -> sqlx::Result<Emote> {
 
 /// Messages before/after a cursor, newest first. Reactions are loaded in one extra query.
 pub async fn messages(
-    db: &SqlitePool,
+    db: &Db,
     channel: Id,
     before: Option<Id>,
     after: Option<Id>,
@@ -287,8 +361,8 @@ pub async fn messages(
     let rows = sqlx::query_as::<_, MessageRow>(AssertSqlSafe(format!(
         "SELECT m.id AS mid, m.channel_id, m.content, m.edited_at, m.reply_to, m.emotes, m.mentions, m.mention_everyone, {USER_COLS}
          FROM messages m JOIN users u ON u.id = m.author_id
-         WHERE m.channel_id = ?1 AND m.id < ?2 AND m.id > ?3
-         ORDER BY m.id {} LIMIT ?4",
+         WHERE m.channel_id = $1 AND m.id < $2 AND m.id > $3
+         ORDER BY m.id {} LIMIT $4",
         if after.is_some() && before.is_none() { "ASC" } else { "DESC" }
     )))
     .bind(channel.0)
@@ -313,7 +387,7 @@ pub async fn messages(
             attachments: attachments.remove(&r.id).unwrap_or_default(),
             emotes: snapshot(r.emotes.as_deref()),
             mentions: snapshot(r.mentions.as_deref()),
-            mention_everyone: r.mention_everyone,
+            mention_everyone: r.mention_everyone.0,
             nonce: None,
         })
         .collect();
@@ -323,10 +397,10 @@ pub async fn messages(
     Ok(out)
 }
 
-pub async fn message(db: &SqlitePool, id: Id, viewer: Id) -> sqlx::Result<Message> {
+pub async fn message(db: &Db, id: Id, viewer: Id) -> sqlx::Result<Message> {
     let r = sqlx::query_as::<_, MessageRow>(AssertSqlSafe(format!(
         "SELECT m.id AS mid, m.channel_id, m.content, m.edited_at, m.reply_to, m.emotes, m.mentions, m.mention_everyone, {USER_COLS}
-         FROM messages m JOIN users u ON u.id = m.author_id WHERE m.id = ?"
+         FROM messages m JOIN users u ON u.id = m.author_id WHERE m.id = $1"
     )))
     .bind(id.0)
     .fetch_one(db)
@@ -344,7 +418,7 @@ pub async fn message(db: &SqlitePool, id: Id, viewer: Id) -> sqlx::Result<Messag
         attachments: attachments.remove(&r.id).unwrap_or_default(),
         emotes: snapshot(r.emotes.as_deref()),
             mentions: snapshot(r.mentions.as_deref()),
-            mention_everyone: r.mention_everyone,
+            mention_everyone: r.mention_everyone.0,
         nonce: None,
     })
 }
@@ -361,7 +435,7 @@ struct AttachmentRow {
     height: Option<i64>,
 }
 
-pub async fn attachments_for(db: &SqlitePool, ids: impl Iterator<Item = i64>) -> sqlx::Result<HashMap<i64, Vec<Attachment>>> {
+pub async fn attachments_for(db: &Db, ids: impl Iterator<Item = i64>) -> sqlx::Result<HashMap<i64, Vec<Attachment>>> {
     let ids: Vec<String> = ids.map(|i| i.to_string()).collect();
     let mut map: HashMap<i64, Vec<Attachment>> = HashMap::new();
     if ids.is_empty() {
@@ -390,7 +464,7 @@ pub async fn attachments_for(db: &SqlitePool, ids: impl Iterator<Item = i64>) ->
 }
 
 async fn reactions_for(
-    db: &SqlitePool,
+    db: &Db,
     ids: impl Iterator<Item = i64>,
     viewer: Id,
 ) -> sqlx::Result<HashMap<i64, Vec<Reaction>>> {
@@ -401,7 +475,7 @@ async fn reactions_for(
     }
     // Ids are integers we produced ourselves, so inlining them is safe and avoids N binds.
     let rows: Vec<(i64, String, i64, i64)> = sqlx::query_as(AssertSqlSafe(format!(
-        "SELECT message_id, emoji, COUNT(*), MAX(user_id = ?) FROM reactions
+        "SELECT message_id, emoji, COUNT(*), MAX(CASE WHEN user_id = $1 THEN 1 ELSE 0 END) FROM reactions
          WHERE message_id IN ({}) GROUP BY message_id, emoji ORDER BY MIN(created_at)",
         ids.join(",")
     )))
@@ -432,12 +506,12 @@ impl From<ReadStateRow> for proto::gateway::ReadState {
 }
 
 /// Read states for channels in guilds `user` is still in.
-pub async fn read_states(db: &SqlitePool, user: Id) -> sqlx::Result<Vec<proto::gateway::ReadState>> {
+pub async fn read_states(db: &Db, user: Id) -> sqlx::Result<Vec<proto::gateway::ReadState>> {
     Ok(sqlx::query_as::<_, ReadStateRow>(
         "SELECT r.channel_id, r.last_read_id, r.mention_count FROM read_states r
          JOIN channels c ON c.id = r.channel_id
          JOIN members m ON m.guild_id = c.guild_id AND m.user_id = r.user_id
-         WHERE r.user_id = ?",
+         WHERE r.user_id = $1",
     )
     .bind(user.0)
     .fetch_all(db)
@@ -448,10 +522,10 @@ pub async fn read_states(db: &SqlitePool, user: Id) -> sqlx::Result<Vec<proto::g
 }
 
 /// Marks `channel` read up to `message` (never backwards) and clears its mentions.
-pub async fn ack(db: &SqlitePool, user: Id, channel: Id, message: Id) -> sqlx::Result<proto::gateway::ReadState> {
+pub async fn ack(db: &Db, user: Id, channel: Id, message: Id) -> sqlx::Result<proto::gateway::ReadState> {
     sqlx::query_as::<_, ReadStateRow>(
-        "INSERT INTO read_states (user_id, channel_id, last_read_id, mention_count) VALUES (?1, ?2, ?3, 0)
-         ON CONFLICT (user_id, channel_id) DO UPDATE SET last_read_id = MAX(last_read_id, excluded.last_read_id), mention_count = 0
+        "INSERT INTO read_states (user_id, channel_id, last_read_id, mention_count) VALUES ($1, $2, $3, 0)
+         ON CONFLICT (user_id, channel_id) DO UPDATE SET last_read_id = CASE WHEN excluded.last_read_id > read_states.last_read_id THEN excluded.last_read_id ELSE read_states.last_read_id END, mention_count = 0
          RETURNING channel_id, last_read_id, mention_count",
     )
     .bind(user.0)
@@ -464,7 +538,7 @@ pub async fn ack(db: &SqlitePool, user: Id, channel: Id, message: Id) -> sqlx::R
 
 /// Adds a mention to `channel` for each of `users`, or for every member of `guild` but
 /// `except` when `users` is None (@everyone).
-pub async fn bump_mentions(db: &SqlitePool, guild: Id, channel: Id, users: Option<&[Id]>, except: Id) -> sqlx::Result<()> {
+pub async fn bump_mentions(db: &Db, guild: Id, channel: Id, users: Option<&[Id]>, except: Id) -> sqlx::Result<()> {
     let filter = match users {
         // Ids are integers, so inlining them is injection-safe.
         Some(ids) if ids.is_empty() => return Ok(()),
@@ -473,8 +547,8 @@ pub async fn bump_mentions(db: &SqlitePool, guild: Id, channel: Id, users: Optio
     };
     sqlx::query(AssertSqlSafe(format!(
         "INSERT INTO read_states (user_id, channel_id, mention_count)
-         SELECT user_id, ?1, 1 FROM members WHERE guild_id = ?2 AND user_id != ?3 {filter}
-         ON CONFLICT (user_id, channel_id) DO UPDATE SET mention_count = mention_count + 1"
+         SELECT user_id, $1, 1 FROM members WHERE guild_id = $2 AND user_id != $3 {filter}
+         ON CONFLICT (user_id, channel_id) DO UPDATE SET mention_count = read_states.mention_count + 1"
     )))
     .bind(channel.0)
     .bind(guild.0)

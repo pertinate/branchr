@@ -30,13 +30,13 @@ pub async fn patch_me(
         if name.is_empty() || name.chars().count() > 32 {
             return Err(bad("display name must be 1-32 characters"));
         }
-        sqlx::query("UPDATE users SET display_name = ? WHERE id = ?").bind(name).bind(user.0).execute(&state.db).await?;
+        sqlx::query("UPDATE users SET display_name = $1 WHERE id = $2").bind(name).bind(user.0).execute(&state.db).await?;
     }
     if let Some(url) = body.avatar_url {
         if url.as_ref().is_some_and(|u| !u.starts_with("https://") || u.len() > 512) {
             return Err(bad("avatar must be an https url"));
         }
-        sqlx::query("UPDATE users SET avatar_url = ? WHERE id = ?").bind(url).bind(user.0).execute(&state.db).await?;
+        sqlx::query("UPDATE users SET avatar_url = $1 WHERE id = $2").bind(url).bind(user.0).execute(&state.db).await?;
     }
     let u = db::user(&state.db, user).await?;
     // Everyone sharing a guild with this user needs the new profile.

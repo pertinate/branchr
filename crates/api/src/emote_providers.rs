@@ -17,11 +17,38 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::json;
 
-const SEVENTV_GQL: &str = "https://7tv.io/v3/gql";
-const SEVENTV: &str = "https://7tv.io/v3";
-const BTTV: &str = "https://api.betterttv.net/3";
-const BTTV_CDN: &str = "https://cdn.betterttv.net/emote";
-const FFZ: &str = "https://api.frankerfacez.com/v1";
+/// Where each provider's API lives. Tests point them all at a local stand-in.
+struct Urls {
+    seventv_gql: String,
+    seventv: String,
+    bttv: String,
+    bttv_cdn: String,
+    ffz: String,
+}
+
+impl Urls {
+    fn from_env() -> Self {
+        match std::env::var("EMOTE_PROVIDERS_URL").ok().filter(|v| !v.is_empty()) {
+            Some(base) => {
+                let base = base.trim_end_matches('/');
+                Self {
+                    seventv_gql: format!("{base}/7tv/gql"),
+                    seventv: format!("{base}/7tv"),
+                    bttv: format!("{base}/bttv"),
+                    bttv_cdn: format!("{base}/bttv-cdn"),
+                    ffz: format!("{base}/ffz"),
+                }
+            }
+            None => Self {
+                seventv_gql: "https://7tv.io/v3/gql".into(),
+                seventv: "https://7tv.io/v3".into(),
+                bttv: "https://api.betterttv.net/3".into(),
+                bttv_cdn: "https://cdn.betterttv.net/emote".into(),
+                ffz: "https://api.frankerfacez.com/v1".into(),
+            },
+        }
+    }
+}
 const TTL: Duration = Duration::from_secs(600);
 const MAX_CACHE: usize = 2048;
 /// Largest image read when probing a BetterTTV emote's dimensions.
@@ -280,6 +307,7 @@ pub fn webp_info(b: &[u8]) -> Option<(u32, u32, bool)> {
 }
 
 pub struct EmoteProviders {
+    urls: Urls,
     http: reqwest::Client,
     cache: DashMap<String, (Instant, Arc<Vec<ExternalEmote>>)>,
 }
@@ -293,6 +321,7 @@ impl Default for EmoteProviders {
 impl EmoteProviders {
     pub fn new() -> Self {
         Self {
+            urls: Urls::from_env(),
             http: reqwest::Client::builder()
                 .user_agent(concat!(
                     "branchr/",
@@ -362,7 +391,7 @@ impl EmoteProviders {
                         "variables": {"q": query, "l": limit},
                     });
                     let resp: Resp =
-                        self.http.post(SEVENTV_GQL).json(&body).send().await?.error_for_status()?.json().await?;
+                        self.http.post(&self.urls.seventv_gql).json(&body).send().await?.error_for_status()?.json().await?;
                     Ok(resp.data.map(|d| d.emotes.items).unwrap_or_default().into_iter().map(Into::into).collect())
                 }
                 EmoteProvider::Ffz => {
@@ -370,7 +399,7 @@ impl EmoteProviders {
                     struct Resp {
                         emoticons: Vec<FfzEmote>,
                     }
-                    let mut url = Url::parse(&format!("{FFZ}/emotes")).expect("static url");
+                    let mut url = Url::parse(&format!("{}/emotes", self.urls.ffz)).expect("static url");
                     url.query_pairs_mut()
                         .append_pair("q", query)
                         .append_pair("sort", "count-desc")
@@ -396,13 +425,13 @@ impl EmoteProviders {
         let v = self
             .memo(key, async {
                 Ok(vec![match provider {
-                    EmoteProvider::SevenTv => self.get::<StvEmote>(&format!("{SEVENTV}/emotes/{id}")).await?.into(),
+                    EmoteProvider::SevenTv => self.get::<StvEmote>(&format!("{}/emotes/{id}", self.urls.seventv)).await?.into(),
                     EmoteProvider::Ffz => {
                         #[derive(Deserialize)]
                         struct Resp {
                             emote: FfzEmote,
                         }
-                        self.get::<Resp>(&format!("{FFZ}/emote/{id}")).await?.emote.into()
+                        self.get::<Resp>(&format!("{}/emote/{id}", self.urls.ffz)).await?.emote.into()
                     }
                     EmoteProvider::Bttv => {
                         let (width, height, animated) = self.bttv_probe(id).await?;
@@ -431,7 +460,7 @@ impl EmoteProviders {
 
     /// Reads a BetterTTV emote's 1x WebP header for its size and animation flag.
     async fn bttv_probe(&self, id: &str) -> Result<(u32, u32, bool)> {
-        let mut resp = self.http.get(format!("{BTTV_CDN}/{id}/1x.webp")).send().await?;
+        let mut resp = self.http.get(format!("{}/{id}/1x.webp", self.urls.bttv_cdn)).send().await?;
         if !resp.status().is_success() {
             return Err(ProviderError::NotFound);
         }
@@ -473,7 +502,7 @@ impl EmoteProviders {
             return Err(ProviderError::NotFound);
         }
         self.memo(format!("set:7tv:{id}"), async {
-            Ok(self.get::<StvSet>(&format!("{SEVENTV}/emote-sets/{id}")).await?.into_emotes())
+            Ok(self.get::<StvSet>(&format!("{}/emote-sets/{id}", self.urls.seventv)).await?.into_emotes())
         })
         .await
     }
@@ -492,7 +521,7 @@ impl EmoteProviders {
         struct Conn {
             emote_set_id: Option<String>,
         }
-        let user: User = self.get(&format!("{SEVENTV}/users/{id}")).await?;
+        let user: User = self.get(&format!("{}/users/{id}", self.urls.seventv)).await?;
         let set = user.connections.into_iter().find_map(|c| c.emote_set_id).ok_or(ProviderError::NotFound)?;
         self.seventv_set(&set).await
     }
@@ -500,7 +529,7 @@ impl EmoteProviders {
     /// Resolves a Twitch login to its numeric id via FrankerFaceZ, falling back to 7TV's
     /// user search (FFZ only knows channels that have used FFZ).
     async fn twitch_id(&self, login: &str) -> Result<u64> {
-        match self.get::<FfzRoom>(&format!("{FFZ}/room/{login}")).await {
+        match self.get::<FfzRoom>(&format!("{}/room/{login}", self.urls.ffz)).await {
             Ok(FfzRoom { room: FfzRoomInfo { twitch_id: Some(id) }, .. }) => return Ok(id),
             Ok(_) | Err(ProviderError::NotFound) => {}
             Err(e) => return Err(e),
@@ -527,7 +556,7 @@ impl EmoteProviders {
             "query": "query($q:String!){users(query:$q){connections{platform id username}}}",
             "variables": {"q": login},
         });
-        let resp: Resp = self.http.post(SEVENTV_GQL).json(&body).send().await?.error_for_status()?.json().await?;
+        let resp: Resp = self.http.post(&self.urls.seventv_gql).json(&body).send().await?.error_for_status()?.json().await?;
         resp.data
             .into_iter()
             .flat_map(|d| d.users)
@@ -551,7 +580,7 @@ impl EmoteProviders {
             };
             match provider {
                 EmoteProvider::Ffz => empty(async {
-                    let room: FfzRoom = self.get(&format!("{FFZ}/room/{login}")).await?;
+                    let room: FfzRoom = self.get(&format!("{}/room/{login}", self.urls.ffz)).await?;
                     Ok(room.sets.into_values().flat_map(|s| s.emoticons).map(Into::into).collect())
                 }
                 .await),
@@ -562,7 +591,7 @@ impl EmoteProviders {
                         emote_set: Option<StvSet>,
                     }
                     empty(async {
-                        let r: Resp = self.get(&format!("{SEVENTV}/users/twitch/{id}")).await?;
+                        let r: Resp = self.get(&format!("{}/users/twitch/{id}", self.urls.seventv)).await?;
                         Ok(r.emote_set.map(StvSet::into_emotes).unwrap_or_default())
                     }
                     .await)
@@ -570,7 +599,7 @@ impl EmoteProviders {
                 EmoteProvider::Bttv => {
                     let id = self.twitch_id(login).await?;
                     empty(async {
-                        let ch: BttvChannel = self.get(&format!("{BTTV}/cached/users/twitch/{id}")).await?;
+                        let ch: BttvChannel = self.get(&format!("{}/cached/users/twitch/{id}", self.urls.bttv)).await?;
                         Ok(self.bttv_list(ch.channel_emotes.into_iter().chain(ch.shared_emotes).collect()).await)
                     }
                     .await)

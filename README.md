@@ -3,7 +3,7 @@
 
 <p align="center">Self-hostable voice, video and chat, built for <b>uncapped, low-latency game and desktop streaming</b>. Desktop apps for Linux and Windows.</p>
 
-- **Backend (Rust)**: `api`, an axum REST API and realtime gateway on SQLite; `sfu`, a str0m-based selective forwarding unit for voice, video and streams.
+- **Backend (Rust)**: `api`, an axum REST API and realtime gateway on SQLite or Postgres; `sfu`, a str0m-based selective forwarding unit for voice, video and streams.
 - **Client**: Vite, React, TanStack Router, shadcn/ui and Tailwind v4. It ships as an **Electron AppImage** for Linux and also works as a web app served by the API.
 - **Emotes** come from [7TV](https://7tv.app/emotes), [BetterTTV](https://betterttv.com) and [FrankerFaceZ](https://www.frankerfacez.com). You can search 7TV and FFZ, paste a link to any emote, import a 7TV set or user, or import a Twitch channel's emotes from all three. The server only uses each provider's public API and identifies itself honestly (no browser impersonation). That's why BetterTTV has no search there: BTTV emotes come from a Twitch channel import, or from a link plus a name.
 - **Several hosts at once**: the app stays connected to every self-hosted branchr you're logged in to. The rail groups each host's servers, and badges, notifications and voice keep working while you're on another host. Add one with "Add a Server → Connect", or by opening an invite link for it.
@@ -12,7 +12,7 @@
 ```
 apps/web        React client (also bundled into the desktop app)
 apps/desktop    Electron shell: VA-API, PipeWire capture, Linux stream audio, AppImage
-crates/api      REST + WebSocket gateway + SQLite + 7TV proxy, serves the web build
+crates/api      REST + WebSocket gateway + SQLite/Postgres + 7TV proxy, serves the web build
 crates/sfu      Media relay (WebRTC SFU)
 crates/id       branchr ID: central accounts (Discord sign-in), Postgres
 crates/proto    Wire types shared by Rust services and TypeScript (generated via ts-rs)
@@ -115,7 +115,7 @@ Configuration is all through the environment:
 
 | Variable | Service | Default | |
 |---|---|---|---|
-| `DATABASE_URL` | api | `sqlite://data/discord.db` | SQLite file (WAL mode). |
+| `DATABASE_URL` | api | `sqlite://data/discord.db` | A SQLite file (WAL mode), or `postgres://user:pass@host/db` to use your own Postgres instead. Each server uses one or the other; the schema is migrated on startup. |
 | `VOICE_SECRET` | both | dev secret | HMAC key for voice tokens; must match. |
 | `SFU_URLS` | api | `ws://localhost:8090/ws` | Comma-separated. Channels are spread across SFUs by hash. |
 | `WEB_DIR` | api | unset | Serve the web client (set in the Docker image). |
@@ -123,8 +123,8 @@ Configuration is all through the environment:
 | `AUTH_MODE` | api | `local` | `local`, `federated` (branchr accounts) or `both`. |
 | `BRANCHR_ID_URL` | api | `https://branchr.us` | The branchr ID a federated server trusts. |
 | `INSTANCE_NAME` / `PUBLIC_URL` | api | `branchr server` / empty | Shown to the owner when claiming. |
-| `CLAIM_FILE` | api | `claim-code.txt` next to the database | Where the claim code is written until the server is claimed. |
-| `UPLOAD_DIR` | api | `uploads/` next to the database | Where attachments are stored (local disk for now; S3-compatible storage such as RustFS is planned). |
+| `CLAIM_FILE` | api | `claim-code.txt` next to the SQLite file (`data/` on Postgres) | Where the claim code is written until the server is claimed. |
+| `UPLOAD_DIR` | api | `uploads/` next to the SQLite file (`data/` on Postgres) | Where attachments are stored (local disk for now; S3-compatible storage such as RustFS is planned). |
 | `MAX_UPLOAD_MB` | api | `500` | Largest attachment. Sent to clients, which refuse bigger files up front. |
 | `SFU_PUBLIC_IP` | sfu | autodetected | IP put in ICE candidates. |
 | `SFU_UDP_PORT` / `SFU_WORKERS` | sfu | `50000` / #cores | Worker *i* uses `SFU_UDP_PORT + i`. |
@@ -146,7 +146,7 @@ How federation works:
 4. On a `both` server, someone with an existing password account can link it to their branchr account (User Settings → My Account → Link), so Discord sign-in reaches that same account from then on.
 5. branchr ID remembers which hosts you use with your branchr account. Signing in on a new device reconnects to all of them, and "Log Out of host" forgets one.
 
-To host it, add `deploy/docker-compose.id.yml`: it runs branchr ID and its own Postgres, and Caddy serves it on `ID_DOMAIN`. It needs `ID_DOMAIN`, `ID_DB_PASSWORD`, `DISCORD_CLIENT_ID` and `DISCORD_CLIENT_SECRET` in `.env`; `scripts/deploy-image.sh` includes it when `ID_DOMAIN` is set. Run it locally against real Discord with `scripts/dev-id.sh`. It reads `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` and a Postgres `DATABASE_URL` from `~/.config/branchr/id.env`, which stays outside the repo. Tests use `TEST_DATABASE_URL` and a throwaway schema; CI provides a Postgres container.
+To host it, add `deploy/docker-compose.id.yml`: it runs branchr ID and its own Postgres, and Caddy serves it on `ID_DOMAIN`. It needs `ID_DOMAIN`, `ID_DB_PASSWORD`, `DISCORD_CLIENT_ID` and `DISCORD_CLIENT_SECRET` in `.env`; `scripts/deploy-image.sh` includes it when `ID_DOMAIN` is set. Run it locally against real Discord with `scripts/dev-id.sh`. It reads `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` and a Postgres `DATABASE_URL` from `~/.config/branchr/id.env`, which stays outside the repo. Tests use `TEST_DATABASE_URL` and a throwaway schema; CI provides a Postgres container and runs the e2e suite with the server on SQLite and again on Postgres (`E2E_INSTANCE_DB=postgres`, which also sets the test-only `DATABASE_SCHEMA`). The e2e emote tests talk to a local mock of 7TV, BetterTTV and FrankerFaceZ through the test-only `EMOTE_PROVIDERS_URL`.
 
 ## CI/CD
 

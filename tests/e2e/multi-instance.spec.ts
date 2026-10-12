@@ -94,6 +94,7 @@ test("multiple instances: connect a second host, badges and voice across them, l
   const invite = await (async () => {
     await bob.getByRole("button", { name: "Away B" }).click();
     await bob.getByRole("menuitem", { name: "Invite People" }).click();
+    await expect(bob.getByLabel("Invite code")).not.toHaveValue("");
     const c = await bob.getByLabel("Invite code").inputValue();
     await bob.keyboard.press("Escape");
     return c;

@@ -12,7 +12,7 @@ use serde::Deserialize;
 
 use crate::auth::Auth;
 use crate::config::AuthMode;
-use crate::db;
+use crate::db::{self, DbBool};
 use crate::error::{AppError, AppResult, bad};
 use crate::gateway::evict_user;
 use crate::state::AppState;
@@ -22,7 +22,7 @@ const PAGE: i64 = 50;
 /// The host's owner: the local user tied to the branchr account that claimed it.
 async fn owner_id(state: &AppState) -> AppResult<Option<Id>> {
     let Some(owner) = state.federation.as_ref().and_then(|f| f.identity()).and_then(|i| i.owner) else { return Ok(None) };
-    let row: Option<(i64,)> = sqlx::query_as("SELECT id FROM users WHERE global_id = ?").bind(owner).fetch_optional(&state.db).await?;
+    let row: Option<(i64,)> = sqlx::query_as("SELECT id FROM users WHERE global_id = $1").bind(owner).fetch_optional(&state.db).await?;
     Ok(row.map(|(id,)| Id(id)))
 }
 
@@ -37,7 +37,7 @@ pub async fn overview(State(state): State<AppState>, Auth(user): Auth) -> AppRes
     require_host_owner(&state, user).await?;
     let (users, banned, guilds, messages, bytes): (i64, i64, i64, i64, i64) = sqlx::query_as(
         "SELECT (SELECT count(*) FROM users), (SELECT count(*) FROM instance_bans), (SELECT count(*) FROM guilds),
-                (SELECT count(*) FROM messages), (SELECT coalesce(sum(size), 0) FROM attachments)",
+                (SELECT count(*) FROM messages), (SELECT CAST(coalesce(sum(size), 0) AS BIGINT) FROM attachments)",
     )
     .fetch_one(&state.db)
     .await?;
@@ -67,7 +67,7 @@ pub struct PatchSettings {
 pub async fn settings(State(state): State<AppState>, Auth(user): Auth, Json(body): Json<PatchSettings>) -> AppResult<Json<HostOverview>> {
     require_host_owner(&state, user).await?;
     if let Some(open) = body.open_registration {
-        sqlx::query("INSERT INTO instance_settings (key, value) VALUES ('open_registration', ?1) ON CONFLICT (key) DO UPDATE SET value = ?1")
+        sqlx::query("INSERT INTO instance_settings (key, value) VALUES ('open_registration', $1) ON CONFLICT (key) DO UPDATE SET value = $1")
             .bind(if open { "true" } else { "false" })
             .execute(&state.db)
             .await?;
@@ -104,7 +104,7 @@ struct HostUserRow {
     created_at: i64,
     global_id: Option<String>,
     guilds: i64,
-    banned: bool,
+    banned: DbBool,
     reason: Option<String>,
 }
 
@@ -117,8 +117,8 @@ pub async fn users(State(state): State<AppState>, Auth(user): Auth, Query(q): Qu
                 (SELECT count(*) FROM members m WHERE m.user_id = u.id) AS guilds,
                 b.user_id IS NOT NULL AS banned, b.reason
          FROM users u LEFT JOIN instance_bans b ON b.user_id = u.id
-         WHERE (u.username LIKE ?1 ESCAPE '\\' OR u.display_name LIKE ?1 ESCAPE '\\') AND (?2 = 0 OR b.user_id IS NOT NULL)
-         ORDER BY u.id DESC LIMIT ?3 OFFSET ?4",
+         WHERE (lower(u.username) LIKE lower($1) ESCAPE '\\' OR lower(u.display_name) LIKE lower($1) ESCAPE '\\') AND (NOT $2 OR b.user_id IS NOT NULL)
+         ORDER BY u.id DESC LIMIT $3 OFFSET $4",
     )
     .bind(&pattern)
     .bind(q.banned)
@@ -134,7 +134,7 @@ pub async fn users(State(state): State<AppState>, Auth(user): Auth, Query(q): Qu
                 created_at: r.created_at,
                 linked: r.global_id.is_some(),
                 guilds: r.guilds as u32,
-                banned: r.banned,
+                banned: r.banned.0,
                 ban_reason: r.reason,
             })
             .collect(),
@@ -154,7 +154,7 @@ pub async fn ban(State(state): State<AppState>, Auth(user): Auth, Path(target): 
         return Err(bad("you can't ban yourself"));
     }
     let reason = body.reason.map(|r| r.trim().chars().take(500).collect::<String>()).filter(|r| !r.is_empty());
-    let r = sqlx::query("INSERT INTO instance_bans (user_id, reason, banned_at) VALUES (?1, ?2, ?3) ON CONFLICT (user_id) DO UPDATE SET reason = ?2")
+    let r = sqlx::query("INSERT INTO instance_bans (user_id, reason, banned_at) VALUES ($1, $2, $3) ON CONFLICT (user_id) DO UPDATE SET reason = $2")
         .bind(target.0)
         .bind(&reason)
         .bind(db::now_ms())
@@ -167,7 +167,7 @@ pub async fn ban(State(state): State<AppState>, Auth(user): Auth, Path(target): 
         }
     }
     // Log them out everywhere on this host.
-    sqlx::query("DELETE FROM sessions WHERE user_id = ?").bind(target.0).execute(&state.db).await?;
+    sqlx::query("DELETE FROM sessions WHERE user_id = $1").bind(target.0).execute(&state.db).await?;
     state.sessions.retain(|_, u| *u != target);
     evict_user(&state, target);
     tracing::info!("host owner banned user {}", target.0);
@@ -176,7 +176,7 @@ pub async fn ban(State(state): State<AppState>, Auth(user): Auth, Path(target): 
 
 pub async fn unban(State(state): State<AppState>, Auth(user): Auth, Path(target): Path<Id>) -> AppResult<()> {
     require_host_owner(&state, user).await?;
-    sqlx::query("DELETE FROM instance_bans WHERE user_id = ?").bind(target.0).execute(&state.db).await?;
+    sqlx::query("DELETE FROM instance_bans WHERE user_id = $1").bind(target.0).execute(&state.db).await?;
     Ok(())
 }
 
@@ -194,7 +194,7 @@ struct HostGuildRow {
     name: String,
     icon_url: Option<String>,
     owner_id: i64,
-    everyone_mentions: bool,
+    everyone_mentions: DbBool,
     members: i64,
     channels: i64,
 }
@@ -206,7 +206,7 @@ pub async fn guilds(State(state): State<AppState>, Auth(user): Auth, Query(q): Q
         "SELECT g.id AS gid, g.name, g.icon_url, g.owner_id, g.everyone_mentions,
                 (SELECT count(*) FROM members m WHERE m.guild_id = g.id) AS members,
                 (SELECT count(*) FROM channels c WHERE c.guild_id = g.id) AS channels
-         FROM guilds g WHERE g.name LIKE ?1 ESCAPE '\\' ORDER BY g.id DESC LIMIT ?2 OFFSET ?3",
+         FROM guilds g WHERE lower(g.name) LIKE lower($1) ESCAPE '\\' ORDER BY g.id DESC LIMIT $2 OFFSET $3",
     )
     .bind(&pattern)
     .bind(PAGE)
@@ -222,7 +222,7 @@ pub async fn guilds(State(state): State<AppState>, Auth(user): Auth, Query(q): Q
                 name: r.name,
                 icon_url: r.icon_url,
                 owner_id: Id(r.owner_id),
-                everyone_mentions: r.everyone_mentions,
+                everyone_mentions: r.everyone_mentions.0,
             },
             members: r.members as u32,
             channels: r.channels as u32,
@@ -234,7 +234,7 @@ pub async fn guilds(State(state): State<AppState>, Auth(user): Auth, Query(q): Q
 /// Deletes any server on the host (abuse, spam).
 pub async fn delete_guild(State(state): State<AppState>, Auth(user): Auth, Path(gid): Path<Id>) -> AppResult<()> {
     require_host_owner(&state, user).await?;
-    let r = sqlx::query("DELETE FROM guilds WHERE id = ?").bind(gid.0).execute(&state.db).await?;
+    let r = sqlx::query("DELETE FROM guilds WHERE id = $1").bind(gid.0).execute(&state.db).await?;
     if r.rows_affected() == 0 {
         return Err(AppError::NotFound);
     }

@@ -96,6 +96,8 @@ test("mentions: replies ping the author; edits keep mentions editable", async ({
   await box.pressSequentially("again");
   await box.press("Enter");
   await expect(alice.locator("[data-mention]").filter({ hasText: "@rep_b" }).last()).toBeVisible();
+  // Up-arrow edits your last *sent* message: wait for the server to have it.
+  await expect(bob.getByText("again")).toBeVisible();
   await box.press("ArrowUp");
   const edit = alice.locator("textarea:not([placeholder])");
   await expect(edit).toHaveValue(/^ping @rep_b_\w+ again$/);

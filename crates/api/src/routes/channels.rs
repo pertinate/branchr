@@ -51,7 +51,7 @@ pub async fn create(
     let id = state.ids.next();
     sqlx::query(
         "INSERT INTO channels (id, guild_id, name, kind, parent_id, topic, position)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, (SELECT COALESCE(MAX(position) + 1, 0) FROM channels WHERE guild_id = ?2 AND parent_id IS ?5))",
+         VALUES ($1, $2, $3, $4, $5, $6, (SELECT COALESCE(MAX(position) + 1, 0) FROM channels WHERE guild_id = $2 AND parent_id IS NOT DISTINCT FROM $5))",
     )
     .bind(id.0)
     .bind(gid.0)
@@ -85,16 +85,16 @@ pub async fn patch(
     require_owner(&state, c.guild_id, user).await?;
     if let Some(name) = body.name {
         let name = normalize(&name, c.kind)?;
-        sqlx::query("UPDATE channels SET name = ? WHERE id = ?").bind(name).bind(cid.0).execute(&state.db).await?;
+        sqlx::query("UPDATE channels SET name = $1 WHERE id = $2").bind(name).bind(cid.0).execute(&state.db).await?;
     }
     if let Some(topic) = body.topic {
         if topic.as_ref().is_some_and(|t| t.chars().count() > 1024) {
             return Err(bad("topic too long"));
         }
-        sqlx::query("UPDATE channels SET topic = ? WHERE id = ?").bind(topic).bind(cid.0).execute(&state.db).await?;
+        sqlx::query("UPDATE channels SET topic = $1 WHERE id = $2").bind(topic).bind(cid.0).execute(&state.db).await?;
     }
     if let Some(pos) = body.position {
-        sqlx::query("UPDATE channels SET position = ? WHERE id = ?").bind(pos).bind(cid.0).execute(&state.db).await?;
+        sqlx::query("UPDATE channels SET position = $1 WHERE id = $2").bind(pos).bind(cid.0).execute(&state.db).await?;
     }
     let c = db::channel(&state.db, cid).await?;
     state.hub.to_guild(c.guild_id, &ServerEvent::ChannelUpdate(c.clone()));
@@ -106,8 +106,8 @@ pub async fn delete(State(state): State<AppState>, Auth(user): Auth, Path(cid): 
     require_owner(&state, c.guild_id, user).await?;
     let mut tx = state.db.begin().await?;
     // Children of a deleted category become top level.
-    sqlx::query("UPDATE channels SET parent_id = NULL WHERE parent_id = ?").bind(cid.0).execute(&mut *tx).await?;
-    sqlx::query("DELETE FROM channels WHERE id = ?").bind(cid.0).execute(&mut *tx).await?;
+    sqlx::query("UPDATE channels SET parent_id = NULL WHERE parent_id = $1").bind(cid.0).execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM channels WHERE id = $1").bind(cid.0).execute(&mut *tx).await?;
     tx.commit().await?;
     if c.kind == ChannelKind::Category {
         for ch in db::channels(&state.db, c.guild_id).await? {

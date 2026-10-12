@@ -10,9 +10,9 @@ use std::time::{Duration, Instant};
 use jsonwebtoken::{Algorithm, DecodingKey, Validation};
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
 
 use crate::config::Config;
+use crate::db::Db;
 
 #[derive(Clone, Debug)]
 pub struct Identity {
@@ -113,7 +113,7 @@ impl Federation {
     }
 
     /// Registers (once), then waits for the claim. Runs for the life of the server.
-    pub async fn run(&self, db: SqlitePool, config: Config) {
+    pub async fn run(&self, db: Db, config: Config) {
         let poll = Duration::from_secs(std::env::var("BRANCHR_POLL_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(30));
         let mut backoff = Duration::from_secs(2);
         loop {
@@ -130,7 +130,7 @@ impl Federation {
     }
 
     /// One round; true once the server is claimed.
-    async fn step(&self, db: &SqlitePool, config: &Config) -> anyhow::Result<bool> {
+    async fn step(&self, db: &Db, config: &Config) -> anyhow::Result<bool> {
         if self.identity.read().is_none() {
             let row: Option<(String, String, String, Option<String>)> =
                 sqlx::query_as("SELECT branchr_id_url, instance_id, secret, owner_global_id FROM federation WHERE id = 1").fetch_optional(db).await?;
@@ -152,8 +152,8 @@ impl Federation {
                         .json()
                         .await?;
                     sqlx::query(
-                        "INSERT INTO federation (id, branchr_id_url, instance_id, secret) VALUES (1, ?1, ?2, ?3)
-                         ON CONFLICT (id) DO UPDATE SET branchr_id_url = ?1, instance_id = ?2, secret = ?3, owner_global_id = NULL",
+                        "INSERT INTO federation (id, branchr_id_url, instance_id, secret) VALUES (1, $1, $2, $3)
+                         ON CONFLICT (id) DO UPDATE SET branchr_id_url = $1, instance_id = $2, secret = $3, owner_global_id = NULL",
                     )
                     .bind(&self.id_url)
                     .bind(&r.instance_id)
@@ -175,7 +175,7 @@ impl Federation {
         let status_url = format!("{}/instances/{}", self.id_url, id.instance_id);
         let st: Status = self.http.get(&status_url).bearer_auth(&id.secret).send().await?.error_for_status()?.json().await?;
         if st.claimed {
-            sqlx::query("UPDATE federation SET owner_global_id = ? WHERE id = 1").bind(&st.owner_id).execute(db).await?;
+            sqlx::query("UPDATE federation SET owner_global_id = $1 WHERE id = 1").bind(&st.owner_id).execute(db).await?;
             if let Some(i) = self.identity.write().as_mut() {
                 i.owner = st.owner_id.clone();
             }
@@ -234,14 +234,14 @@ fn show_claim_code(config: &Config, code: &str) {
 }
 
 /// A free local username based on `wanted` (letters, digits, _ and . only, 2-32 long).
-pub async fn free_username(db: &SqlitePool, wanted: &str) -> sqlx::Result<String> {
+pub async fn free_username(db: &Db, wanted: &str) -> sqlx::Result<String> {
     let mut base: String = wanted.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '.').take(28).collect();
     if base.len() < 2 {
         base = "user".into();
     }
     for n in 0..1000u32 {
         let candidate = if n == 0 { base.clone() } else { format!("{base}{n}") };
-        let taken: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM users WHERE username = ?").bind(&candidate).fetch_optional(db).await?;
+        let taken: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM users WHERE lower(username) = lower($1)").bind(&candidate).fetch_optional(db).await?;
         if taken.is_none() {
             return Ok(candidate);
         }
