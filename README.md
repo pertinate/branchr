@@ -118,7 +118,7 @@ Configuration is all through the environment:
 
 | Variable | Service | Default | |
 |---|---|---|---|
-| `DATABASE_URL` | api | `sqlite://data/discord.db` | A SQLite file (WAL mode), or `postgres://user:pass@host/db` to use your own Postgres instead. Each server uses one or the other; the schema is migrated on startup. |
+| `DATABASE_URL` | api | `sqlite://data/discord.db` | A SQLite file (WAL mode), or `postgres://user:pass@host/db` to use your own Postgres instead. Each server uses one or the other; the schema is migrated on startup. To move a SQLite server to Postgres, stop it and run `api migrate-db --from sqlite://… --to postgres://…` into an empty database. |
 | `VOICE_SECRET` | both | dev secret | HMAC key for voice tokens; must match. |
 | `SFU_URLS` | api | `ws://localhost:8090/ws` | Comma-separated. Channels are spread across SFUs by hash. |
 | `WEB_DIR` | api | unset | Serve the web client (set in the Docker image). |

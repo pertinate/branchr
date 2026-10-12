@@ -8,6 +8,7 @@ mod federation;
 mod gateway;
 mod hub;
 mod mentions;
+mod migrate_db;
 mod perms;
 mod ratelimit;
 mod routes;
@@ -41,6 +42,13 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     raise_nofile_limit();
+    // `api migrate-db --from sqlite://… --to postgres://…` (before reading the usual config).
+    let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some("migrate-db") {
+        let arg = |flag: &str| args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1)).cloned();
+        let (Some(from), Some(to)) = (arg("--from"), arg("--to")) else { anyhow::bail!("usage: api migrate-db --from sqlite://… --to postgres://…") };
+        return migrate_db::run(&from, &to).await;
+    }
     let config = Config::from_env()?;
     let db = db::connect(&config.database_url).await?;
     let storage = storage::Storage::new(&config.storage)?;
