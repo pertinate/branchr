@@ -30,6 +30,7 @@ const TABLES: &[&str] = &[
     "federation",
     "instance_bans",
     "instance_settings",
+    "instance_staff",
     "guild_bans",
     "audit_log",
 ];

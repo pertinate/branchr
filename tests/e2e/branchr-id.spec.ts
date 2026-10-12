@@ -119,7 +119,7 @@ test("federated server: sign in with Discord from the login screen, claim it, co
   // The owner makes them a moderator: they can manage people, but not servers or the owner.
   await row.getByLabel(`Host role for ${`spammer_${run}`}`).click();
   await page.getByRole("option", { name: "Moderator" }).click();
-  await expect(row.getByText("Moderator")).toBeVisible();
+  await expect(row.locator("[data-slot=badge]").filter({ hasText: "Moderator" })).toBeVisible();
   await bad.getByRole("button", { name: "Your account" }).click({ button: "right" });
   await bad.getByRole("menuitem", { name: "Manage Host" }).click();
   const modView = bad.getByTestId("host-admin");
