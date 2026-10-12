@@ -21,6 +21,7 @@ sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio",
 argon2 = "0.5"
 jsonwebtoken = { version = "10", default-features = false, features = ["rust_crypto"] }
 dashmap = "6"
+throttle.workspace = true
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "http2", "stream"] }
 parking_lot = "0.12"
 libc = "0.2"

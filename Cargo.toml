@@ -9,6 +9,7 @@ license = "MIT"
 
 [workspace.dependencies]
 proto = { path = "crates/proto" }
+throttle = { path = "crates/throttle" }
 tokio = { version = "1", features = ["full"] }
 axum = { version = "0.8", features = ["ws", "macros"] }
 serde = { version = "1", features = ["derive"] }

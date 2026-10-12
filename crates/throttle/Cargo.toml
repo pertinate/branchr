@@ -1,0 +1,9 @@
+[package]
+name = "throttle"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+axum.workspace = true
+dashmap = "6"
+tokio.workspace = true

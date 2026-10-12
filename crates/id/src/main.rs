@@ -14,6 +14,6 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("branchr ID on {bind}, public at {}", config.public_url);
     let app = id::router(id::state(config, db).await?);
     let listener = tokio::net::TcpListener::bind(bind).await?;
-    axum::serve(listener, app).with_graceful_shutdown(async { tokio::signal::ctrl_c().await.ok(); }).await?;
+    axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>()).with_graceful_shutdown(async { tokio::signal::ctrl_c().await.ok(); }).await?;
     Ok(())
 }

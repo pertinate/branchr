@@ -11,7 +11,6 @@ mod hub;
 mod mentions;
 mod migrate_db;
 mod perms;
-mod ratelimit;
 mod routes;
 mod state;
 mod storage;
@@ -80,7 +79,7 @@ async fn main() -> anyhow::Result<()> {
         emotes: emote_providers::EmoteProviders::new(),
         sessions: DashMap::new(),
         channel_guild: DashMap::new(),
-        message_limiter: ratelimit::RateLimiter::new(10, 5.0),
+        message_limiter: throttle::Buckets::new(10, 5.0),
         open_registration: std::sync::atomic::AtomicBool::new(config.open_registration),
         federation: (config.auth_mode != config::AuthMode::Local).then(|| Arc::new(federation::Federation::new(&config))),
         config: config.clone(),
@@ -93,11 +92,20 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
-    let api = Router::new()
+    // Per client address: password guessing and account spam, and invite code guessing.
+    let trust_proxy = throttle::trust_proxy_from_env();
+    let sign_in = Router::new()
         .route("/auth/register", post(auth::register))
         .route("/auth/login", post(auth::login))
-        .route("/auth/logout", post(auth::logout))
         .route("/auth/federated", post(auth::federated))
+        .layer(axum::middleware::from_fn_with_state(throttle::IpLimit::new(10, 60.0, trust_proxy), throttle::ip_limit));
+    let invites = Router::new()
+        .route("/invites/{code}", get(guilds::get_invite).post(guilds::accept_invite))
+        .layer(axum::middleware::from_fn_with_state(throttle::IpLimit::new(30, 60.0, trust_proxy), throttle::ip_limit));
+    let api = Router::new()
+        .merge(sign_in)
+        .merge(invites)
+        .route("/auth/logout", post(auth::logout))
         .route("/auth/link", get(auth::link_status).post(auth::link))
         .route("/instance", get(auth::instance_info))
         .route("/admin/overview", get(admin::overview))
@@ -127,7 +135,6 @@ async fn main() -> anyhow::Result<()> {
         .route("/guilds/{gid}/emotes", post(emotes::add))
         .route("/guilds/{gid}/emotes/import", post(emotes::import_set))
         .route("/guilds/{gid}/emotes/{eid}", patch(emotes::rename).delete(emotes::remove))
-        .route("/invites/{code}", get(guilds::get_invite).post(guilds::accept_invite))
         .route("/channels/{cid}", patch(channels::patch).delete(channels::delete))
         .route("/channels/{cid}/permissions/{target}", put(channels::put_overwrite))
         .route("/channels/{cid}/permissions/{kind}/{target}", delete(channels::delete_overwrite))
@@ -166,7 +173,7 @@ async fn main() -> anyhow::Result<()> {
 
     let listener = tokio::net::TcpListener::bind(config.bind).await?;
     tracing::info!("api listening on {}", config.bind);
-    axum::serve(listener, app).with_graceful_shutdown(shutdown()).await?;
+    axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>()).with_graceful_shutdown(shutdown()).await?;
     Ok(())
 }
 

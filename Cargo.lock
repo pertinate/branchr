@@ -87,6 +87,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "sqlx",
+ "throttle",
  "tokio",
  "tokio-util",
  "tower",
@@ -1527,6 +1528,7 @@ dependencies = [
  "sha2 0.10.9",
  "sqlx",
  "thiserror",
+ "throttle",
  "tokio",
  "tokio-tungstenite 0.30.0",
  "tower-http 0.7.1",
@@ -3332,6 +3334,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ad99c4c6d32803332c548b1af0540b357b3f5fc0be8f6c6bfe8b2e6ae784070"
 dependencies = [
  "cfg-if",
+]
+
+[[package]]
+name = "throttle"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "dashmap",
+ "tokio",
 ]
 
 [[package]]

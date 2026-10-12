@@ -70,10 +70,24 @@ pub async fn state(config: Config, db: PgPool) -> anyhow::Result<AppState> {
 pub fn router(state: AppState) -> Router {
     // Bearer tokens only, no cookies, so any origin may call (instances serve the web client).
     let cors = CorsLayer::new().allow_origin(Any).allow_methods(Any).allow_headers(Any);
-    Router::new()
+    // Per client address, on what anyone can call without an account: sign-in, host
+    // registration and claiming, and Explore.
+    let trust_proxy = throttle::trust_proxy_from_env();
+    let open = Router::new()
         .route("/authorize", get(oauth::authorize))
         .route("/auth/discord/callback", get(oauth::discord_callback))
         .route("/token", post(oauth::token))
+        .route("/instances", post(instances::register))
+        .route("/instances/{id}/claim-code", post(instances::new_claim_code))
+        .route("/instances/{id}/token", post(instances::token))
+        .route("/claims", post(instances::claim))
+        .layer(axum::middleware::from_fn_with_state(throttle::IpLimit::new(30, 60.0, trust_proxy), throttle::ip_limit));
+    let explore = Router::new()
+        .route("/discover", get(discovery::search))
+        .layer(axum::middleware::from_fn_with_state(throttle::IpLimit::new(60, 60.0, trust_proxy), throttle::ip_limit));
+    Router::new()
+        .merge(open)
+        .merge(explore)
         .route("/logout", post(oauth::logout))
         .route("/me", get(oauth::me))
         .route("/me/instances", get(hosts::list).put(hosts::add).delete(hosts::remove))
@@ -91,13 +105,8 @@ pub fn router(state: AppState) -> Router {
         .route("/dms/{cid}/messages", get(social::messages).post(social::send))
         .route("/dms/{cid}/messages/{mid}", axum::routing::patch(social::edit).delete(social::delete))
         .route("/gateway", get(gateway::upgrade))
-        .route("/instances", post(instances::register))
         .route("/instances/{id}", get(instances::status))
-        .route("/instances/{id}/claim-code", post(instances::new_claim_code))
-        .route("/instances/{id}/token", post(instances::token))
-        .route("/claims", post(instances::claim))
         .route("/instances/{id}/listings", axum::routing::put(discovery::publish))
-        .route("/discover", get(discovery::search))
         .route("/.well-known/jwks.json", get(|s: axum::extract::State<AppState>| async move { axum::Json(s.keys.jwks()) }))
         .route("/health", get(|| async { "ok" }))
         .layer(cors)

@@ -5,6 +5,8 @@ services:
   api:
     environment:
       SFU_URLS: wss://${DOMAIN:?set DOMAIN}/sfu/ws
+      # Only Caddy reaches it; rate limits count the client address Caddy forwards.
+      TRUST_PROXY: "1"
     ports: !reset []
   sfu:
     ports: !override

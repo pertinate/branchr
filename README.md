@@ -157,6 +157,7 @@ Configuration is all through the environment:
 | `S3_ENDPOINT` | api | unset | Store files in an S3-compatible bucket (rustfs, MinIO, R2, AWS) instead. Also needs `S3_ACCESS_KEY` and `S3_SECRET_KEY`. |
 | `S3_BUCKET` / `S3_REGION` | api | `branchr` / `us-east-1` | Created on startup if missing. Set `S3_PATH_STYLE=false` for virtual-host-style buckets. |
 | `S3_PUBLIC_URL` | api | unset | The bucket's endpoint as clients reach it. When set, downloads redirect to short-lived signed URLs so file traffic skips the API; otherwise the API streams them. |
+| `TRUST_PROXY` | api, id | unset | `1` behind a reverse proxy that sets `X-Forwarded-For` (the Caddy compose files set it). Sign-in, registration, invites and branchr ID's public endpoints are rate limited per client address; without this every client would look like the proxy. Loopback clients are never limited. |
 | `MAX_UPLOAD_MB` | api | `500` | Largest attachment. Sent to clients, which refuse bigger files up front. |
 | `SFU_PUBLIC_IP` | sfu | autodetected | IP put in ICE candidates. |
 | `SFU_UDP_PORT` / `SFU_WORKERS` | sfu | `50000` / #cores | Worker *i* uses `SFU_UDP_PORT + i`. |

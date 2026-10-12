@@ -28,6 +28,8 @@ services:
         condition: service_healthy
     environment:
       ID_BIND: 0.0.0.0:8070
+      # Behind Caddy; rate limits count the client address it forwards.
+      TRUST_PROXY: "1"
       PUBLIC_URL: https://${ID_DOMAIN:?set ID_DOMAIN}
       DATABASE_URL: postgres://branchr:${ID_DB_PASSWORD}@id-db:5432/branchr
       DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:?set DISCORD_CLIENT_ID}

@@ -13,7 +13,6 @@ use crate::error::AppResult;
 use crate::perms::GuildPerms;
 use crate::db::Db;
 use crate::hub::Hub;
-use crate::ratelimit::RateLimiter;
 use crate::emote_providers::EmoteProviders;
 
 pub type AppState = Arc<State>;
@@ -32,7 +31,7 @@ pub struct State {
     pub sessions: DashMap<[u8; 32], Id>,
     /// channel id -> guild id, channels never move between guilds.
     pub channel_guild: DashMap<Id, Id>,
-    pub message_limiter: RateLimiter,
+    pub message_limiter: throttle::Buckets<Id>,
     /// Whether new people may join (owner-adjustable; starts from OPEN_REGISTRATION).
     pub open_registration: std::sync::atomic::AtomicBool,
     /// Set when this server accepts branchr accounts.
