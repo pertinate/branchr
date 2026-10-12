@@ -92,6 +92,11 @@ const KEYFRAME_THROTTLE: Duration = Duration::from_millis(300);
 const LAYER_TICK: Duration = Duration::from_millis(500);
 const SPEAK_TICK: Duration = Duration::from_millis(100);
 const SPEAK_HOLD: Duration = Duration::from_millis(350);
+/// Silent mic audio stops being forwarded this long after the last loud packet (so the ends
+/// of words aren't clipped).
+const SILENCE_HANGOVER: Duration = Duration::from_millis(500);
+/// While silent, one packet in this many still goes out, as Opus DTX would send.
+const SILENT_KEEP_EVERY: u32 = 25;
 /// RFC 6464 level is -dBov; anything louder than this counts as speech.
 const SPEAK_DBOV: i32 = 50;
 /// Upgrades need this much headroom to avoid flapping between layers.
@@ -182,6 +187,8 @@ struct Peer {
     next_timeout: Instant,
     estimate_bps: u64,
     last_loud: Option<Instant>,
+    /// Silent mic packets in a row (for silence suppression).
+    silent_run: u32,
     speaking: bool,
     addrs: Vec<SocketAddr>,
     /// When ICE went Disconnected, if it hasn't recovered yet.
@@ -212,6 +219,8 @@ struct Prof {
     drives: u64,
     writes: u64,
     frames_shipped: u64,
+    /// Silent mic packets not forwarded.
+    silent_dropped: u64,
 }
 
 /// CPU time consumed by the calling thread (user + system).
@@ -236,7 +245,7 @@ impl Prof {
         let pct = |d: Duration| d.as_secs_f64() / wall.as_secs_f64() * 100.0;
         let per_s = |n: u64| (n as f64 / wall.as_secs_f64()) as u64;
         tracing::info!(
-            "profile w{worker} peers {peers}: cpu {:.1}% ({} loops/s) input {:.1}% poll {:.1}% write {:.1}% send {:.1}% | in {}/s out {}/s drives {}/s writes {}/s shipped {}/s dropped {}",
+            "profile w{worker} peers {peers}: cpu {:.1}% ({} loops/s) input {:.1}% poll {:.1}% write {:.1}% send {:.1}% | in {}/s out {}/s drives {}/s writes {}/s shipped {}/s silent-skipped {}/s dropped {}",
             pct(thread_cpu_time().saturating_sub(self.cpu_at_start)),
             per_s(self.loops),
             pct(self.input),
@@ -248,6 +257,7 @@ impl Prof {
             per_s(self.drives),
             per_s(self.writes),
             per_s(self.frames_shipped),
+            per_s(self.silent_dropped),
             dropped,
         );
         *self = Prof { enabled: true, since: Some(Instant::now()), cpu_at_start: thread_cpu_time(), ..Default::default() };
@@ -598,6 +608,7 @@ impl Worker {
                 next_timeout: Instant::now(),
                 estimate_bps: self.initial_bwe,
                 last_loud: None,
+                silent_run: 0,
                 speaking: false,
                 addrs: Vec::new(),
                 ice_lost: None,
@@ -914,9 +925,19 @@ impl Worker {
 
         if track.source == TrackSource::Mic
             && let Some(level) = d.ext_vals.audio_level
-            && (level as i32).abs() < SPEAK_DBOV
         {
-            peer.last_loud = Some(now);
+            if (level as i32).abs() < SPEAK_DBOV {
+                peer.last_loud = Some(now);
+                peer.silent_run = 0;
+            } else if peer.last_loud.is_none_or(|t| now.duration_since(t) > SILENCE_HANGOVER) {
+                // Silence suppression: browsers send 50 packets/s of silence; in a big call
+                // that's most of the SFU's work, and nobody hears it.
+                peer.silent_run = peer.silent_run.wrapping_add(1);
+                if peer.silent_run % SILENT_KEEP_EVERY != 1 {
+                    self.prof.silent_dropped += 1;
+                    return;
+                }
+            }
         }
         if !d.contiguous && !audio {
             self.local_keyframe(id, key, false);

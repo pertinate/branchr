@@ -4,6 +4,11 @@
 //! relay. Nothing is decoded, so a single machine can drive hundreds of viewers.
 //!
 //!   loadgen --sfu ws://host:8741/ws --secret $VOICE_SECRET --viewers 100 --mbps 4 --fps 60 --seconds 60
+//!
+//! `--speakers N` instead models a big voice call: N people each send audio (50 packets/s)
+//! and hear everyone else, N×(N−1) streams through the SFU.
+
+mod speakers;
 
 use std::net::{IpAddr, UdpSocket as StdUdp};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -23,18 +28,21 @@ use tokio::net::UdpSocket;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 
-struct Args {
-    sfu: String,
-    secret: String,
+pub struct Args {
+    pub sfu: String,
+    pub secret: String,
     viewers: usize,
     mbps: f64,
     fps: u32,
-    seconds: u64,
-    room: i64,
+    pub seconds: u64,
+    pub room: i64,
+    pub speakers: usize,
+    /// With --speakers: how many are talking (the rest send silence, as browsers do).
+    pub talking: Option<usize>,
 }
 
 fn args() -> Args {
-    let mut a = Args { sfu: "ws://127.0.0.1:8090/ws".into(), secret: "dev-voice-secret".into(), viewers: 10, mbps: 4.0, fps: 60, seconds: 30, room: 0 };
+    let mut a = Args { sfu: "ws://127.0.0.1:8090/ws".into(), secret: "dev-voice-secret".into(), viewers: 10, mbps: 4.0, fps: 60, seconds: 30, room: 0, speakers: 0, talking: None };
     let v: Vec<String> = std::env::args().collect();
     let mut i = 1;
     while i + 1 < v.len() {
@@ -47,6 +55,8 @@ fn args() -> Args {
             "--fps" => a.fps = val.parse().expect("fps"),
             "--seconds" => a.seconds = val.parse().expect("seconds"),
             "--room" => a.room = val.parse().expect("room"),
+            "--speakers" => a.speakers = val.parse().expect("speakers"),
+            "--talking" => a.talking = Some(val.parse().expect("talking")),
             other => panic!("unknown arg {other}"),
         }
         i += 2;
@@ -57,7 +67,7 @@ fn args() -> Args {
     a
 }
 
-fn now_unix() -> u64 {
+pub fn now_unix() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs()
 }
 
@@ -73,7 +83,7 @@ struct Stats {
 }
 
 /// Local address the OS would use to reach `remote` (no packets sent).
-fn local_ip_for(remote: &str) -> IpAddr {
+pub fn local_ip_for(remote: &str) -> IpAddr {
     let host = remote.trim_start_matches("ws://").trim_start_matches("wss://").split('/').next().unwrap();
     let host = host.split(':').next().unwrap();
     let s = StdUdp::bind("0.0.0.0:0").unwrap();
@@ -91,6 +101,9 @@ async fn main() -> anyhow::Result<()> {
     // ring and aws-lc are both linked; pick aws-lc (same as str0m) for wss:// signaling.
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
     let a = args();
+    if a.speakers > 0 {
+        return speakers::run(&a).await;
+    }
     let stats = Arc::new(Stats::default());
     stats.per_viewer_frames.lock().unwrap().resize(a.viewers, 0);
     let epoch = Instant::now();

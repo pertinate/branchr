@@ -89,6 +89,15 @@ On Postgres, throughput follows commit latency (the disk's fsync); a server on S
 
 The stream stayed at 60 fps for every viewer with p99 under 7 ms while chat was loaded.
 
+Big voice calls, where everyone hears everyone (`loadgen --speakers N --talking T`: N peers each send Opus-sized audio and subscribe to all the others; the silent ones send silence, as browsers do). The SFU stops forwarding silence half a second after someone stops talking (keeping one packet in 25, as Opus DTX would), so the cost follows who's talking rather than how many are in the call:
+
+| Call | Streams | Speech delivered | Latency p50 / p99 | SFU CPU |
+|---|---|---|---|---|
+| 50 people, 5 talking | 2,450 | 100% | 1.3 / 2.2 ms | 0.8 core |
+| 100 people, 5 talking | 9,900 | 100% | 1.8 / 3.8 ms | 3.4 cores |
+| 100 people, 10 talking | 9,900 | 100% | 1.6 / 3.5 ms | 4.1 cores |
+| 50 people, all talking at once | 2,450 | 100% | 0.7 / 2.2 ms | 3.4 cores |
+
 Viewers of one room are spread across all worker cores. Outgoing packets go out through `sendmmsg`. The gateway fans a message out to 5,000 connected sessions with p99 under 80 ms (`node tests/load/gateway.mjs http://host:8080 5000`).
 
 ## Self-hosting
