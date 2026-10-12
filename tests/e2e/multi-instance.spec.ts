@@ -43,8 +43,9 @@ test("multiple instances: connect a second host, badges and voice across them, l
   await expect(alice.getByRole("heading", { name: "No servers yet" })).toBeVisible();
   await expect(alice.getByText("localhost:8081")).toBeVisible();
   expect((await sessions(alice)).map((s) => s.url)).toEqual([HOME, AWAY]);
-  // The rail labels each host's group now there are two.
-  await expect(alice.getByTestId("instance-header")).toHaveCount(2);
+  // My Guilds lists both hosts.
+  await alice.getByRole("link", { name: "My Guilds" }).click();
+  await expect(alice.getByTestId("host-section")).toHaveCount(2);
 
   // Creating a server lands on the host on screen.
   const code = await createServer(alice, "Away B");
@@ -82,11 +83,12 @@ test("multiple instances: connect a second host, badges and voice across them, l
 
   // Log out of the second host only: its servers go, the first host and its voice stay.
   alice.on("dialog", (d) => void d.accept());
-  await alice.getByTestId("instance-header").last().click({ button: "right" });
-  await alice.getByRole("menuitem", { name: /^Log Out of localhost:8081/ }).click();
-  await expect(alice.getByRole("link", { name: "Away B" })).toHaveCount(0);
-  await expect(alice.getByRole("link", { name: "Home A" })).toBeVisible();
-  await expect(alice.getByTestId("instance-header")).toHaveCount(0);
+  await alice.getByRole("link", { name: "My Guilds" }).click();
+  await alice.getByRole("button", { name: "Log Out of localhost:8081" }).click();
+  const rail = alice.getByRole("navigation", { name: "Servers" });
+  await expect(rail.getByRole("link", { name: "Away B" })).toHaveCount(0);
+  await expect(rail.getByRole("link", { name: "Home A" })).toBeVisible();
+  await expect(alice.getByTestId("host-section")).toHaveCount(1);
   await expect(alice.getByText("Voice Connected")).toBeVisible();
   expect((await sessions(alice)).map((s) => s.url)).toEqual([HOME]);
 

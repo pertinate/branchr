@@ -14,6 +14,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppInstanceRouteImport } from './routes/_app/$instance'
 import { Route as AppExploreRouteImport } from './routes/_app/explore'
+import { Route as AppGuildsRouteImport } from './routes/_app/guilds'
 import { Route as AppHomeRouteImport } from './routes/_app/home'
 import { Route as AppInstanceIndexRouteImport } from './routes/_app/$instance/index'
 import { Route as AppInstanceGuildIdRouteImport } from './routes/_app/$instance/$guildId'
@@ -44,6 +45,11 @@ const AppInstanceRoute = AppInstanceRouteImport.update({
 const AppExploreRoute = AppExploreRouteImport.update({
   id: '/explore',
   path: '/explore',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppGuildsRoute = AppGuildsRouteImport.update({
+  id: '/guilds',
+  path: '/guilds',
   getParentRoute: () => AppRoute,
 } as any)
 const AppHomeRoute = AppHomeRouteImport.update({
@@ -88,6 +94,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/$instance': typeof AppInstanceRouteWithChildren
   '/explore': typeof AppExploreRoute
+  '/guilds': typeof AppGuildsRoute
   '/home': typeof AppHomeRouteWithChildren
   '/$instance/$guildId': typeof AppInstanceGuildIdRouteWithChildren
   '/home/$channelId': typeof AppHomeChannelIdRoute
@@ -99,6 +106,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/explore': typeof AppExploreRoute
+  '/guilds': typeof AppGuildsRoute
   '/': typeof AppIndexRoute
   '/home/$channelId': typeof AppHomeChannelIdRoute
   '/$instance': typeof AppInstanceIndexRoute
@@ -112,6 +120,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/_app/$instance': typeof AppInstanceRouteWithChildren
   '/_app/explore': typeof AppExploreRoute
+  '/_app/guilds': typeof AppGuildsRoute
   '/_app/home': typeof AppHomeRouteWithChildren
   '/_app/': typeof AppIndexRoute
   '/_app/$instance/$guildId': typeof AppInstanceGuildIdRouteWithChildren
@@ -128,6 +137,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/$instance'
     | '/explore'
+    | '/guilds'
     | '/home'
     | '/$instance/$guildId'
     | '/home/$channelId'
@@ -139,6 +149,7 @@ export interface FileRouteTypes {
   to:
     | '/login'
     | '/explore'
+    | '/guilds'
     | '/'
     | '/home/$channelId'
     | '/$instance'
@@ -151,6 +162,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/_app/$instance'
     | '/_app/explore'
+    | '/_app/guilds'
     | '/_app/home'
     | '/_app/'
     | '/_app/$instance/$guildId'
@@ -201,6 +213,13 @@ declare module '@tanstack/react-router' {
       path: '/explore'
       fullPath: '/explore'
       preLoaderRoute: typeof AppExploreRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/guilds': {
+      id: '/_app/guilds'
+      path: '/guilds'
+      fullPath: '/guilds'
+      preLoaderRoute: typeof AppGuildsRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/home': {
@@ -298,6 +317,7 @@ const AppHomeRouteWithChildren =
 interface AppRouteChildren {
   AppInstanceRoute: typeof AppInstanceRouteWithChildren
   AppExploreRoute: typeof AppExploreRoute
+  AppGuildsRoute: typeof AppGuildsRoute
   AppHomeRoute: typeof AppHomeRouteWithChildren
   AppIndexRoute: typeof AppIndexRoute
 }
@@ -305,6 +325,7 @@ interface AppRouteChildren {
 const AppRouteChildren: AppRouteChildren = {
   AppInstanceRoute: AppInstanceRouteWithChildren,
   AppExploreRoute: AppExploreRoute,
+  AppGuildsRoute: AppGuildsRoute,
   AppHomeRoute: AppHomeRouteWithChildren,
   AppIndexRoute: AppIndexRoute,
 }

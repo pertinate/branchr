@@ -236,23 +236,26 @@ test("a new device reconnects to every host used with the branchr account", asyn
   await one.getByLabel("Host address").fill(HOME);
   await one.getByRole("button", { name: "Continue" }).click();
   await one.getByRole("button", { name: "Sign in with Discord" }).click();
-  await expect(one.getByTestId("instance-header")).toHaveCount(2);
+  await expect(one).toHaveURL(/localhost-8080/);
+  await one.getByRole("link", { name: "My Guilds" }).click();
+  await expect(one.getByTestId("host-section")).toHaveCount(2);
 
   // A new device: sign in to one host, and the other comes along.
   const two = await (await browser.newContext()).newPage();
   await two.goto("/#/login");
   await two.getByLabel("Server", { exact: true }).fill(FED);
   await two.getByRole("button", { name: "Sign in with Discord" }).click();
-  await expect(two.getByTestId("instance-header")).toHaveCount(2);
-  expect((await sessions(two)).map((s) => s.url).sort()).toEqual([FED, HOME].sort());
+  await expect(two.getByRole("heading", { name: "No servers yet" })).toBeVisible();
   // Still on the host it signed in to.
   expect(two.url()).toContain("/localhost-8081");
+  await two.getByRole("link", { name: "My Guilds" }).click();
+  await expect(two.getByTestId("host-section")).toHaveCount(2);
+  expect((await sessions(two)).map((s) => s.url).sort()).toEqual([FED, HOME].sort());
 
   // Logging out of a host on purpose forgets it for the account.
   two.on("dialog", (d) => void d.accept());
-  await two.locator('[data-testid="instance-header"][data-instance="localhost-8080"]').click({ button: "right" });
-  await two.getByRole("menuitem", { name: /^Log Out of localhost:8080/ }).click();
-  await expect(two.getByTestId("instance-header")).toHaveCount(0);
+  await two.getByRole("button", { name: "Log Out of localhost:8080" }).click();
+  await expect(two.getByTestId("host-section")).toHaveCount(1);
   const three = await (await browser.newContext()).newPage();
   await three.goto("/#/login");
   await three.getByLabel("Server", { exact: true }).fill(FED);

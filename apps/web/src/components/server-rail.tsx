@@ -1,31 +1,21 @@
 import type { ReadyGuild } from "@app/protocol";
-import { Link, useNavigate, useParams, useRouterState } from "@tanstack/react-router";
-import { Compass, Copy, LogOut, MessagesSquare, Plus, Settings, Volume2 } from "lucide-react";
-import { memo, useState } from "react";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { Compass, LayoutGrid, MessagesSquare, Plus } from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
 
+import { RailList } from "@/components/rail-list";
 import { UserPanel } from "@/components/voice/user-panel";
-import { guildInitials } from "@/components/guild/guild-badge";
-import { useHostOwner } from "@/components/host-admin-dialog";
 import { MentionBadge } from "@/components/mention-badge";
-import { GuildMenuItems, Menu } from "@/components/menus";
 import { Button } from "@/components/ui/button";
-import { ContextMenuItem, ContextMenuLabel, ContextMenuSeparator } from "@/components/ui/context-menu";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { copy } from "@/lib/actions";
-import { forgetHost } from "@/lib/host-sync";
-import { compareIds } from "@/lib/ids";
-import { type Instance, InstanceProvider, hostOf, instance, instanceKey, useActive, useInstance, useInstanceList } from "@/lib/instances";
-import { useMediaUrl } from "@/lib/media";
+import { type Instance, hostOf, instance, instanceKey, useActive, useInstanceList } from "@/lib/instances";
 import { isUnread, useSocial } from "@/lib/social";
 import { cn } from "@/lib/utils";
-import { useApp } from "@/stores/app";
-import { useDialogs } from "@/stores/ui";
-import { useVoice } from "@/stores/voice";
 
 /** Accepts a bare code or a link like `https://host/#/invite/CODE`. */
 export function parseInvite(input: string): { code: string; server: string | null } {
@@ -40,148 +30,16 @@ export function parseInvite(input: string): { code: string; server: string | nul
 }
 
 
-const GuildIcon = memo(function GuildIcon({ guildId, active }: { guildId: string; active: boolean }) {
-  const instanceId = useInstance().id;
-  const guild = useApp((s) => s.guilds[guildId]);
-  const icon = useMediaUrl(guild?.iconUrl);
-  const unread = useApp((s) =>
-    Object.values(s.channels).some(
-      (c) =>
-        c.guildId === guildId &&
-        c.kind === "text" &&
-        c.lastMessageId &&
-        (!s.lastRead[c.id] || compareIds(c.lastMessageId, s.lastRead[c.id]) > 0),
-    ),
-  );
-  const pings = useApp((s) => {
-    let n = 0;
-    for (const [cid, count] of Object.entries(s.pings)) if (s.channels[cid]?.guildId === guildId) n += count;
-    return n;
-  });
-  const inVoice = useVoice((s) => s.guildId === guildId && s.instanceId === instanceId);
-  if (!guild) return null;
-  return (
-    <Tooltip>
-      <Menu items={<GuildMenuItems guildId={guildId} />}>
-      <TooltipTrigger asChild>
-        <Link to="/$instance/$guildId" params={{ instance: instanceId, guildId }} aria-label={guild.name} className="group relative flex w-full justify-center">
-          <span
-            className={cn(
-              "absolute left-0 top-1/2 w-1 -translate-y-1/2 rounded-r-full bg-foreground transition-all",
-              active ? "h-10" : unread ? "h-2 group-hover:h-5" : "h-0 group-hover:h-5",
-            )}
-          />
-          <div
-            className={cn(
-              "grid size-12 place-items-center overflow-hidden text-sm font-semibold transition-all",
-              active ? "rounded-2xl bg-primary text-white" : "rounded-3xl bg-background group-hover:rounded-2xl group-hover:bg-primary group-hover:text-white",
-            )}
-          >
-            {icon ? <img src={icon} alt="" className="size-full object-cover" /> : guildInitials(guild.name)}
-          </div>
-          {pings > 0 && <MentionBadge count={pings} className="absolute right-1 bottom-0 border-4 border-rail" />}
-          {inVoice && !pings && (
-            <span className="absolute -right-0 bottom-0 grid size-5 place-items-center rounded-full border-4 border-rail bg-online">
-              <Volume2 className="size-2.5 text-white" />
-            </span>
-          )}
-        </Link>
-      </TooltipTrigger>
-      </Menu>
-      <TooltipContent side="right">{guild.name}</TooltipContent>
-    </Tooltip>
-  );
-});
-
-/** Labels one instance's group in the rail when there's more than one. */
-function InstanceHeader() {
-  const inst = useInstance();
-  const connection = useApp((s) => s.connection);
-  const navigate = useNavigate();
-  const host = hostOf(inst.url);
-  const label = host.split(".")[0].split(":")[0];
-  const owner = useHostOwner(inst);
-  return (
-    <Tooltip>
-      <Menu
-        items={
-          <>
-            <ContextMenuLabel className="truncate">{host}</ContextMenuLabel>
-            {owner && (
-              <ContextMenuItem onSelect={() => useDialogs.getState().open({ instanceId: inst.id, kind: "host-admin" })}>
-                Manage Host <Settings className="ml-auto" />
-              </ContextMenuItem>
-            )}
-            <ContextMenuItem onSelect={() => void copy(inst.url, "Copied address")}>
-              Copy Address <Copy className="ml-auto" />
-            </ContextMenuItem>
-            <ContextMenuSeparator />
-            <ContextMenuItem
-              variant="destructive"
-              onSelect={() => {
-                if (!confirm(`Log out of ${host}? Your other hosts stay connected.`)) return;
-                forgetHost(inst.url);
-                void inst.api("POST", "/auth/logout").catch(() => {});
-                inst.auth.getState().logout();
-                void navigate({ to: "/" });
-              }}
-            >
-              Log Out of {host} <LogOut className="ml-auto" />
-            </ContextMenuItem>
-          </>
-        }
-      >
-        <TooltipTrigger asChild>
-          <div
-            data-testid="instance-header"
-            data-instance={inst.id}
-            className="flex w-14 cursor-default items-center justify-center gap-1 truncate rounded px-1 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase"
-          >
-            <span className={cn("size-1.5 shrink-0 rounded-full", connection === "ready" ? "bg-online" : "bg-idle")} />
-            <span className="truncate">{label}</span>
-          </div>
-        </TooltipTrigger>
-      </Menu>
-      <TooltipContent side="right">
-        {host}
-        {connection !== "ready" && " (connecting…)"}
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-
-function InstanceGuilds({ activeGuild }: { activeGuild: string | undefined }) {
-  const order = useApp((s) => s.guildOrder);
-  return (
-    <>
-      {order.map((id) => (
-        <GuildIcon key={id} guildId={id} active={activeGuild === id} />
-      ))}
-    </>
-  );
-}
-
 export function ServerRail() {
-  const ids = useInstanceList((s) => s.ids);
-  const params = useParams({ strict: false }) as { instance?: string; guildId?: string };
   const [open, setOpen] = useState(false);
   return (
     <nav aria-label="Servers" className="relative flex w-[72px] shrink-0 flex-col items-center py-3">
       <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-2 overflow-y-auto pb-3">
         <HomeButton />
         <ExploreButton />
+        <MyGuildsButton />
         <div className="mx-auto h-0.5 w-8 shrink-0 rounded bg-accent" />
-        {ids.map((id, i) => {
-          const inst = instance(id);
-          if (!inst) return null;
-          return (
-            <InstanceProvider key={id} instance={inst}>
-              {i > 0 && <div className="mx-auto h-0.5 w-8 shrink-0 rounded bg-accent" />}
-              {ids.length > 1 && <InstanceHeader />}
-              <InstanceGuilds activeGuild={params.instance === id ? params.guildId : undefined} />
-            </InstanceProvider>
-          );
-        })}
+        <RailList />
         <div className="mx-auto h-0.5 w-8 shrink-0 rounded bg-accent" />
         <Tooltip>
           <TooltipTrigger asChild>
@@ -352,6 +210,34 @@ function HomeButton() {
         </Link>
       </TooltipTrigger>
       <TooltipContent side="right">Direct Messages</TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** My Guilds: every server, by the host it lives on. */
+function MyGuildsButton() {
+  const active = useRouterState({ select: (s) => s.location.pathname === "/guilds" });
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Link to="/guilds" aria-label="My Guilds" className="group relative flex w-full justify-center">
+          <span
+            className={cn(
+              "absolute top-1/2 left-0 w-1 -translate-y-1/2 rounded-r-full bg-foreground transition-all",
+              active ? "h-10" : "h-0 group-hover:h-5",
+            )}
+          />
+          <div
+            className={cn(
+              "grid size-12 place-items-center transition-all",
+              active ? "rounded-2xl bg-primary text-white" : "rounded-3xl bg-background group-hover:rounded-2xl group-hover:bg-primary group-hover:text-white",
+            )}
+          >
+            <LayoutGrid className="size-6" />
+          </div>
+        </Link>
+      </TooltipTrigger>
+      <TooltipContent side="right">My Guilds</TooltipContent>
     </Tooltip>
   );
 }
