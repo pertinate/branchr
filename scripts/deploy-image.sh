@@ -31,6 +31,8 @@ compose="docker compose -f docker-compose.yml -f deploy/docker-compose.public.ym
 grep -q '^ID_DOMAIN=.' .env && compose="$compose -f deploy/docker-compose.id.yml"
 $compose pull --quiet
 $compose up -d --remove-orphans
+# The Caddyfiles are mounted, so changes to them need a reload (up -d doesn't notice).
+$compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile >/dev/null 2>&1 || echo "caddy reload failed; it keeps its old config" >&2
 for i in $(seq 1 30); do
   if $compose exec -T caddy wget -qO- http://api:8080/api/health >/dev/null 2>&1 &&
     { ! grep -q '^ID_DOMAIN=.' .env || $compose exec -T caddy wget -qO- http://id:8070/health >/dev/null 2>&1; }; then
