@@ -42,7 +42,7 @@ export function GuildMenu({ guildId }: { guildId: string }) {
         )}
         {canSettings && (
           <DropdownMenuItem onClick={() => open({ instanceId, kind: "guild-settings", guildId, tab: "overview" })}>
-            Server Settings <Settings className="ml-auto" />
+            Leaflet Settings <Settings className="ml-auto" />
           </DropdownMenuItem>
         )}
         <DropdownMenuItem onClick={() => open({ instanceId, kind: "guild-settings", guildId, tab: "emotes" })}>
@@ -58,7 +58,7 @@ export function GuildMenu({ guildId }: { guildId: string }) {
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onClick={() => void leaveGuild(inst, guildId).then((left) => { if (left) void navigate({ to: "/" }); })}>
-          {isOwner ? "Delete Server" : "Leave Server"} {isOwner ? <Trash2 className="ml-auto" /> : <LogOut className="ml-auto" />}
+          {isOwner ? "Delete Leaflet" : "Leave Leaflet"} {isOwner ? <Trash2 className="ml-auto" /> : <LogOut className="ml-auto" />}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

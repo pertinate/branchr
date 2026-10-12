@@ -78,7 +78,7 @@ export function GuildMenuItems({ guildId }: { guildId: string }) {
       )}
       {canSettings && (
         <ContextMenuItem onSelect={() => open({ instanceId, kind: "guild-settings", guildId, tab: "overview" })}>
-          Server Settings <Settings className="ml-auto" />
+          Leaflet Settings <Settings className="ml-auto" />
         </ContextMenuItem>
       )}
       <ContextMenuItem onSelect={() => open({ instanceId, kind: "guild-settings", guildId, tab: "emotes" })}>
@@ -97,9 +97,9 @@ export function GuildMenuItems({ guildId }: { guildId: string }) {
         variant="destructive"
         onSelect={() => void leaveGuild(inst, guildId).then((left) => { if (left) void navigate({ to: "/" }); })}
       >
-        {isOwner ? "Delete Server" : "Leave Server"} {isOwner ? <Trash2 className="ml-auto" /> : <LogOut className="ml-auto" />}
+        {isOwner ? "Delete Leaflet" : "Leave Leaflet"} {isOwner ? <Trash2 className="ml-auto" /> : <LogOut className="ml-auto" />}
       </ContextMenuItem>
-      <CopyId id={guildId} label="Server ID" />
+      <CopyId id={guildId} label="Leaflet ID" />
     </>
   );
 }
@@ -290,7 +290,7 @@ export function SelfMenuItems() {
       )}
       {staff && (
         <ContextMenuItem onSelect={() => open({ instanceId, kind: "host-admin" })}>
-          Manage Host <Settings className="ml-auto" />
+          Manage Branch <Settings className="ml-auto" />
         </ContextMenuItem>
       )}
       <ContextMenuSeparator />

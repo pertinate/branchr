@@ -33,7 +33,7 @@ export function EmojiPicker({ guildId, onPick }: { guildId: string; onPick: (val
           <section key={guild.id} aria-label={`${guild.name} emotes`}>
             <div className="sticky top-0 z-10 flex items-center gap-1.5 bg-popover px-1 py-1 text-xs font-semibold text-muted-foreground uppercase">
               <GuildBadge guild={guild} />
-              <span className="truncate">{guild.id === guildId ? "This server" : guild.name}</span>
+              <span className="truncate">{guild.id === guildId ? "This leaflet" : guild.name}</span>
             </div>
             <div className="grid grid-cols-7 gap-1">
               {emotes.map((e) => (

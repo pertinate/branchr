@@ -44,7 +44,7 @@ type Mentionable =
   | { kind: "everyone"; name: "everyone" | "here"; hint: string };
 const EVERYONE: Mentionable[] = [
   { kind: "everyone", name: "here", hint: "Notifies everyone online" },
-  { kind: "everyone", name: "everyone", hint: "Notifies everyone in this server" },
+  { kind: "everyone", name: "everyone", hint: "Notifies everyone in this leaflet" },
 ];
 type Suggestion =
   | { kind: "emote"; start: number; end: number; matches: Emote[] }

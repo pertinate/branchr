@@ -25,8 +25,8 @@ test("customization: server icon, banner and description, and an avatar, seen by
   await joinServer(bob, code);
 
   await alice.getByRole("button", { name: "Pretty" }).click();
-  await alice.getByRole("menuitem", { name: "Server Settings" }).click();
-  await alice.getByTestId("server-icon-file").setInputFiles({ name: "icon.png", mimeType: "image/png", buffer: await png(alice, 600, 400, "#c0392b") });
+  await alice.getByRole("menuitem", { name: "Leaflet Settings" }).click();
+  await alice.getByTestId("leaflet-icon-file").setInputFiles({ name: "icon.png", mimeType: "image/png", buffer: await png(alice, 600, 400, "#c0392b") });
   await alice.getByTestId("banner-file").setInputFiles({ name: "banner.png", mimeType: "image/png", buffer: await png(alice, 1920, 1080, "#2980b9") });
   await alice.getByLabel("Description").fill("A server for pretty things");
   await alice.getByRole("button", { name: "Save Changes" }).click();
@@ -49,7 +49,7 @@ test("customization: server icon, banner and description, and an avatar, seen by
 
   // Removing the icon brings back the initials.
   await alice.getByRole("button", { name: "Pretty" }).click();
-  await alice.getByRole("menuitem", { name: "Server Settings" }).click();
+  await alice.getByRole("menuitem", { name: "Leaflet Settings" }).click();
   await alice.getByRole("button", { name: "Remove" }).first().click();
   await expect(bob.getByRole("link", { name: "Pretty" }).locator("img")).toHaveCount(0);
 });
@@ -75,17 +75,17 @@ test("invites: join messages, a one-use invite, and a vanity code", async ({ bro
 
   // It's used up now.
   const carol = await register(browser, "inv_c");
-  await carol.getByRole("button", { name: "Add a Server" }).click();
+  await carol.getByRole("button", { name: "Add a Leaflet" }).click();
   await carol.getByRole("tab", { name: "Join" }).click();
   await carol.getByPlaceholder("Invite code or link").fill(once);
-  await carol.getByRole("button", { name: "Join Server" }).click();
+  await carol.getByRole("button", { name: "Join Leaflet" }).click();
   await expect(carol.getByText(/expired or been used up/)).toBeVisible();
   await carol.keyboard.press("Escape");
 
   // A vanity code works for anyone.
   const vanity = `gated-${Date.now().toString(36)}`;
   await alice.getByRole("button", { name: "Gated" }).click();
-  await alice.getByRole("menuitem", { name: "Server Settings" }).click();
+  await alice.getByRole("menuitem", { name: "Leaflet Settings" }).click();
   await alice.getByLabel("Vanity invite code").fill(vanity);
   await alice.getByRole("button", { name: "Save Changes" }).click();
   await expect(alice.getByText("Saved")).toBeVisible();

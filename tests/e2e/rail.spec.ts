@@ -4,7 +4,7 @@ import { createServer, register } from "./helpers";
 
 /** Server names in the rail, top to bottom (open folders included). */
 function railOrder(page: Page) {
-  return page.locator('nav[aria-label="Servers"] [data-rail-item] a[aria-label]').evaluateAll((els) => els.map((e) => e.getAttribute("aria-label")));
+  return page.locator('nav[aria-label="Leaflets"] [data-rail-item] a[aria-label]').evaluateAll((els) => els.map((e) => e.getAttribute("aria-label")));
 }
 
 test("rail: newest on top, drag to reorder, folders, My Guilds", async ({ browser }) => {
@@ -15,7 +15,7 @@ test("rail: newest on top, drag to reorder, folders, My Guilds", async ({ browse
   await expect.poll(() => railOrder(page)).toEqual([c, b, a]);
 
   // Drag Alpha to the top; the order survives a reload.
-  const slot = (name: string) => page.locator('nav[aria-label="Servers"] [data-rail-item]').filter({ has: page.getByRole("link", { name, exact: true }) });
+  const slot = (name: string) => page.locator('nav[aria-label="Leaflets"] [data-rail-item]').filter({ has: page.getByRole("link", { name, exact: true }) });
   await slot(a).dragTo(slot(c), { targetPosition: { x: 36, y: 2 } });
   await expect.poll(() => railOrder(page)).toEqual([a, c, b]);
   await page.reload();

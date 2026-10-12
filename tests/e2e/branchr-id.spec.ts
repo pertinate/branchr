@@ -46,10 +46,10 @@ test("federated server: sign in with Discord from the login screen, claim it, co
   const ctx = await browser.newContext();
   const page = await ctx.newPage();
   await page.goto("/#/login");
-  await page.getByLabel("Server", { exact: true }).fill(FED);
+  await page.getByLabel("Branch", { exact: true }).fill(FED);
   // Not signed in to branchr yet: Discord first, then straight on into the server.
   await page.getByRole("button", { name: "Sign in with Discord" }).click();
-  await expect(page.getByRole("heading", { name: "No servers yet" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "No leaflets yet" })).toBeVisible();
   const current = () => session(page);
   const first = await current();
   expect(first.url).toBe(FED);
@@ -61,7 +61,7 @@ test("federated server: sign in with Discord from the login screen, claim it, co
   expect(code).toMatch(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
   await createServer(page, "Federated home");
   await openUserSettings(page);
-  await page.getByLabel(/Claim a server you host/).fill(code.toLowerCase());
+  await page.getByLabel(/Claim a branch you run/).fill(code.toLowerCase());
   await page.getByRole("button", { name: "Claim" }).click();
   await expect(page.getByText("You now own e2e federated")).toBeVisible();
   await page.keyboard.press("Escape");
@@ -72,7 +72,7 @@ test("federated server: sign in with Discord from the login screen, claim it, co
   const run = Date.now().toString(36);
   const bad = await (await browser.newContext()).newPage();
   await bad.goto("/#/login");
-  await bad.getByLabel("Server", { exact: true }).fill(FED);
+  await bad.getByLabel("Branch", { exact: true }).fill(FED);
   await bad.getByRole("button", { name: "Register" }).click();
   await bad.getByLabel("Username").fill(`spammer_${run}`);
   await bad.getByLabel("Password").fill("correct horse battery");
@@ -95,32 +95,32 @@ test("federated server: sign in with Discord from the login screen, claim it, co
   await row.getByRole("button", { name: "Ban" }).click();
   await expect(row.getByText("Banned")).toBeVisible();
   await expect(bad.getByRole("heading", { name: /Welcome back|Create an account/ })).toBeVisible({ timeout: 30_000 });
-  await bad.getByLabel("Server", { exact: true }).fill(FED);
+  await bad.getByLabel("Branch", { exact: true }).fill(FED);
   await bad.getByLabel("Username").fill(`spammer_${run}`);
   await bad.getByLabel("Password").fill("correct horse battery");
   await bad.getByRole("button", { name: "Log In" }).click();
-  await expect(bad.getByText("you're banned from this host")).toBeVisible();
+  await expect(bad.getByText("you're banned from this branch")).toBeVisible();
 
   // Remove their server, then unban.
-  await admin.getByRole("tab", { name: "Servers" }).click();
-  await admin.getByLabel("Search servers").fill("Spam Palace");
+  await admin.getByRole("tab", { name: "Leaflets" }).click();
+  await admin.getByLabel("Search leaflets").fill("Spam Palace");
   await admin.getByRole("button", { name: "Delete Spam Palace" }).click();
   await expect(admin.getByTestId("host-guild")).toHaveCount(0);
   await admin.getByRole("tab", { name: "Members" }).click();
   await row.getByRole("button", { name: "Unban" }).click();
   await expect(row.getByRole("button", { name: "Ban" })).toBeVisible();
   await bad.getByRole("button", { name: "Log In" }).click();
-  await expect(bad.getByRole("heading", { name: "No servers yet" })).toBeVisible();
+  await expect(bad.getByRole("heading", { name: "No leaflets yet" })).toBeVisible();
 
   // The owner makes them a moderator: they can manage people, but not servers or the owner.
-  await row.getByLabel(`Host role for ${`spammer_${run}`}`).click();
+  await row.getByLabel(`Branch role for ${`spammer_${run}`}`).click();
   await page.getByRole("option", { name: "Moderator" }).click();
   await expect(row.locator("[data-slot=badge]").filter({ hasText: "Moderator" })).toBeVisible();
   await bad.getByRole("button", { name: "Your account" }).click({ button: "right" });
-  await bad.getByRole("menuitem", { name: "Manage Host" }).click();
+  await bad.getByRole("menuitem", { name: "Manage Branch" }).click();
   const modView = bad.getByTestId("host-admin");
   await expect(modView.getByText("You're a moderator here")).toBeVisible();
-  await expect(modView.getByRole("tab", { name: "Servers" })).toHaveCount(0);
+  await expect(modView.getByRole("tab", { name: "Leaflets" })).toHaveCount(0);
   await modView.getByRole("tab", { name: "Members" }).click();
   const ownerRow = modView.getByTestId("host-user").filter({ hasText: "Owner" });
   await expect(ownerRow).toBeVisible();
@@ -133,7 +133,7 @@ test("federated server: sign in with Discord from the login screen, claim it, co
   await forgetSessions(page);
   await page.goto("/#/login");
   await page.reload();
-  await page.getByLabel("Server", { exact: true }).fill(FED);
+  await page.getByLabel("Branch", { exact: true }).fill(FED);
   await page.getByRole("button", { name: "Sign in with Discord" }).click();
   await expect(page.getByRole("heading", { name: "Welcome to #general!" })).toBeVisible();
   expect((await current()).user.id).toBe(first.user.id);
@@ -153,7 +153,7 @@ test("federated server: a password account links to branchr and is reached by Di
   const ctx = await browser.newContext();
   const page = await ctx.newPage();
   await page.goto("/#/login");
-  await page.getByLabel("Server", { exact: true }).fill(FED);
+  await page.getByLabel("Branch", { exact: true }).fill(FED);
   await page.getByRole("button", { name: "Register" }).click();
   await page.getByLabel("Username").fill(`pw_${run}`);
   await page.getByLabel("Display name").fill("Password Person");
@@ -169,7 +169,7 @@ test("federated server: a password account links to branchr and is reached by Di
   await expect(page.getByText("Signed in to branchr as Link Tester")).toBeVisible();
   await openUserSettings(page);
   await page.getByTestId("branchr-account").getByRole("button", { name: "Link" }).click();
-  await expect(page.getByText("This server account is linked")).toBeVisible();
+  await expect(page.getByText("This password account is linked")).toBeVisible();
 
   // Someone else on this server can't take the same branchr account.
   const conflict = await page.evaluate(
@@ -201,7 +201,7 @@ test("federated server: a password account links to branchr and is reached by Di
   await forgetSessions(page);
   await page.goto("/#/login");
   await page.reload();
-  await page.getByLabel("Server", { exact: true }).fill(FED);
+  await page.getByLabel("Branch", { exact: true }).fill(FED);
   await page.getByRole("button", { name: "Sign in with Discord" }).click();
   await expect(page.getByRole("heading", { name: "Welcome to #general!" })).toBeVisible();
   const back = await current();
@@ -228,12 +228,12 @@ test("a new device reconnects to every host used with the branchr account", asyn
   // First device: Discord into one host, then connect a second the same way.
   const one = await (await browser.newContext()).newPage();
   await one.goto("/#/login");
-  await one.getByLabel("Server", { exact: true }).fill(FED);
+  await one.getByLabel("Branch", { exact: true }).fill(FED);
   await one.getByRole("button", { name: "Sign in with Discord" }).click();
-  await expect(one.getByRole("heading", { name: "No servers yet" })).toBeVisible();
-  await one.getByRole("button", { name: "Add a Server" }).click();
+  await expect(one.getByRole("heading", { name: "No leaflets yet" })).toBeVisible();
+  await one.getByRole("button", { name: "Add a Leaflet" }).click();
   await one.getByRole("tab", { name: "Connect" }).click();
-  await one.getByLabel("Host address").fill(HOME);
+  await one.getByLabel("Branch address").fill(HOME);
   await one.getByRole("button", { name: "Continue" }).click();
   await one.getByRole("button", { name: "Sign in with Discord" }).click();
   await expect(one).toHaveURL(/localhost-18080/);
@@ -243,9 +243,9 @@ test("a new device reconnects to every host used with the branchr account", asyn
   // A new device: sign in to one host, and the other comes along.
   const two = await (await browser.newContext()).newPage();
   await two.goto("/#/login");
-  await two.getByLabel("Server", { exact: true }).fill(FED);
+  await two.getByLabel("Branch", { exact: true }).fill(FED);
   await two.getByRole("button", { name: "Sign in with Discord" }).click();
-  await expect(two.getByRole("heading", { name: "No servers yet" })).toBeVisible();
+  await expect(two.getByRole("heading", { name: "No leaflets yet" })).toBeVisible();
   // Still on the host it signed in to.
   expect(two.url()).toContain("/localhost-18081");
   await two.getByRole("link", { name: "Explore" }).click();
@@ -258,9 +258,9 @@ test("a new device reconnects to every host used with the branchr account", asyn
   await expect(two.getByTestId("host-section")).toHaveCount(1);
   const three = await (await browser.newContext()).newPage();
   await three.goto("/#/login");
-  await three.getByLabel("Server", { exact: true }).fill(FED);
+  await three.getByLabel("Branch", { exact: true }).fill(FED);
   await three.getByRole("button", { name: "Sign in with Discord" }).click();
-  await expect(three.getByRole("heading", { name: "No servers yet" })).toBeVisible();
+  await expect(three.getByRole("heading", { name: "No leaflets yet" })).toBeVisible();
   await three.waitForTimeout(1500);
   expect((await sessions(three)).map((s) => s.url)).toEqual([FED]);
 

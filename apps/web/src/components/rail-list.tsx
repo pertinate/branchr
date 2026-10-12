@@ -267,7 +267,7 @@ function RailFolder({
   const { pings, unread } = useFolderStatus(folder.guilds);
   const names = useFolderNames(folder.guilds);
   const color = folder.color ?? FOLDER_COLORS[0];
-  const label = folder.name || "Server Folder";
+  const label = folder.name || "Leaflet Folder";
   const holdsActive = !!activeRef && folder.guilds.includes(activeRef);
   const toggle = () => useRailLayout.getState().updateFolder(folder.id, { open: !folder.open });
   const menu = (
@@ -363,7 +363,7 @@ function FolderSettings({ folder, onClose }: { folder: Folder | null; onClose: (
         >
           <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground uppercase">
             Folder name
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Server Folder" maxLength={40} aria-label="Folder name" />
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Leaflet Folder" maxLength={40} aria-label="Folder name" />
           </label>
           <div className="flex flex-col gap-1.5">
             <span className="text-xs font-semibold text-muted-foreground uppercase">Folder colour</span>

@@ -72,7 +72,7 @@ export function shouldGroup(prev: UiMessage | undefined, m: UiMessage) {
 }
 
 /** Friendly ways to say someone arrived (picked by message id, so it's stable). */
-const ARRIVALS = ["{} joined the server.", "{} just showed up.", "Welcome, {}!", "{} hopped in.", "Everyone welcome {}!"];
+const ARRIVALS = ["{} joined the leaflet.", "{} just showed up.", "Welcome, {}!", "{} hopped in.", "Everyone welcome {}!"];
 
 /** A system message: someone joined. */
 export const JoinMessage = memo(function JoinMessage({ message: m, guildId }: { message: UiMessage; guildId: string }) {

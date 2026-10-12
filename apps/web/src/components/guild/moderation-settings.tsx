@@ -60,7 +60,7 @@ function permDiff(old: string | null, now: string | null): string {
 }
 
 const VERBS: Record<AuditEntry["action"], string> = {
-  guild_update: "updated the server",
+  guild_update: "updated the leaflet",
   channel_create: "created the channel",
   channel_update: "updated the channel",
   channel_delete: "deleted the channel",

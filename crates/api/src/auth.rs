@@ -81,7 +81,7 @@ fn valid_username(u: &str) -> bool {
 async fn refuse_banned(state: &AppState, user: Id) -> AppResult<()> {
     let banned: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM instance_bans WHERE user_id = $1").bind(user.0).fetch_optional(&state.db).await?;
     match banned {
-        Some(_) => Err(AppError::BadRequest("you're banned from this host".into())),
+        Some(_) => Err(AppError::BadRequest("you're banned from this branch".into())),
         None => Ok(()),
     }
 }

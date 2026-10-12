@@ -34,8 +34,8 @@ export async function register(browser: Browser, name: string): Promise<Page> {
 }
 
 export async function createServer(page: Page, name: string): Promise<string> {
-  await page.getByRole("button", { name: "Add a Server" }).click();
-  await page.getByPlaceholder("Server name").fill(name);
+  await page.getByRole("button", { name: "Add a Leaflet" }).click();
+  await page.getByPlaceholder("Leaflet name").fill(name);
   await page.getByRole("button", { name: "Create" }).click();
   await expect(page.getByRole("heading", { name: "Welcome to #general!" })).toBeVisible();
   await page.getByRole("button", { name }).click();
@@ -48,10 +48,10 @@ export async function createServer(page: Page, name: string): Promise<string> {
 }
 
 export async function joinServer(page: Page, code: string) {
-  await page.getByRole("button", { name: "Add a Server" }).click();
+  await page.getByRole("button", { name: "Add a Leaflet" }).click();
   await page.getByRole("tab", { name: "Join" }).click();
   await page.getByPlaceholder("Invite code or link").fill(code);
-  await page.getByRole("button", { name: "Join Server" }).click();
+  await page.getByRole("button", { name: "Join Leaflet" }).click();
   await expect(page.getByRole("heading", { name: "Welcome to #general!" })).toBeVisible();
 }
 

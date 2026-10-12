@@ -3,6 +3,8 @@
 
 <p align="center">Self-hostable voice, video and chat, built for <b>uncapped, low-latency game and desktop streaming</b>. Desktop apps for Linux and Windows.</p>
 
+**Words used in the app:** a **branch** is a self-hosted branchr host (one running `api` + `sfu`); a **leaflet** is a community on a branch, what Discord calls a server. The code and API keep the older names (`instance`/host, `guild`).
+
 - **Backend (Rust)**: `api`, an axum REST API and realtime gateway on SQLite or Postgres; `sfu`, a str0m-based selective forwarding unit for voice, video and streams.
 - **Client**: Vite, React, TanStack Router, shadcn/ui and Tailwind v4. It ships as an **Electron AppImage** for Linux and also works as a web app served by the API.
 - **Emotes** come from [7TV](https://7tv.app/emotes), [BetterTTV](https://betterttv.com) and [FrankerFaceZ](https://www.frankerfacez.com). You can search 7TV and FFZ, paste a link to any emote, import a 7TV set or user, or import a Twitch channel's emotes from all three. The server only uses each provider's public API and identifies itself honestly (no browser impersonation). That's why BetterTTV has no search there: BTTV emotes come from a Twitch channel import, or from a link plus a name.

@@ -78,7 +78,7 @@ test("emotes: usable across servers, with source shown and no forging", async ({
   await expect(bobImg).toBeVisible();
   expect(await bobImg.getAttribute("src")).toContain("cdn.frankerfacez.com/emote/128054/");
   await bobImg.click();
-  await expect(bob.getByRole("dialog", { name: "Emote OMEGALUL" })).toContainText("A server you're not in");
+  await expect(bob.getByRole("dialog", { name: "Emote OMEGALUL" })).toContainText("A leaflet you're not in");
   await bob.keyboard.press("Escape");
 
   // Alice's card names the source server.

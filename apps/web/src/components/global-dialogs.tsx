@@ -145,7 +145,7 @@ function InviteDialog({ guildId, onClose }: { guildId: string; onClose: () => vo
         </div>
         {vanity && (
           <p className="text-sm text-muted-foreground">
-            Or share the server's own link:{" "}
+            Or share the branch's own link:{" "}
             <button className="font-mono text-primary hover:underline" onClick={() => void copy(vanity, "Copied invite link")}>
               {guild!.vanityCode}
             </button>

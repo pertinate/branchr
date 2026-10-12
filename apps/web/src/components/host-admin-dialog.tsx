@@ -41,9 +41,9 @@ export function HostAdminDialog({ onClose }: { onClose: () => void }) {
           <DialogTitle>Manage {hostOf(inst.url)}</DialogTitle>
           <DialogDescription>
             {role === "owner"
-              ? "You claimed this host: change its settings, appoint staff, ban people and remove servers."
+              ? "You claimed this branch: change its settings, appoint staff, ban people and remove leaflets."
               : role === "admin"
-                ? "You're an admin here: change its settings, ban people and remove servers."
+                ? "You're an admin here: change its settings, ban people and remove leaflets."
                 : "You're a moderator here: you can ban people."}
           </DialogDescription>
         </DialogHeader>
@@ -51,7 +51,7 @@ export function HostAdminDialog({ onClose }: { onClose: () => void }) {
           <TabsList>
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="members">Members</TabsTrigger>
-            {role !== "moderator" && <TabsTrigger value="servers">Servers</TabsTrigger>}
+            {role !== "moderator" && <TabsTrigger value="servers">Leaflets</TabsTrigger>}
           </TabsList>
           <TabsContent value="overview" className="overflow-y-auto">
             <Overview />
@@ -96,7 +96,7 @@ function Overview() {
     <div className="space-y-5 pt-4">
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <Stat label="People" value={o.users} />
-        <Stat label="Servers" value={o.guilds} />
+        <Stat label="Leaflets" value={o.guilds} />
         <Stat label="Messages" value={o.messages.toLocaleString()} />
         <Stat label="Files" value={formatBytes(o.attachmentBytes)} />
       </div>
@@ -156,7 +156,7 @@ function Members() {
   const setStaff = async (u: HostUser, role: string | null) => {
     try {
       await inst.api("PUT", `/admin/staff/${u.user.id}`, { role });
-      toast.success(role ? `${u.user.displayName} is now ${role === "admin" ? "an admin" : "a moderator"}` : `${u.user.displayName} has no host role`);
+      toast.success(role ? `${u.user.displayName} is now ${role === "admin" ? "an admin" : "a moderator"}` : `${u.user.displayName} has no branch role`);
       refresh();
     } catch (e) {
       toast.error((e as Error).message);
@@ -198,13 +198,13 @@ function Members() {
                 {u.banned && <Badge variant="destructive">Banned</Badge>}
               </div>
               <div className="truncate text-xs text-muted-foreground">
-                @{u.user.username} · {u.guilds} server{u.guilds === 1 ? "" : "s"} · joined {new Date(u.createdAt).toLocaleDateString()}
+                @{u.user.username} · {u.guilds} leaflet{u.guilds === 1 ? "" : "s"} · joined {new Date(u.createdAt).toLocaleDateString()}
                 {u.banReason && ` · "${u.banReason}"`}
               </div>
             </div>
             {myRole === "owner" && !u.owner && (
               <Select value={u.role ?? "none"} onValueChange={(v) => void setStaff(u, v === "none" ? null : v)}>
-                <SelectTrigger size="sm" className="w-32" aria-label={`Host role for ${u.user.displayName}`}>
+                <SelectTrigger size="sm" className="w-32" aria-label={`Branch role for ${u.user.displayName}`}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -252,7 +252,7 @@ function Servers() {
     <div className="space-y-3 pt-4">
       <div className="relative">
         <Search className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search servers" className="pl-8" aria-label="Search servers" />
+        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search leaflets" className="pl-8" aria-label="Search leaflets" />
       </div>
       <div className="divide-y divide-border">
         {guilds.data?.map((g) => (
@@ -268,7 +268,7 @@ function Servers() {
             </Button>
           </div>
         ))}
-        {guilds.data?.length === 0 && <p className="py-6 text-center text-sm text-muted-foreground">No servers.</p>}
+        {guilds.data?.length === 0 && <p className="py-6 text-center text-sm text-muted-foreground">No leaflets.</p>}
       </div>
     </div>
   );

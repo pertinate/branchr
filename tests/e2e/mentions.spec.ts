@@ -120,7 +120,7 @@ test("mentions: taking Mention @everyone from the @everyone role stops members p
   await expect(alice.locator("[data-mention='everyone']")).toHaveCount(1);
 
   await alice.getByRole("button", { name: "Quiet" }).click();
-  await alice.getByRole("menuitem", { name: "Server Settings" }).click();
+  await alice.getByRole("menuitem", { name: "Leaflet Settings" }).click();
   await alice.getByRole("tab", { name: "Roles" }).click();
   // @everyone is selected first.
   await alice.getByLabel("Mention @everyone and @here").click();

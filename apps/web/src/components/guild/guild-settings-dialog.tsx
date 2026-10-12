@@ -40,7 +40,7 @@ export function GuildSettingsDialog({ guildId, tab, onClose }: { guildId: string
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="flex h-[80vh] flex-col sm:max-w-3xl">
         <DialogHeader>
-          <DialogTitle>Server Settings</DialogTitle>
+          <DialogTitle>Leaflet Settings</DialogTitle>
         </DialogHeader>
         <Tabs defaultValue={first} className="flex min-h-0 flex-1 flex-col">
           <TabsList>
@@ -118,7 +118,7 @@ function Overview({ guildId }: { guildId: string }) {
     <div className="max-w-md space-y-4 pt-4 pb-2">
       <div className="flex flex-wrap gap-8">
         <PicturePicker
-          label="Server icon"
+          label="Leaflet icon"
           shape="square"
           url={guild?.iconUrl}
           hint="Cropped to a square."
@@ -135,12 +135,12 @@ function Overview({ guildId }: { guildId: string }) {
         />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="guild-name">Server name</Label>
+        <Label htmlFor="guild-name">Leaflet name</Label>
         <Input id="guild-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={100} />
       </div>
       <div className="space-y-2">
         <Label htmlFor="guild-description">Description</Label>
-        <Textarea id="guild-description" value={description} onChange={(e) => setDescription(e.target.value)} maxLength={300} rows={3} placeholder="What's this server about?" />
+        <Textarea id="guild-description" value={description} onChange={(e) => setDescription(e.target.value)} maxLength={300} rows={3} placeholder="What's this leaflet about?" />
       </div>
       <div className="space-y-2">
         <Label htmlFor="system-channel">Join messages</Label>
@@ -160,14 +160,14 @@ function Overview({ guildId }: { guildId: string }) {
       </div>
       <div className="space-y-2">
         <Label htmlFor="vanity-code">Vanity invite code</Label>
-        <Input id="vanity-code" value={vanity} onChange={(e) => setVanity(e.target.value)} maxLength={32} placeholder="my-server" className="font-mono" />
-        <p className="text-xs text-muted-foreground">A permanent invite anyone can use, like {inst.url}/#/invite/my-server.</p>
+        <Input id="vanity-code" value={vanity} onChange={(e) => setVanity(e.target.value)} maxLength={32} placeholder="my-leaflet" className="font-mono" />
+        <p className="text-xs text-muted-foreground">A permanent invite anyone can use, like {inst.url}/#/invite/my-leaflet.</p>
       </div>
       <div className="space-y-2 rounded-md border border-border p-3">
         <div className="flex items-start justify-between gap-4">
           <div>
             <Label htmlFor="discoverable">Show in Explore</Label>
-            <p className="mt-0.5 text-xs text-muted-foreground">Anyone on branchr can find this server and join it. Needs this host to be connected to branchr.</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">Anyone on branchr can find this leaflet and join it. Needs this branch to be connected to branchr.</p>
           </div>
           <Switch id="discoverable" checked={discoverable} onCheckedChange={setDiscoverable} />
         </div>
@@ -372,7 +372,7 @@ function Emotes({ guildId, canManage }: { guildId: string; canManage: boolean })
       )}
       <div className="flex min-h-0 flex-col gap-2">
         <div className="flex items-center justify-between gap-2">
-          <div className="shrink-0 text-sm font-semibold">Server emotes ({emotes.length})</div>
+          <div className="shrink-0 text-sm font-semibold">Leaflet emotes ({emotes.length})</div>
           <Input className="h-7 max-w-40 text-xs" placeholder="Filter" value={filter} onChange={(e) => setFilter(e.target.value)} />
         </div>
         <div className="grid min-h-0 flex-1 auto-rows-min grid-cols-4 gap-2 overflow-y-auto rounded-md bg-muted p-2" data-testid="server-emotes">
