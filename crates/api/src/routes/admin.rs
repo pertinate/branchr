@@ -130,7 +130,7 @@ pub async fn users(State(state): State<AppState>, Auth(user): Auth, Query(q): Qu
         rows.into_iter()
             .map(|r| HostUser {
                 owner: owner == Some(Id(r.id)),
-                user: proto::models::User { id: Id(r.id), username: r.username, display_name: r.display_name, avatar_url: r.avatar_url },
+                user: proto::models::User { id: Id(r.id), username: r.username, display_name: r.display_name, avatar_url: r.avatar_url, global_id: r.global_id.clone() },
                 created_at: r.created_at,
                 linked: r.global_id.is_some(),
                 guilds: r.guilds as u32,

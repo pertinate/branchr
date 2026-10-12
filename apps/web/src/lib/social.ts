@@ -232,6 +232,8 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
 }
 
 export const addFriend = (handle: string) => call<void>("POST", "/relationships", { handle });
+/** By account id (from a profile card); accepts theirs if they already asked. */
+export const addFriendById = (id: string) => call<void>("POST", "/relationships", { id });
 export const acceptFriend = (id: string) => call<void>("PUT", `/relationships/${id}`, { kind: "friend" });
 export const blockPerson = (id: string) => call<void>("PUT", `/relationships/${id}`, { kind: "blocked" });
 /** Unfriend, cancel, decline or unblock. */

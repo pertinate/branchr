@@ -104,13 +104,21 @@ pub async fn list(State(s): State<AppState>, headers: HeaderMap) -> Result<Json<
 
 #[derive(Deserialize)]
 pub struct AddFriend {
-    handle: String,
+    /// By handle (typed in), or
+    handle: Option<String>,
+    /// by account id (from a profile card).
+    id: Option<String>,
 }
 
-/// Sends a friend request by handle, or accepts theirs if they already asked.
+/// Sends a friend request by handle or account id, or accepts theirs if they already asked.
 pub async fn add(State(s): State<AppState>, headers: HeaderMap, Json(body): Json<AddFriend>) -> Result<()> {
     let me = authed(&s, &headers).await?;
-    let handle = body.handle.trim().trim_start_matches('@').to_lowercase();
+    if let Some(id) = body.id {
+        let other = parse_id(&id)?;
+        person(&s, other).await?;
+        return request(&s, me, other).await.map_err(|e| if matches!(e, Error::NotFound) { bad("invalid_request", "couldn't send a friend request") } else { e });
+    }
+    let handle = body.handle.unwrap_or_default().trim().trim_start_matches('@').to_lowercase();
     let other: Option<(Uuid,)> = sqlx::query_as("SELECT id FROM accounts WHERE handle = $1").bind(&handle).fetch_optional(&s.db).await?;
     // Unknown and blocked look the same, so a block can't be detected.
     let nope = || bad("invalid_request", format!("couldn't send a friend request to {handle}; check the name"));

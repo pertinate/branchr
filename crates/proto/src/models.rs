@@ -19,6 +19,9 @@ wire! {
         pub username: String,
         pub display_name: String,
         pub avatar_url: Option<String>,
+        /// Their branchr account, when they signed in with one (to befriend or message them).
+        #[serde(default)]
+        pub global_id: Option<String>,
     }
 
     pub struct Guild {

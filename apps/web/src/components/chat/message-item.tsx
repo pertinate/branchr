@@ -11,6 +11,7 @@ import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator,
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import { UserAvatar, userColor } from "@/components/user-avatar";
+import { UserCardPopover } from "@/components/user-card";
 import { copy, copyImage, saveFile } from "@/lib/actions";
 import { api } from "@/lib/api";
 import { emotePage, providerNames } from "@/lib/emotes";
@@ -272,9 +273,11 @@ export const MessageItem = memo(function MessageItem({
             <span className="hidden pt-1 text-[10px] text-muted-foreground group-hover:block">{timeFmt.format(new Date(msgTime(m)))}</span>
           ) : (
             <Menu items={<UserMenuItems guildId={guildId} userId={m.author.id} />}>
-              <span className="block cursor-pointer">
-                <UserAvatar user={m.author} size={40} className="mt-0.5" />
-              </span>
+              <UserCardPopover guildId={guildId} user={m.author}>
+                <button type="button" aria-label={`${nick ?? m.author.displayName}'s profile`} className="block cursor-pointer">
+                  <UserAvatar user={m.author} size={40} className="mt-0.5" />
+                </button>
+              </UserCardPopover>
             </Menu>
           )}
         </div>
@@ -282,9 +285,11 @@ export const MessageItem = memo(function MessageItem({
           {!grouped && (
             <div className="flex items-baseline gap-2">
               <Menu items={<UserMenuItems guildId={guildId} userId={m.author.id} />}>
-                <span className="cursor-pointer font-medium hover:underline" style={{ color: tint ?? userColor(m.author.id) }}>
-                  {nick ?? m.author.displayName}
-                </span>
+                <UserCardPopover guildId={guildId} user={m.author}>
+                  <span className="cursor-pointer font-medium hover:underline" style={{ color: tint ?? userColor(m.author.id) }}>
+                    {nick ?? m.author.displayName}
+                  </span>
+                </UserCardPopover>
               </Menu>
               <span className="text-xs text-muted-foreground">{formatTime(msgTime(m))}</span>
             </div>

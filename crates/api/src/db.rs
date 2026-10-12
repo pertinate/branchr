@@ -113,11 +113,12 @@ pub struct UserRow {
     pub username: String,
     pub display_name: String,
     pub avatar_url: Option<String>,
+    pub global_id: Option<String>,
 }
 
 impl From<UserRow> for User {
     fn from(r: UserRow) -> Self {
-        User { id: Id(r.id), username: r.username, display_name: r.display_name, avatar_url: r.avatar_url }
+        User { id: Id(r.id), username: r.username, display_name: r.display_name, avatar_url: r.avatar_url, global_id: r.global_id }
     }
 }
 
@@ -268,7 +269,7 @@ fn snapshot<T: serde::de::DeserializeOwned>(json: Option<&str>) -> Vec<T> {
     json.and_then(|j| serde_json::from_str(j).ok()).unwrap_or_default()
 }
 
-pub const USER_COLS: &str = "u.id, u.username, u.display_name, u.avatar_url";
+pub const USER_COLS: &str = "u.id, u.username, u.display_name, u.avatar_url, u.global_id";
 
 pub async fn user(db: &Db, id: Id) -> sqlx::Result<User> {
     sqlx::query_as::<_, UserRow>(AssertSqlSafe(format!("SELECT {USER_COLS} FROM users u WHERE u.id = $1")))

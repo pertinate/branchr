@@ -53,6 +53,13 @@ test("roles: a moderator role can delete others' messages and is listed separate
   await expect(memberList(bob).getByText("Mods — 1")).toBeVisible();
   await expect(memberList(alice).getByText("role_b")).toHaveCSS("color", "rgb(231, 76, 60)");
 
+  // His card lists the role; he's a password account, so no friend button.
+  await memberList(alice).getByText("role_b").click();
+  const card = alice.getByTestId("user-card");
+  await expect(card.getByText("Mods")).toBeVisible();
+  await expect(card.getByText(/password account/)).toBeVisible();
+  await alice.keyboard.press("Escape");
+
   // Now he can delete Alice's message, and it goes for her too.
   await bob.getByText("owner says hi").click({ button: "right" });
   await item(bob, "Delete Message").click();
