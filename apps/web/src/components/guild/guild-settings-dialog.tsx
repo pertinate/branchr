@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useDebounced } from "@/hooks/use-debounced";
 import { AuditLogSettings, BansSettings } from "@/components/guild/moderation-settings";
@@ -48,7 +49,7 @@ export function GuildSettingsDialog({ guildId, tab, onClose }: { guildId: string
             {canAudit && <TabsTrigger value="audit">Audit Log</TabsTrigger>}
           </TabsList>
           {canGuild && (
-            <TabsContent value="overview">
+            <TabsContent value="overview" className="min-h-0 flex-1 overflow-y-auto">
               <Overview guildId={guildId} />
             </TabsContent>
           )}
@@ -84,6 +85,8 @@ function Overview({ guildId }: { guildId: string }) {
   const [description, setDescription] = useState(guild?.description ?? "");
   const [vanity, setVanity] = useState(guild?.vanityCode ?? "");
   const [system, setSystem] = useState(guild?.systemChannelId ?? "none");
+  const [discoverable, setDiscoverable] = useState(guild?.discoverable ?? false);
+  const [tags, setTags] = useState((guild?.tags ?? []).join(", "));
   const textChannels = useApp(useShallow((s) => Object.values(s.channels).filter((c) => c.guildId === guildId && c.kind === "text")));
   const applied = (g: Guild) => inst.app.getState().apply({ t: "GUILD_UPDATE", d: g });
   const save = async () => {
@@ -94,6 +97,8 @@ function Overview({ guildId }: { guildId: string }) {
           description,
           vanityCode: vanity.trim() || null,
           systemChannelId: system === "none" ? null : system,
+          discoverable,
+          tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
         }),
       );
       toast.success("Saved");
@@ -102,7 +107,7 @@ function Overview({ guildId }: { guildId: string }) {
     }
   };
   return (
-    <div className="max-w-md space-y-4 overflow-y-auto pt-4">
+    <div className="max-w-md space-y-4 pt-4 pb-2">
       <div className="flex flex-wrap gap-8">
         <PicturePicker
           label="Server icon"
@@ -149,6 +154,18 @@ function Overview({ guildId }: { guildId: string }) {
         <Label htmlFor="vanity-code">Vanity invite code</Label>
         <Input id="vanity-code" value={vanity} onChange={(e) => setVanity(e.target.value)} maxLength={32} placeholder="my-server" className="font-mono" />
         <p className="text-xs text-muted-foreground">A permanent invite anyone can use, like {inst.url}/#/invite/my-server.</p>
+      </div>
+      <div className="space-y-2 rounded-md border border-border p-3">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <Label htmlFor="discoverable">Show in Explore</Label>
+            <p className="mt-0.5 text-xs text-muted-foreground">Anyone on branchr can find this server and join it. Needs this host to be connected to branchr.</p>
+          </div>
+          <Switch id="discoverable" checked={discoverable} onCheckedChange={setDiscoverable} />
+        </div>
+        {discoverable && (
+          <Input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="Tags, comma separated (up to 5)" aria-label="Explore tags" />
+        )}
       </div>
       <Button onClick={save}>Save Changes</Button>
     </div>

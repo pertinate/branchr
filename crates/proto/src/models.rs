@@ -36,6 +36,10 @@ wire! {
         pub system_channel_id: Option<Id>,
         /// A permanent invite code of the server's choosing.
         pub vanity_code: Option<String>,
+        /// Listed in Explore (when the host is connected to branchr ID).
+        pub discoverable: bool,
+        /// For Explore: up to five, lowercase.
+        pub tags: Vec<String>,
     }
 
     /// A guild role. `@everyone` is the role whose id is the guild's, at position 0.

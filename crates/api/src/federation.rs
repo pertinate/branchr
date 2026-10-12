@@ -108,6 +108,19 @@ impl Federation {
         &self.id_url
     }
 
+    /// Sends this host's published servers to branchr ID (all of them, replacing the last set).
+    pub async fn publish(&self, servers: &[proto::social::PublishedServer], public_url: &str, name: &str) -> anyhow::Result<()> {
+        let Some(id) = self.identity() else { return Ok(()) };
+        self.http
+            .put(format!("{}/instances/{}/listings", self.id_url, id.instance_id))
+            .bearer_auth(&id.secret)
+            .json(&serde_json::json!({ "servers": servers, "publicUrl": public_url, "name": name }))
+            .send()
+            .await?
+            .error_for_status()?;
+        Ok(())
+    }
+
     pub fn identity(&self) -> Option<Identity> {
         self.identity.read().clone()
     }

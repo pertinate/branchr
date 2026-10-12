@@ -23,6 +23,8 @@ pub struct State {
     pub storage: crate::storage::Storage,
     pub hub: Hub,
     pub perms: crate::perms::Perms,
+    /// Wakes the Explore publisher when a server's listing changes.
+    pub discovery_changed: tokio::sync::Notify,
     pub config: Config,
     pub ids: IdGen,
     pub emotes: EmoteProviders,

@@ -100,6 +100,8 @@ pub struct PatchGuild {
     /// Absent leaves it; `null` or "" removes it.
     #[serde(default, deserialize_with = "present")]
     vanity_code: Option<Option<String>>,
+    discoverable: Option<bool>,
+    tags: Option<Vec<String>>,
 }
 
 fn present<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(d: D) -> Result<Option<Option<T>>, D::Error> {
@@ -155,6 +157,17 @@ pub async fn patch(
                 _ => e.into(),
             })?;
     }
+    if let Some(tags) = body.tags {
+        let tags: Vec<String> = tags.iter().map(|t| t.trim().to_lowercase()).filter(|t| !t.is_empty()).collect();
+        if tags.len() > 5 || tags.iter().any(|t| t.chars().count() > 24 || t.contains(',')) {
+            return Err(bad("up to 5 tags, each up to 24 characters"));
+        }
+        sqlx::query("UPDATE guilds SET tags = $1 WHERE id = $2").bind((!tags.is_empty()).then(|| tags.join(","))).bind(gid.0).execute(&state.db).await?;
+    }
+    if let Some(on) = body.discoverable {
+        sqlx::query("UPDATE guilds SET discoverable = $1 WHERE id = $2").bind(on).bind(gid.0).execute(&state.db).await?;
+        state.discovery_changed.notify_one();
+    }
     if let Some(icon) = body.icon_url {
         sqlx::query("UPDATE guilds SET icon_url = $1 WHERE id = $2").bind(icon).bind(gid.0).execute(&state.db).await?;
     }
@@ -164,7 +177,8 @@ pub async fn patch(
         .change("icon", before.icon_url.as_ref(), g.icon_url.as_ref())
         .change("description", before.description.as_ref(), g.description.as_ref())
         .change("vanity code", before.vanity_code.as_ref(), g.vanity_code.as_ref())
-        .change("system channel", before.system_channel_id, g.system_channel_id);
+        .change("system channel", before.system_channel_id, g.system_channel_id)
+        .change("in Explore", Some(before.discoverable), Some(g.discoverable));
     if !entry.changes.is_empty() {
         audit::log(&state, gid, user, entry).await;
     }

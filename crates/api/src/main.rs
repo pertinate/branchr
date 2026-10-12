@@ -2,6 +2,7 @@ mod audit;
 mod auth;
 mod config;
 mod db;
+mod discovery;
 mod emote_providers;
 mod error;
 mod federation;
@@ -74,6 +75,7 @@ async fn main() -> anyhow::Result<()> {
         storage,
         hub: Default::default(),
         perms: Default::default(),
+        discovery_changed: Default::default(),
         ids: IdGen::new(worker),
         emotes: emote_providers::EmoteProviders::new(),
         sessions: DashMap::new(),
@@ -141,6 +143,7 @@ async fn main() -> anyhow::Result<()> {
 
     tokio::spawn(attachments::gc(state.clone()));
     tokio::spawn(audit::trim(state.clone()));
+    tokio::spawn(discovery::run(state.clone()));
 
     let mut app = Router::new().nest("/api", api).route("/gateway", get(gateway::upgrade));
 

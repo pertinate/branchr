@@ -184,3 +184,28 @@ pub enum SocialOp {
     Typing { channel_id: Id },
     Ack { channel_id: Id, message_id: Id },
 }
+
+wire! {
+    /// A server a host publishes for people to find (from the host to branchr ID).
+    pub struct PublishedServer {
+        /// The guild's id on its host.
+        pub guild_id: Id,
+        pub name: String,
+        pub description: Option<String>,
+        /// Absolute.
+        pub icon_url: Option<String>,
+        pub tags: Vec<String>,
+        pub members: u32,
+        pub online: u32,
+        /// A permanent invite code on that host.
+        pub invite: String,
+    }
+
+    /// A server in Explore.
+    pub struct Listing {
+        pub server: PublishedServer,
+        /// The host's address, which the invite is for.
+        pub host_url: String,
+        pub host_name: String,
+    }
+}

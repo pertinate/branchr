@@ -13,4 +13,12 @@ systemChannelId: Id | null,
 /**
  * A permanent invite code of the server's choosing.
  */
-vanityCode: string | null, };
+vanityCode: string | null, 
+/**
+ * Listed in Explore (when the host is connected to branchr ID).
+ */
+discoverable: boolean, 
+/**
+ * For Explore: up to five, lowercase.
+ */
+tags: Array<string>, };

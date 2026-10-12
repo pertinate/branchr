@@ -1,6 +1,6 @@
 import type { ReadyGuild } from "@app/protocol";
 import { Link, useNavigate, useParams, useRouterState } from "@tanstack/react-router";
-import { Copy, LogOut, MessagesSquare, Plus, Settings, Volume2 } from "lucide-react";
+import { Compass, Copy, LogOut, MessagesSquare, Plus, Settings, Volume2 } from "lucide-react";
 import { memo, useState } from "react";
 import { toast } from "sonner";
 
@@ -169,6 +169,7 @@ export function ServerRail() {
     <nav aria-label="Servers" className="relative flex w-[72px] shrink-0 flex-col items-center py-3">
       <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-2 overflow-y-auto pb-3">
         <HomeButton />
+        <ExploreButton />
         <div className="mx-auto h-0.5 w-8 shrink-0 rounded bg-accent" />
         {ids.map((id, i) => {
           const inst = instance(id);
@@ -351,6 +352,28 @@ function HomeButton() {
         </Link>
       </TooltipTrigger>
       <TooltipContent side="right">Direct Messages</TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** Explore: servers from every host that chose to be listed. */
+function ExploreButton() {
+  const active = useRouterState({ select: (s) => s.location.pathname === "/explore" });
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Link to="/explore" aria-label="Explore" className="group relative flex w-full justify-center">
+          <div
+            className={cn(
+              "grid size-12 place-items-center transition-all",
+              active ? "rounded-2xl bg-online text-white" : "rounded-3xl bg-background text-online group-hover:rounded-2xl group-hover:bg-online group-hover:text-white",
+            )}
+          >
+            <Compass className="size-6" />
+          </div>
+        </Link>
+      </TooltipTrigger>
+      <TooltipContent side="right">Explore</TooltipContent>
     </Tooltip>
   );
 }

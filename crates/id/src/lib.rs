@@ -3,6 +3,7 @@
 
 pub mod calls;
 pub mod config;
+pub mod discovery;
 pub mod discord;
 pub mod error;
 pub mod gateway;
@@ -95,6 +96,8 @@ pub fn router(state: AppState) -> Router {
         .route("/instances/{id}/claim-code", post(instances::new_claim_code))
         .route("/instances/{id}/token", post(instances::token))
         .route("/claims", post(instances::claim))
+        .route("/instances/{id}/listings", axum::routing::put(discovery::publish))
+        .route("/discover", get(discovery::search))
         .route("/.well-known/jwks.json", get(|s: axum::extract::State<AppState>| async move { axum::Json(s.keys.jwks()) }))
         .route("/health", get(|| async { "ok" }))
         .layer(cors)

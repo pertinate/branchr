@@ -220,6 +220,8 @@ struct HostGuildRow {
     description: Option<String>,
     system_channel_id: Option<i64>,
     vanity_code: Option<String>,
+    discoverable: DbBool,
+    tags: Option<String>,
     members: i64,
     channels: i64,
 }
@@ -228,7 +230,7 @@ pub async fn guilds(State(state): State<AppState>, Auth(user): Auth, Query(q): Q
     require_role(&state, user, HostRole::Admin).await?;
     let pattern = format!("%{}%", q.q.trim().replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_"));
     let rows: Vec<HostGuildRow> = sqlx::query_as(
-        "SELECT g.id AS gid, g.name, g.icon_url, g.owner_id, g.banner_url, g.description, g.system_channel_id, g.vanity_code,
+        "SELECT g.id AS gid, g.name, g.icon_url, g.owner_id, g.banner_url, g.description, g.system_channel_id, g.vanity_code, g.discoverable, g.tags,
                 (SELECT count(*) FROM members m WHERE m.guild_id = g.id) AS members,
                 (SELECT count(*) FROM channels c WHERE c.guild_id = g.id) AS channels
          FROM guilds g WHERE lower(g.name) LIKE lower($1) ESCAPE '\\' ORDER BY g.id DESC LIMIT $2 OFFSET $3",
@@ -251,6 +253,8 @@ pub async fn guilds(State(state): State<AppState>, Auth(user): Auth, Query(q): Q
                 description: r.description,
                 system_channel_id: r.system_channel_id.map(Id),
                 vanity_code: r.vanity_code,
+                discoverable: r.discoverable.0,
+                tags: db::split_tags(r.tags.as_deref()),
             },
             members: r.members as u32,
             channels: r.channels as u32,

@@ -132,6 +132,12 @@ struct GuildRow {
     description: Option<String>,
     system_channel_id: Option<i64>,
     vanity_code: Option<String>,
+    discoverable: DbBool,
+    tags: Option<String>,
+}
+
+pub fn split_tags(tags: Option<&str>) -> Vec<String> {
+    tags.map(|t| t.split(',').map(str::trim).filter(|t| !t.is_empty()).map(String::from).collect()).unwrap_or_default()
 }
 
 impl From<GuildRow> for Guild {
@@ -145,6 +151,8 @@ impl From<GuildRow> for Guild {
             description: r.description,
             system_channel_id: r.system_channel_id.map(Id),
             vanity_code: r.vanity_code,
+            discoverable: r.discoverable.0,
+            tags: split_tags(r.tags.as_deref()),
         }
     }
 }
@@ -280,7 +288,7 @@ pub async fn user(db: &Db, id: Id) -> sqlx::Result<User> {
 }
 
 pub async fn guild(db: &Db, id: Id) -> sqlx::Result<Guild> {
-    sqlx::query_as::<_, GuildRow>("SELECT id, name, icon_url, owner_id, banner_url, description, system_channel_id, vanity_code FROM guilds WHERE id = $1")
+    sqlx::query_as::<_, GuildRow>("SELECT id, name, icon_url, owner_id, banner_url, description, system_channel_id, vanity_code, discoverable, tags FROM guilds WHERE id = $1")
         .bind(id.0)
         .fetch_one(db)
         .await

@@ -85,7 +85,7 @@ pub async fn register(State(s): State<AppState>, Json(b): Json<Register>) -> Res
 }
 
 /// The instance behind `Authorization: Bearer <instance secret>`.
-async fn instance_auth(s: &AppState, id: Uuid, headers: &HeaderMap) -> Result<()> {
+pub async fn instance_auth(s: &AppState, id: Uuid, headers: &HeaderMap) -> Result<()> {
     let secret = headers
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
