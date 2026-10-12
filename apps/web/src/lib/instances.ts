@@ -61,7 +61,9 @@ export function normalizeUrl(url: string): string {
 
 /** The address the login screen suggests: this page's own server when served by one. */
 export const defaultServerUrl =
-  typeof window !== "undefined" && window.location.protocol.startsWith("http") && !import.meta.env.DEV ? window.location.origin : "http://localhost:8080";
+  typeof window !== "undefined" && window.location.protocol.startsWith("http") && !import.meta.env.DEV
+    ? window.location.origin
+    : ((import.meta.env.VITE_DEFAULT_SERVER as string | undefined) ?? "http://localhost:8080");
 
 // Before multiple instances, one session lived under "auth" and read state under "lastRead".
 function migrateSingleSession() {

@@ -211,15 +211,16 @@ The app enables VA-API encode/decode, PipeWire capture (Wayland portal picker), 
 
 ```sh
 pnpm install
-pnpm dev                    # Electron + Vite with HMR; also starts the api (:8080) and sfu (:8090)
-                            # unless they're already running (DEV_SERVERS=0 to skip)
-pnpm dev:web                # just the web client → http://localhost:5173 (run the api and sfu yourself:
-                            # cargo run -p api, cargo run -p sfu)
+pnpm dev                    # Electron + Vite with HMR; also starts whatever isn't running yet:
+                            # branchr ID (:8070), the api (:8080) and the sfu (:8090). DEV_SERVERS=0 skips.
+pnpm dev:web                # just the web client → http://localhost:5173
 
 pnpm gen:protocol           # regenerate TS types after changing crates/proto
-pnpm test:e2e               # Playwright: starts api, sfu and vite automatically
+pnpm test:e2e               # Playwright: its own api, sfu, branchr ID and vite on 18xxx ports
 cargo test --workspace
 ```
+
+With `~/.config/branchr/id.env` present (see branchr ID below), `pnpm dev` signs in with Discord by default: it runs branchr ID against real Discord and the api in `AUTH_MODE=both`, so server accounts still work too. In the dev Electron app, sign-in opens in an app window (only installed builds handle `branchr://` links). The api prints a claim code on first start; claim the host with it to manage it. Tests never touch these ports, so the dev app keeps working during a test run.
 
 E2E against a deployed instance: media needs a secure origin, so tunnel to localhost first.
 

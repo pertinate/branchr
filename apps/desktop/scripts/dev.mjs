@@ -1,5 +1,7 @@
 // One command dev loop: Vite dev server for the UI + Electron pointed at it.
 import { spawn } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 
@@ -23,10 +25,10 @@ async function up(url) {
     return false;
   }
 }
-async function ensureBackend(name, health, env) {
+async function ensureBackend(name, health, env, extra = []) {
   if (process.env.DEV_SERVERS === "0" || (await up(health))) return;
   console.log(`[dev] starting ${name} (cargo run -p ${name})`);
-  const p = spawn("cargo", ["run", "-q", "-p", name], { cwd: repo, stdio: "inherit", env: { ...process.env, ...env } });
+  const p = spawn("cargo", ["run", "-q", "-p", name, ...extra], { cwd: repo, stdio: "inherit", env: { ...process.env, ...env } });
   backends.push(p);
   for (let i = 0; i < 600 && p.exitCode === null; i++) {
     if (await up(health)) return;
@@ -34,8 +36,44 @@ async function ensureBackend(name, health, env) {
   }
   console.error(`[dev] ${name} didn't come up; check the output above`);
 }
+// branchr ID with real Discord sign-in, from ~/.config/branchr/id.env (DISCORD_CLIENT_ID,
+// DISCORD_CLIENT_SECRET, DATABASE_URL; see scripts/dev-id.sh). Without it, password accounts only.
+function idEnv() {
+  const file = process.env.BRANCHR_ID_ENV ?? path.join(os.homedir(), ".config/branchr/id.env");
+  if (!existsSync(file)) return null;
+  const env = {};
+  for (const line of readFileSync(file, "utf8").split("\n")) {
+    const at = line.indexOf("=");
+    if (at > 0 && !line.startsWith("#")) env[line.slice(0, at).trim()] = line.slice(at + 1).trim();
+  }
+  return env.DISCORD_CLIENT_ID && env.DATABASE_URL ? env : null;
+}
+const id = idEnv();
+if (id) {
+  await ensureBackend("id", "http://localhost:8070/health", {
+    ...id,
+    ID_BIND: "127.0.0.1:8070",
+    PUBLIC_URL: "http://localhost:8070",
+    ALLOWED_REDIRECTS: "branchr://auth/callback,http://localhost:5173/",
+  }, ["--bin", "branchr-id"]);
+} else {
+  console.log("[dev] no ~/.config/branchr/id.env: Discord sign-in is off (password accounts only)");
+}
 await Promise.all([
-  ensureBackend("api", "http://localhost:8080/api/health", {}),
+  ensureBackend(
+    "api",
+    "http://localhost:8080/api/health",
+    id
+      ? {
+          // Discord (through branchr ID) first, server accounts still allowed.
+          AUTH_MODE: "both",
+          BRANCHR_ID_URL: "http://localhost:8070",
+          PUBLIC_URL: "http://localhost:8080",
+          INSTANCE_NAME: "dev",
+          CLAIM_FILE: path.join(repo, "data/claim-code.txt"),
+        }
+      : {},
+  ),
   ensureBackend("sfu", "http://localhost:8090/health", { SFU_PUBLIC_IP: process.env.SFU_PUBLIC_IP ?? "127.0.0.1" }),
 ]);
 

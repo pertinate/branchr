@@ -36,6 +36,8 @@ test("desktop: switching channels and disconnect are stable", async () => {
   const warnings: string[] = [];
   win.on("console", (m) => m.type() === "warning" && warnings.push(m.text()));
   await win.getByRole("button", { name: "Register" }).click();
+  // The bundled app suggests the dev host; tests run their own.
+  await win.getByLabel("Server", { exact: true }).fill("http://localhost:18080");
   await win.getByLabel("Username").fill(`dv_${Date.now().toString(36)}`);
   await win.getByLabel("Password").fill("correct horse battery");
   await win.getByRole("button", { name: "Continue" }).click();

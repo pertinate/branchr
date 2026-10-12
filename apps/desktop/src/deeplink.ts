@@ -10,7 +10,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { type BrowserWindow, app, ipcMain } from "electron";
+import { BrowserWindow, app, ipcMain } from "electron";
 
 const SCHEME = "branchr";
 const CALLBACK = "branchr://auth/callback";
@@ -47,6 +47,41 @@ export function setupDeepLinks(getWindow: () => BrowserWindow | null) {
     pending = null;
     return p;
   });
+}
+
+/** Whether `url` starts a branchr sign-in that comes back to the app. */
+export function isAppSignIn(url: string) {
+  try {
+    const u = new URL(url);
+    return u.pathname === "/authorize" && u.searchParams.get("redirect_uri") === CALLBACK;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Dev builds aren't the system's `branchr://` handler, so sign-in runs in a window of our own
+ * and we catch the redirect back to the app ourselves.
+ */
+export function signInWindow(url: string, parent: BrowserWindow | null) {
+  const w = new BrowserWindow({
+    width: 520,
+    height: 760,
+    parent: parent ?? undefined,
+    title: "Sign in to branchr",
+    autoHideMenuBar: true,
+    webPreferences: { partition: "persist:signin", sandbox: true, contextIsolation: true },
+  });
+  const catchCallback = (e: { preventDefault: () => void }, target: string) => {
+    if (!target.startsWith(CALLBACK)) return;
+    e.preventDefault();
+    deliver(target);
+    w.close();
+  };
+  w.webContents.on("will-redirect", catchCallback);
+  w.webContents.on("will-navigate", catchCallback);
+  w.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  void w.loadURL(url);
 }
 
 /** For `second-instance`: the argv of the copy the OS started for a link. */

@@ -31,6 +31,8 @@ test("desktop app boots, exposes the bridge and logs in", async () => {
 
   // Log in against the running API from a file:// origin.
   await win.getByRole("button", { name: "Register" }).click();
+  // The bundled app suggests the dev host; tests run their own.
+  await win.getByLabel("Server", { exact: true }).fill("http://localhost:18080");
   await win.getByLabel("Username").fill(`desk_${Date.now().toString(36)}`);
   await win.getByLabel("Password").fill("correct horse battery");
   await win.getByRole("button", { name: "Continue" }).click();

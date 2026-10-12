@@ -21,10 +21,10 @@ const s3 = process.env.E2E_S3_ENDPOINT;
 process.env.E2E_FEDERATED_DIR ??= `${SCRATCH}/federated-${Date.now().toString(36)}`;
 const fedDir = process.env.E2E_FEDERATED_DIR;
 /**
- * E2E_WEB_PORT serves the web client for tests on another port, with its own Vite cache, so a
- * test run can sit next to `pnpm dev` (5173) without disturbing it.
+ * Everything here runs on its own ports (18xxx, UDP 51000+) and the web client with its own
+ * Vite cache, so a test run sits next to `pnpm dev` (8070/8080/8090, 5173) without touching it.
  */
-const webPort = process.env.E2E_WEB_PORT ?? "5173";
+const webPort = process.env.E2E_WEB_PORT ?? "15173";
 const web = `http://localhost:${webPort}`;
 
 export default defineConfig({
@@ -50,7 +50,7 @@ export default defineConfig({
     {
       command: `cargo run -q -p api`,
       cwd: "../..",
-      url: "http://localhost:8080/api/health",
+      url: "http://localhost:18080/api/health",
       reuseExistingServer: true,
       timeout: 300_000,
       env: {
@@ -65,46 +65,46 @@ export default defineConfig({
               S3_SECRET_KEY: process.env.E2E_S3_SECRET_KEY ?? "",
             }
           : { UPLOAD_DIR: `${SCRATCH}/uploads` }),
-        API_BIND: "127.0.0.1:8080",
-        SFU_URLS: "ws://127.0.0.1:8090/ws",
+        API_BIND: "127.0.0.1:18080",
+        SFU_URLS: "ws://127.0.0.1:18090/ws",
         MAX_UPLOAD_MB: "1",
-        EMOTE_PROVIDERS_URL: "http://localhost:8072",
+        EMOTE_PROVIDERS_URL: "http://localhost:18072",
         // Link previews of the mock pages on localhost.
         EMBED_ALLOW_PRIVATE: "1",
         // With branchr ID around, this host takes branchr accounts too (password logins still work).
         ...(idDb
-          ? { AUTH_MODE: "both", BRANCHR_ID_URL: "http://localhost:8070", INSTANCE_NAME: "e2e home", PUBLIC_URL: "http://localhost:8080", CLAIM_FILE: `${SCRATCH}/claim-code.txt`, BRANCHR_POLL_SECS: "1" }
+          ? { AUTH_MODE: "both", BRANCHR_ID_URL: "http://localhost:18070", INSTANCE_NAME: "e2e home", PUBLIC_URL: "http://localhost:18080", CLAIM_FILE: `${SCRATCH}/claim-code.txt`, BRANCHR_POLL_SECS: "1" }
           : {}),
       },
     },
     {
       command: `cargo run -q -p sfu`,
       cwd: "../..",
-      url: "http://localhost:8090/health",
+      url: "http://localhost:18090/health",
       reuseExistingServer: true,
       timeout: 300_000,
-      env: { SFU_PUBLIC_IP: "127.0.0.1", SFU_WORKERS: "2" },
+      env: { SFU_BIND: "127.0.0.1:18090", SFU_UDP_PORT: "51000", SFU_PUBLIC_IP: "127.0.0.1", SFU_WORKERS: "2" },
     },
     // 7TV / FrankerFaceZ / BetterTTV stand-in.
-    { command: "node mock-emotes.mjs", url: "http://localhost:8072/health", reuseExistingServer: true },
+    { command: "node mock-emotes.mjs", url: "http://localhost:18072/health", reuseExistingServer: true },
     // A second instance (multi-instance tests); with branchr ID around it also accepts branchr accounts.
     {
       command: "cargo run -q -p api",
       cwd: "../..",
-      url: "http://localhost:8081/api/health",
+      url: "http://localhost:18081/api/health",
       reuseExistingServer: true,
       timeout: 300_000,
       env: {
         DATABASE_URL: `sqlite://${fedDir}/db.sqlite`,
-        API_BIND: "127.0.0.1:8081",
-        EMOTE_PROVIDERS_URL: "http://localhost:8072",
-        SFU_URLS: "ws://127.0.0.1:8090/ws",
+        API_BIND: "127.0.0.1:18081",
+        EMOTE_PROVIDERS_URL: "http://localhost:18072",
+        SFU_URLS: "ws://127.0.0.1:18090/ws",
         ...(idDb
           ? {
               AUTH_MODE: "both",
-              BRANCHR_ID_URL: "http://localhost:8070",
+              BRANCHR_ID_URL: "http://localhost:18070",
               INSTANCE_NAME: "e2e federated",
-              PUBLIC_URL: "http://localhost:8081",
+              PUBLIC_URL: "http://localhost:18081",
               CLAIM_FILE: `${fedDir}/claim-code.txt`,
               BRANCHR_POLL_SECS: "1",
             }
@@ -113,44 +113,45 @@ export default defineConfig({
     },
     ...(idDb
       ? [
-          { command: "node mock-discord.mjs", url: "http://localhost:8071/health", reuseExistingServer: true },
+          { command: "node mock-discord.mjs", url: "http://localhost:18071/health", reuseExistingServer: true },
           // branchr ID's own SFU, for DM calls (its own secret and ports).
           {
             command: "cargo run -q -p sfu",
             cwd: "../..",
-            url: "http://localhost:8091/health",
+            url: "http://localhost:18091/health",
             reuseExistingServer: true,
             timeout: 300_000,
-            env: { SFU_BIND: "127.0.0.1:8091", SFU_UDP_PORT: "50100", SFU_WORKERS: "1", SFU_PUBLIC_IP: "127.0.0.1", VOICE_SECRET: "e2e-id-voice" },
+            env: { SFU_BIND: "127.0.0.1:18091", SFU_UDP_PORT: "51100", SFU_WORKERS: "1", SFU_PUBLIC_IP: "127.0.0.1", VOICE_SECRET: "e2e-id-voice" },
           },
           {
             command: "cargo run -q -p id --bin branchr-id",
             cwd: "../..",
-            url: "http://localhost:8070/health",
+            url: "http://localhost:18070/health",
             reuseExistingServer: true,
             timeout: 300_000,
             env: {
               DATABASE_URL: idDb,
               DATABASE_SCHEMA: "e2e",
-              ID_BIND: "127.0.0.1:8070",
-              PUBLIC_URL: "http://localhost:8070",
+              ID_BIND: "127.0.0.1:18070",
+              PUBLIC_URL: "http://localhost:18070",
               DISCORD_CLIENT_ID: "e2e",
               DISCORD_CLIENT_SECRET: "e2e",
-              DISCORD_API: "http://localhost:8071/api",
-              DISCORD_AUTHORIZE: "http://localhost:8071/oauth2/authorize",
+              DISCORD_API: "http://localhost:18071/api",
+              DISCORD_AUTHORIZE: "http://localhost:18071/oauth2/authorize",
               ALLOWED_REDIRECTS: `branchr://auth/callback,${web}/`,
-              ID_SFU_URL: "ws://127.0.0.1:8091/ws",
+              ID_SFU_URL: "ws://127.0.0.1:18091/ws",
               ID_VOICE_SECRET: "e2e-id-voice",
             },
           },
         ]
       : []),
     {
-      command: webPort === "5173" ? "pnpm --filter web dev" : `pnpm --filter web dev --port ${webPort}`,
+      command: `pnpm --filter web dev --port ${webPort}`,
       cwd: "../..",
       url: web,
       reuseExistingServer: true,
-      env: webPort === "5173" ? {} : { VITE_CACHE_DIR: "node_modules/.vite-e2e" },
+      // Logins default to this run's host and branchr ID, not the dev ones.
+      env: { VITE_CACHE_DIR: "node_modules/.vite-e2e", VITE_DEFAULT_SERVER: "http://localhost:18080", VITE_BRANCHR_ID_URL: "http://localhost:18070" },
     },
   ],
 });

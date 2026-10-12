@@ -32,8 +32,8 @@ test("branchr account: sign in with Discord, survive a reload, sign out", async 
   await expect(card.getByRole("button", { name: "Sign in with Discord" })).toBeVisible();
 });
 
-const FED = "http://localhost:8081";
-const ID = "http://localhost:8070";
+const FED = "http://localhost:18081";
+const ID = "http://localhost:18070";
 
 test("federated server: sign in with Discord from the login screen, claim it, come back as the same user", async ({ browser }) => {
   const { readFileSync, existsSync } = await import("node:fs");
@@ -80,7 +80,7 @@ test("federated server: sign in with Discord from the login screen, claim it, co
   await createServer(bad, "Spam Palace");
 
   await openUserSettings(page);
-  const ours = page.getByTestId("owned-host").filter({ hasText: "localhost:8081" });
+  const ours = page.getByTestId("owned-host").filter({ hasText: "localhost:18081" });
   await expect(ours.getByText("e2e federated")).toBeVisible();
   await ours.getByRole("button", { name: "Manage" }).click();
   const admin = page.getByTestId("host-admin");
@@ -144,7 +144,7 @@ test("federated server: sign in with Discord from the login screen, claim it, co
 test("federated server: a password account links to branchr and is reached by Discord sign-in", async ({ browser }) => {
   const run = Date.now().toString(36);
   // A Discord identity no other test uses.
-  await fetch("http://localhost:8071/next-user", {
+  await fetch("http://localhost:18071/next-user", {
     method: "POST",
     body: JSON.stringify({ id: `9${Date.now()}`, username: `linker_${run}`, global_name: "Link Tester" }),
   });
@@ -210,14 +210,14 @@ test("federated server: a password account links to branchr and is reached by Di
   // Now carrying the branchr profile.
   expect(back.user.displayName).toBe("Link Tester");
 
-  await fetch("http://localhost:8071/next-user", { method: "POST" });
+  await fetch("http://localhost:18071/next-user", { method: "POST" });
   await ctx.close();
 });
 
 test("a new device reconnects to every host used with the branchr account", async ({ browser }) => {
-  const HOME = "http://localhost:8080";
+  const HOME = "http://localhost:18080";
   const id = `7${Date.now()}`;
-  await fetch("http://localhost:8071/next-user", {
+  await fetch("http://localhost:18071/next-user", {
     method: "POST",
     body: JSON.stringify({ id, username: `roamer_${id.slice(-6)}`, global_name: "Roamer" }),
   });
@@ -236,7 +236,7 @@ test("a new device reconnects to every host used with the branchr account", asyn
   await one.getByLabel("Host address").fill(HOME);
   await one.getByRole("button", { name: "Continue" }).click();
   await one.getByRole("button", { name: "Sign in with Discord" }).click();
-  await expect(one).toHaveURL(/localhost-8080/);
+  await expect(one).toHaveURL(/localhost-18080/);
   await one.getByRole("link", { name: "My Guilds" }).click();
   await expect(one.getByTestId("host-section")).toHaveCount(2);
 
@@ -247,14 +247,14 @@ test("a new device reconnects to every host used with the branchr account", asyn
   await two.getByRole("button", { name: "Sign in with Discord" }).click();
   await expect(two.getByRole("heading", { name: "No servers yet" })).toBeVisible();
   // Still on the host it signed in to.
-  expect(two.url()).toContain("/localhost-8081");
+  expect(two.url()).toContain("/localhost-18081");
   await two.getByRole("link", { name: "My Guilds" }).click();
   await expect(two.getByTestId("host-section")).toHaveCount(2);
   expect((await sessions(two)).map((s) => s.url).sort()).toEqual([FED, HOME].sort());
 
   // Logging out of a host on purpose forgets it for the account.
   two.on("dialog", (d) => void d.accept());
-  await two.getByRole("button", { name: "Log Out of localhost:8080" }).click();
+  await two.getByRole("button", { name: "Log Out of localhost:18080" }).click();
   await expect(two.getByTestId("host-section")).toHaveCount(1);
   const three = await (await browser.newContext()).newPage();
   await three.goto("/#/login");
@@ -264,5 +264,5 @@ test("a new device reconnects to every host used with the branchr account", asyn
   await three.waitForTimeout(1500);
   expect((await sessions(three)).map((s) => s.url)).toEqual([FED]);
 
-  await fetch("http://localhost:8071/next-user", { method: "POST" });
+  await fetch("http://localhost:18071/next-user", { method: "POST" });
 });

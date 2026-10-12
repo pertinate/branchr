@@ -30,6 +30,10 @@ test("desktop streamer stays connected while streaming with camera", async ({ br
   });
 
   await s.getByRole("button", { name: "Register" }).click();
+
+  // The bundled app suggests the dev host; tests run their own.
+
+  await s.getByLabel("Server", { exact: true }).fill("http://localhost:18080");
   await s.getByLabel("Username").fill(`soak_${Date.now().toString(36)}`);
   await s.getByLabel("Password").fill("correct horse battery");
   await s.getByRole("button", { name: "Continue" }).click();

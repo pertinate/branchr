@@ -16,7 +16,7 @@ import {
   shell,
 } from "electron";
 
-import { handleArgv, registerProtocol, setupDeepLinks } from "./deeplink";
+import { handleArgv, isAppSignIn, registerProtocol, setupDeepLinks, signInWindow } from "./deeplink";
 import { venmic } from "./venmic";
 
 const isWayland = process.platform === "linux" && (process.env.XDG_SESSION_TYPE === "wayland" || !!process.env.WAYLAND_DISPLAY);
@@ -128,7 +128,8 @@ function createWindow() {
 
   // External links open in the user's browser.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:/.test(url)) void shell.openExternal(url);
+    if (!app.isPackaged && isAppSignIn(url)) signInWindow(url, win);
+    else if (/^https?:/.test(url)) void shell.openExternal(url);
     return { action: "deny" };
   });
   win.webContents.on("will-navigate", (e, url) => {

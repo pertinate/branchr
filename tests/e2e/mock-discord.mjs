@@ -4,7 +4,7 @@
 // `mock_discord_user` cookie, carried through the code and access token.
 import { createServer } from "node:http";
 
-const port = Number(process.env.PORT ?? 8071);
+const port = Number(process.env.PORT ?? 18071);
 const defaultUser = { id: "424242424242424242", username: "e2e_nelly", global_name: "E2E Nelly", avatar: null };
 let user = defaultUser;
 

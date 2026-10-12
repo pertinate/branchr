@@ -3,7 +3,7 @@
 import { createServer } from "node:http";
 import { crc32, deflateSync } from "node:zlib";
 
-const port = Number(process.env.PORT ?? 8072);
+const port = Number(process.env.PORT ?? 18072);
 const file = (name, width, height) => ({ name, width, height });
 const stv = [
   { id: "01GB2S7R7N000A5SMX0Q1Z2C8V", name: "catJAM", animated: true, host: { files: [file("1x.webp", 28, 28)] }, owner: { display_name: "e2e" } },
