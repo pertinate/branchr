@@ -11,7 +11,7 @@ name = "branchr-id"
 path = "src/main.rs"
 
 [dependencies]
-proto.workspace = true
+proto = { workspace = true, features = ["token"] }
 tokio.workspace = true
 axum.workspace = true
 serde.workspace = true

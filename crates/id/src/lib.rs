@@ -1,6 +1,7 @@
 //! branchr ID: the central account service. Clients sign in with Discord; instances verify
 //! the tokens it issues against its published keys.
 
+pub mod calls;
 pub mod config;
 pub mod discord;
 pub mod error;
@@ -31,6 +32,7 @@ pub struct AppState {
     pub keys: Arc<Keys>,
     pub http: reqwest::Client,
     pub hub: Arc<hub::Hub>,
+    pub calls: Arc<calls::Calls>,
     /// Snowflakes for DM channels and messages.
     pub ids: Arc<proto::id::IdGen>,
 }
@@ -61,7 +63,7 @@ pub async fn state(config: Config, db: PgPool) -> anyhow::Result<AppState> {
     let keys = Keys::load(&db).await?;
     let http = reqwest::Client::builder().user_agent(discord::USER_AGENT).timeout(Duration::from_secs(10)).build()?;
     let worker = std::env::var("WORKER_ID").ok().and_then(|w| w.parse().ok()).unwrap_or(0);
-    Ok(AppState { config: Arc::new(config), db, keys: Arc::new(keys), http, hub: Default::default(), ids: Arc::new(proto::id::IdGen::new(worker)) })
+    Ok(AppState { config: Arc::new(config), db, keys: Arc::new(keys), http, hub: Default::default(), calls: Default::default(), ids: Arc::new(proto::id::IdGen::new(worker)) })
 }
 
 pub fn router(state: AppState) -> Router {
@@ -80,6 +82,9 @@ pub fn router(state: AppState) -> Router {
         .route("/relationships/{id}", axum::routing::put(social::put).delete(social::remove))
         .route("/dms", get(social::dms).post(social::open))
         .route("/dms/groups", post(social::create_group))
+        .route("/dms/{cid}/call", post(calls::join))
+        .route("/dms/{cid}/call/leave", post(calls::leave))
+        .route("/dms/{cid}/call/decline", post(calls::decline))
         .route("/dms/{cid}", axum::routing::patch(social::patch_group))
         .route("/dms/{cid}/recipients/{id}", axum::routing::put(social::add_member).delete(social::remove_member))
         .route("/dms/{cid}/messages", get(social::messages).post(social::send))

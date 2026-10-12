@@ -70,7 +70,8 @@ async fn run(mut ws: WebSocket, s: AppState) -> anyhow::Result<()> {
         .filter(|r| r.person.id.parse().is_ok_and(|id| s.hub.online(id)))
         .map(|r| r.person.id.clone())
         .collect();
-    send(&mut ws, &SocialEvent::Ready(SocialReady { me: person, relationships, channels, online })).await?;
+    let calls = s.calls.in_channels(&channels.iter().map(|c| c.id.0).collect::<Vec<_>>());
+    send(&mut ws, &SocialEvent::Ready(SocialReady { me: person, relationships, channels, online, calls })).await?;
     if first {
         set_presence(&s, me, true).await;
     }
@@ -120,6 +121,10 @@ impl Drop for Guard {
                 tokio::time::sleep(Duration::from_secs(3)).await;
                 if !s.hub.online(me) {
                     set_presence(&s, me, false).await;
+                    // Gone for good: out of any call too.
+                    for channel in s.calls.drop_account(me) {
+                        let _ = crate::calls::announce(&s, channel).await;
+                    }
                 }
             });
         }

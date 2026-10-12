@@ -2,7 +2,7 @@
  * Friends and direct messages, from branchr ID (not any one host). Connected whenever you're
  * signed in to branchr: a gateway for live events, and REST for everything else.
  */
-import type { DmChannel, DmMessage, Person, Relationship, SocialEvent, SocialOp } from "@app/protocol";
+import type { CallJoin, CallState, DmChannel, DmMessage, Person, Relationship, SocialEvent, SocialOp } from "@app/protocol";
 import { create } from "zustand";
 
 import { ID_URL, accessToken, useBranchrId } from "@/lib/branchr-id";
@@ -28,9 +28,11 @@ export interface SocialState {
   typing: Record<string, Record<string, number>>;
   /** The DM on screen. */
   viewing: string | null;
+  /** channel id -> its call, while one is going */
+  calls: Record<string, CallState>;
 }
 
-const initial: SocialState = { status: "off", me: null, relationships: {}, online: {}, channels: {}, threads: {}, typing: {}, viewing: null };
+const initial: SocialState = { status: "off", me: null, relationships: {}, online: {}, channels: {}, threads: {}, typing: {}, viewing: null, calls: {} };
 
 export const useSocial = create<SocialState>()(() => initial);
 
@@ -57,6 +59,9 @@ export function isUnread(c: DmChannel): boolean {
   return !!c.lastMessageId && (!c.lastReadId || compareIds(c.lastMessageId, c.lastReadId) > 0);
 }
 
+/** Called for each call update (ringing). */
+export const callListeners = new Set<(c: CallState) => void>();
+
 /** Called for each new DM from someone else (notifications). */
 export const dmListeners = new Set<(m: DmMessage) => void>();
 
@@ -72,9 +77,14 @@ function apply(ev: SocialEvent) {
         channels: Object.fromEntries(d.channels.map((c) => [c.id, c])),
         // Threads reload on view; what we had may have missed events while away.
         threads: {},
+        calls: Object.fromEntries(d.calls.map((c) => [c.channelId, c])),
       });
       return;
     }
+    case "CALL_UPDATE":
+      set((s) => ({ calls: ev.d.participants.length ? { ...s.calls, [ev.d.channelId]: ev.d } : without(s.calls, ev.d.channelId) }));
+      for (const l of callListeners) l(ev.d);
+      return;
     case "RELATIONSHIP_UPDATE":
       set((s) => ({ relationships: { ...s.relationships, [ev.d.person.id]: ev.d } }));
       return;
@@ -292,6 +302,16 @@ export const removeFromGroup = (cid: string, id: string) => call<void>("DELETE",
 export function dmTitle(c: DmChannel): string {
   if (!c.group) return c.recipients[0]?.displayName ?? "Unknown";
   return c.name ?? (c.recipients.map((r) => r.displayName).join(", ") || "Just you");
+}
+
+/** Starts or joins a DM's call; where to connect. */
+export const joinCall = (cid: string) => call<CallJoin>("POST", `/dms/${cid}/call`);
+export const leaveCall = (cid: string) => call<void>("POST", `/dms/${cid}/call/leave`);
+export const declineCall = (cid: string) => call<void>("POST", `/dms/${cid}/call/decline`);
+
+/** Whether a call in `cid` is ringing for us. */
+export function ringingMe(s: SocialState, cid: string): boolean {
+  return !!s.me && !!s.calls[cid]?.ringing.includes(s.me.id);
 }
 
 export const editDm = (cid: string, mid: string, content: string) => call<DmMessage>("PATCH", `/dms/${cid}/messages/${mid}`, { content });

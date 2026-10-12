@@ -23,6 +23,8 @@ test("branchr account: sign in with Discord, survive a reload, sign out", async 
   await page.getByRole("link", { name: "Direct Messages" }).click();
   await expect(page.getByRole("tab", { name: "Add Friend" })).toBeVisible();
   await page.goBack();
+  // Settle on the server again before reaching for the account dock.
+  await expect(page.getByRole("heading", { name: /^Welcome to #/ })).toBeVisible();
 
   await page.getByRole("button", { name: "Your account" }).hover();
   await page.getByRole("button", { name: "User Settings" }).click();

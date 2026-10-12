@@ -106,6 +106,15 @@ export default defineConfig({
     ...(idDb
       ? [
           { command: "node mock-discord.mjs", url: "http://localhost:8071/health", reuseExistingServer: true },
+          // branchr ID's own SFU, for DM calls (its own secret and ports).
+          {
+            command: "cargo run -q -p sfu",
+            cwd: "../..",
+            url: "http://localhost:8091/health",
+            reuseExistingServer: true,
+            timeout: 300_000,
+            env: { SFU_BIND: "127.0.0.1:8091", SFU_UDP_PORT: "50100", SFU_WORKERS: "1", SFU_PUBLIC_IP: "127.0.0.1", VOICE_SECRET: "e2e-id-voice" },
+          },
           {
             command: "cargo run -q -p id --bin branchr-id",
             cwd: "../..",
@@ -122,6 +131,8 @@ export default defineConfig({
               DISCORD_API: "http://localhost:8071/api",
               DISCORD_AUTHORIZE: "http://localhost:8071/oauth2/authorize",
               ALLOWED_REDIRECTS: "branchr://auth/callback,http://localhost:5173/",
+              ID_SFU_URL: "ws://127.0.0.1:8091/ws",
+              ID_VOICE_SECRET: "e2e-id-voice",
             },
           },
         ]

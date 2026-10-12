@@ -34,6 +34,27 @@ services:
       DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET:?set DISCORD_CLIENT_SECRET}
       # The desktop app, and the web client this host serves.
       ALLOWED_REDIRECTS: branchr://auth/callback,https://${DOMAIN}/
+      # DM calls go through id-sfu (below); off unless ID_VOICE_SECRET is set.
+      ID_SFU_URL: wss://${ID_DOMAIN}/sfu/ws
+      ID_VOICE_SECRET: ${ID_VOICE_SECRET:-}
+
+  # The SFU for DM calls, separate from the instance's. Started only with the "calls"
+  # profile (COMPOSE_PROFILES=calls), since it needs its UDP ports open on the host.
+  id-sfu:
+    image: ${IMAGE:-branchr}
+    command: ["sfu"]
+    profiles: ["calls"]
+    restart: unless-stopped
+    ulimits:
+      nofile: 1048576
+    environment:
+      SFU_BIND: 0.0.0.0:8090
+      VOICE_SECRET: ${ID_VOICE_SECRET:-}
+      SFU_PUBLIC_IP: ${PUBLIC_IP:-}
+      SFU_UDP_PORT: ${ID_SFU_UDP_PORT:-52000}
+      SFU_WORKERS: 2
+    ports:
+      - "${ID_SFU_UDP_PORT:-52000}-${ID_SFU_UDP_END:-52001}:${ID_SFU_UDP_PORT:-52000}-${ID_SFU_UDP_END:-52001}/udp"
 
   caddy:
     environment:

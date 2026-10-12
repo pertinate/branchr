@@ -85,6 +85,8 @@ impl Harness {
             discord_api: format!("http://{discord}"),
             discord_authorize: "https://discord.example/oauth2/authorize".into(),
             redirects: vec![REDIRECT.into()],
+            sfu_url: Some("ws://sfu.test/ws".into()),
+            voice_secret: Some(b"test-voice-secret".to_vec()),
         };
         let app = id::router(id::state(config, db.clone()).await.unwrap());
         tokio::spawn(async move { axum::serve(l, app).await.unwrap() });

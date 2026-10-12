@@ -67,6 +67,7 @@ jobs:
           docker compose -f docker-compose.yml config -q
           docker compose -f docker-compose.yml -f deploy/docker-compose.public.yml -f deploy/docker-compose.image.yml config -q
           docker compose -f docker-compose.yml -f deploy/docker-compose.public.yml -f deploy/docker-compose.image.yml -f deploy/docker-compose.id.yml config -q
+          COMPOSE_PROFILES=calls ID_VOICE_SECRET=ci docker compose -f docker-compose.yml -f deploy/docker-compose.public.yml -f deploy/docker-compose.image.yml -f deploy/docker-compose.id.yml config -q
 
   # Browser tests against a local stack (API + SFU + Vite, plus branchr ID with a stand-in
   # Discord): chat, voice, screen streaming, attachments, mentions, branchr sign-in. Local-only: Electron (needs a display), emotes (third-party APIs), and the

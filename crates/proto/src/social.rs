@@ -67,6 +67,30 @@ wire! {
         pub channels: Vec<DmChannel>,
         /// Account ids of friends who are online now.
         pub online: Vec<String>,
+        /// Calls going on in your conversations.
+        pub calls: Vec<CallState>,
+    }
+
+    /// Someone in a call, with the id the SFU knows them by.
+    pub struct CallParticipant {
+        pub id: String,
+        pub voice_id: Id,
+    }
+
+    /// A conversation's call. No participants means it ended.
+    pub struct CallState {
+        pub channel_id: Id,
+        pub participants: Vec<CallParticipant>,
+        /// Account ids being rung (they haven't joined or declined yet).
+        pub ringing: Vec<String>,
+    }
+
+    /// Where to connect for a call.
+    pub struct CallJoin {
+        pub endpoint: String,
+        pub token: String,
+        /// The id the SFU knows you by.
+        pub voice_id: Id,
     }
 
     pub struct PersonRef {
@@ -147,6 +171,7 @@ pub enum SocialEvent {
     DmMessageUpdate(DmMessage),
     DmMessageDelete(DmMessageRef),
     DmTyping(DmTyping),
+    CallUpdate(CallState),
 }
 
 /// Sent to branchr ID's gateway.

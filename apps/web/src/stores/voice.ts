@@ -5,6 +5,7 @@ import { persist } from "zustand/middleware";
 
 import { desktop } from "@/lib/desktop";
 import { type Instance, activeInstance, instance, useInstanceList } from "@/lib/instances";
+import { joinCall as joinCallServer, leaveCall } from "@/lib/social";
 import { VoiceConnection } from "@/voice/connection";
 import { type Mic, type NoiseSuppression, openMic } from "@/voice/mic";
 import { type StreamSettings, cameraEncodings, defaultStreamSettings, layersFor, pickCodec } from "@/voice/presets";
@@ -60,7 +61,10 @@ interface VoiceState {
   /** The instance this voice channel is on (voice stays up while browsing others). */
   instanceId: string | null;
   guildId: string | null;
+  /** The voice channel, or the DM when in a call. */
   channelId: string | null;
+  /** Set when this is a call in a DM (on branchr ID) rather than a server voice channel. */
+  call: string | null;
   error: string | null;
   muted: boolean;
   deafened: boolean;
@@ -76,6 +80,8 @@ interface VoiceState {
 
   /** Joins a channel on `instanceId` (default: the instance on screen). */
   join: (guildId: string, channelId: string, instanceId?: string) => Promise<void>;
+  /** Joins (or starts) the call in a DM. */
+  joinCall: (dmChannelId: string) => Promise<void>;
   leave: () => void;
   toggleMute: () => void;
   toggleDeafen: () => void;
@@ -242,11 +248,89 @@ export const useVoice = create<VoiceState>()((set, get) => {
     });
   };
 
+  /**
+   * Opens the mic and connects to the SFU once `server` says where; shared by server voice
+   * channels and DM calls. `fail` undoes the join elsewhere; `rejoin` retries after a drop.
+   */
+  const connect = async (seq: number, server: Promise<{ endpoint: string; token: string }>, fail: () => void, rejoin: () => Promise<void>) => {
+    try {
+      const [vs, opened] = await Promise.all([server, getMic()]);
+      if (seq !== joinSeq) {
+        opened?.stop();
+        return;
+      }
+      mic = opened;
+      mic?.setEnabled(!get().muted && !get().deafened);
+      const c = await VoiceConnection.connect(vs.endpoint, vs.token, {
+        trackAdded: onTrackAdded,
+        trackRemoved: (id) => {
+          set((s) => {
+            const { [id]: _, ...tracks } = s.tracks;
+            return { tracks };
+          });
+          dropSub(id);
+        },
+        speaking: (userId, speaking) => set((s) => ({ speaking: { ...s.speaking, [userId]: speaking } })),
+        layer: (trackId, layer, estimateBps) =>
+          set((s) => (s.subs[trackId] ? { subs: { ...s.subs, [trackId]: { ...s.subs[trackId], layer } }, estimateBps } : {})),
+        media: (up) => {
+          if (conn !== c && conn !== null) return;
+          const st = get().status;
+          if (up && st !== "connected") {
+            set({ status: "connected" });
+            retries = 0;
+          } else if (!up && st === "connected") {
+            set({ status: "reconnecting" });
+          }
+        },
+        closed: (reason) => {
+          if (conn !== c) return;
+          conn = null;
+          if (reason.startsWith("replaced")) {
+            cleanup();
+            set({ status: "disconnected", instanceId: null, guildId: null, channelId: null });
+            return;
+          }
+          // Unexpected drop: rejoin with backoff.
+          const { channelId: ch } = get();
+          if (ch && retries < 5) {
+            retries++;
+            set({ status: "reconnecting" });
+            const mySeq = joinSeq;
+            setTimeout(() => {
+              // Skip if the user left or switched channels meanwhile.
+              if (joinSeq === mySeq && get().channelId === ch) void rejoin();
+            }, 1000 * retries);
+          } else {
+            get().leave();
+            set({ error: reason });
+          }
+        },
+      });
+      if (seq !== joinSeq) {
+        c.close();
+        return;
+      }
+      conn = c;
+      await c.start(mic?.track ?? null);
+      // Status flips to "connected" from the media callback once ICE/DTLS are up.
+      set({ tracks: Object.fromEntries([...c.tracks].map(([k, v]) => [k, v])) });
+      for (const t of c.tracks.values()) if (autoSubscribe(t)) void subscribe(t.id);
+    } catch (e) {
+      if (seq !== joinSeq) return;
+      cleanup();
+      fail();
+      set({ status: "disconnected", instanceId: null, guildId: null, channelId: null, call: null, error: (e as Error).message });
+      toast.error("Couldn't join voice", { description: (e as Error).message });
+    }
+  };
+
   return {
     status: "disconnected",
     instanceId: null,
     guildId: null,
     channelId: null,
+    call: null,
     error: null,
     muted: false,
     deafened: false,
@@ -267,9 +351,10 @@ export const useVoice = create<VoiceState>()((set, get) => {
       if (s.instanceId === inst.id && s.channelId === channelId && (s.status === "connected" || s.status === "connecting")) return;
       const seq = ++joinSeq;
       cleanup();
-      // Moving to another instance's voice: leave the old one there.
+      // Moving to another instance's voice: leave the old one there (or hang up a call).
       if (s.instanceId && s.instanceId !== inst.id && s.guildId) instance(s.instanceId)?.gateway.send(leaveOp(s.guildId));
-      set({ status: s.status === "reconnecting" ? "reconnecting" : "connecting", instanceId: inst.id, guildId, channelId, error: null });
+      if (s.call) void leaveCall(s.call);
+      set({ status: s.status === "reconnecting" ? "reconnecting" : "connecting", instanceId: inst.id, guildId, channelId, call: null, error: null });
 
       // Leaving first guarantees the API issues a fresh voice token even for the same channel.
       const app = inst.app.getState();
@@ -278,84 +363,28 @@ export const useVoice = create<VoiceState>()((set, get) => {
 
       const server = waitForVoiceServer(inst, channelId);
       syncState();
-      try {
-        const [vs, opened] = await Promise.all([server, getMic()]);
-        if (seq !== joinSeq) {
-          opened?.stop();
-          return;
-        }
-        mic = opened;
-        mic?.setEnabled(!get().muted && !get().deafened);
-        const c = await VoiceConnection.connect(vs.endpoint, vs.token, {
-          trackAdded: onTrackAdded,
-          trackRemoved: (id) => {
-            set((s) => {
-              const { [id]: _, ...tracks } = s.tracks;
-              return { tracks };
-            });
-            dropSub(id);
-          },
-          speaking: (userId, speaking) => set((s) => ({ speaking: { ...s.speaking, [userId]: speaking } })),
-          layer: (trackId, layer, estimateBps) =>
-            set((s) => (s.subs[trackId] ? { subs: { ...s.subs, [trackId]: { ...s.subs[trackId], layer } }, estimateBps } : {})),
-          media: (up) => {
-            if (conn !== c && conn !== null) return;
-            const st = get().status;
-            if (up && st !== "connected") {
-              set({ status: "connected" });
-              retries = 0;
-            } else if (!up && st === "connected") {
-              set({ status: "reconnecting" });
-            }
-          },
-          closed: (reason) => {
-            if (conn !== c) return;
-            conn = null;
-            if (reason.startsWith("replaced")) {
-              cleanup();
-              set({ status: "disconnected", instanceId: null, guildId: null, channelId: null });
-              return;
-            }
-            // Unexpected drop: rejoin with backoff.
-            const { guildId: g, channelId: ch } = get();
-            if (g && ch && retries < 5) {
-              retries++;
-              set({ status: "reconnecting" });
-              const mySeq = joinSeq;
-              setTimeout(() => {
-                // Skip if the user left or switched channels meanwhile.
-                if (joinSeq === mySeq && get().channelId === ch) void get().join(g, ch, get().instanceId ?? undefined);
-              }, 1000 * retries);
-            } else {
-              get().leave();
-              set({ error: reason });
-            }
-          },
-        });
-        if (seq !== joinSeq) {
-          c.close();
-          return;
-        }
-        conn = c;
-        await c.start(mic?.track ?? null);
-        // Status flips to "connected" from the media callback once ICE/DTLS are up.
-        set({ tracks: Object.fromEntries([...c.tracks].map(([k, v]) => [k, v])) });
-        for (const t of c.tracks.values()) if (autoSubscribe(t)) void subscribe(t.id);
-      } catch (e) {
-        if (seq !== joinSeq) return;
-        cleanup();
-        inst.gateway.send(leaveOp(guildId));
-        set({ status: "disconnected", instanceId: null, guildId: null, channelId: null, error: (e as Error).message });
-        toast.error("Couldn't join voice", { description: (e as Error).message });
-      }
+      await connect(seq, server, () => inst.gateway.send(leaveOp(guildId)), () => get().join(guildId, channelId, inst.id));
+    },
+
+    joinCall: async (dmChannelId) => {
+      const s = get();
+      if (s.call === dmChannelId && (s.status === "connected" || s.status === "connecting")) return;
+      const seq = ++joinSeq;
+      cleanup();
+      // Out of any server voice channel first (one call at a time).
+      if (s.instanceId && s.guildId) instance(s.instanceId)?.gateway.send(leaveOp(s.guildId));
+      if (s.call && s.call !== dmChannelId) void leaveCall(s.call);
+      set({ status: "connecting", instanceId: null, guildId: null, channelId: dmChannelId, call: dmChannelId, error: null });
+      await connect(seq, joinCallServer(dmChannelId), () => void leaveCall(dmChannelId), () => get().joinCall(dmChannelId));
     },
 
     leave: () => {
       joinSeq++;
-      const { guildId } = get();
+      const { guildId, call } = get();
       cleanup();
       if (guildId) voiceInstance()?.gateway.send(leaveOp(guildId));
-      set({ status: "disconnected", instanceId: null, guildId: null, channelId: null });
+      if (call) void leaveCall(call);
+      set({ status: "disconnected", instanceId: null, guildId: null, channelId: null, call: null });
     },
 
     toggleMute: () => {

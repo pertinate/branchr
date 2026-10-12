@@ -62,6 +62,23 @@ test("friends and DMs: request, accept, chat live, edit, block", async ({ browse
   await alice.getByLabel("Edit message").press("Enter");
   await expect(bob.getByTestId("dm-message").filter({ hasText: "hi bob!" })).toContainText("(edited)");
 
+  // A call: Nelly rings Bob, he picks up from the popup, and they're both in.
+  await alice.getByRole("button", { name: "Start Voice Call" }).click();
+  await expect(alice.getByText("Voice Connected")).toBeVisible();
+  const ring = bob.getByRole("alertdialog", { name: "Incoming call" });
+  await expect(ring).toContainText("E2E Nelly");
+  await ring.getByRole("button", { name: "Accept" }).click();
+  await expect(bob.getByText("Voice Connected")).toBeVisible();
+  await expect(bob.getByText("Call with E2E Nelly")).toBeVisible();
+  await expect(alice.getByTestId("call-tile")).toHaveCount(2);
+  await expect(bob.getByTestId("call-tile")).toHaveCount(2);
+  await expect(ring).toHaveCount(0);
+  // Hanging up: Bob leaves, then Nelly, and the call is over.
+  await bob.getByRole("button", { name: "Leave Call" }).click();
+  await expect(alice.getByTestId("call-tile")).toHaveCount(1);
+  await alice.getByRole("button", { name: "Leave Call" }).click();
+  await expect(alice.getByTestId("dm-call")).toHaveCount(0);
+
   // A group: naming the conversation makes one, and Bob gets it straight away.
   await alice.getByRole("button", { name: "Create DM" }).click();
   await alice.getByLabel(`Pick ${bobName}`).check();

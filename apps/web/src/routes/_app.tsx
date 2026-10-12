@@ -3,6 +3,7 @@ import { useEffect } from "react";
 
 import { EmoteCard } from "@/components/chat/emote-card";
 import { GlobalDialogs } from "@/components/global-dialogs";
+import { IncomingCall } from "@/components/home/incoming-call";
 import { ServerRail } from "@/components/server-rail";
 import { AudioRenderer } from "@/components/voice/audio-renderer";
 import { syncHosts } from "@/lib/host-sync";
@@ -47,6 +48,7 @@ function AppLayout() {
       <AudioRenderer />
       <EmoteCard />
       <GlobalDialogs />
+      <IncomingCall />
     </div>
   );
 }

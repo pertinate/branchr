@@ -9,6 +9,7 @@ import { Markup } from "@/components/chat/markup";
 import { PersonAvatar, asUser } from "@/components/home/person-avatar";
 import { UserAvatar } from "@/components/user-avatar";
 import { snowflakeTime } from "@/lib/ids";
+import { CallButton, DmCall } from "@/components/home/dm-call";
 import { FriendPicker } from "@/components/home/friend-picker";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -78,9 +79,13 @@ export function DmView({ channelId }: { channelId: string }) {
             <AtSign className="size-5 text-muted-foreground" />
             <span className="font-semibold">{other!.displayName}</span>
             <span className="text-sm text-muted-foreground">@{other!.handle}</span>
+            <div className="ml-auto">
+              <CallButton channelId={channelId} />
+            </div>
           </>
         )}
       </header>
+      <DmCall channelId={channelId} />
       <div
         ref={scroller}
         className="min-h-0 flex-1 overflow-y-auto pb-4"
@@ -178,6 +183,7 @@ function GroupActions({ channelId, members }: { channelId: string; members: stri
   };
   return (
     <div className="ml-auto flex items-center gap-1">
+      <CallButton channelId={channelId} />
       <Popover onOpenChange={(o) => !o && setAdding([])}>
         <PopoverTrigger asChild>
           <Button size="sm" variant="ghost" aria-label="Add Friends to DM">

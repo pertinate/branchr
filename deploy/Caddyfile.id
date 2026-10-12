@@ -1,5 +1,9 @@
 # branchr ID on its own hostname (mounted by deploy/docker-compose.id.yml).
 {$ID_DOMAIN} {
 	encode zstd gzip
+	# DM call signaling (the id-sfu container, when the "calls" profile is on).
+	handle_path /sfu/* {
+		reverse_proxy id-sfu:8090
+	}
 	reverse_proxy id:8070
 }

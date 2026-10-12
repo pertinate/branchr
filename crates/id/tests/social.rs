@@ -169,3 +169,40 @@ async fn group_dms() {
 
     h.finish().await;
 }
+
+#[tokio::test]
+async fn calls_ring_and_hand_out_tokens() {
+    let Some(h) = Harness::new().await else { return };
+    let nelly = Client { h: &h, token: h.token_for("good").await };
+    let bob = Client { h: &h, token: h.token_for("bob").await };
+    let me: Person = nelly.get("/people/@me").await;
+    let bob_me: Person = bob.get("/people/@me").await;
+    nelly.call(reqwest::Method::POST, "/relationships", Some(json!({ "handle": "bob" }))).await;
+    bob.call(reqwest::Method::PUT, &format!("/relationships/{}", me.id), Some(json!({ "kind": "friend" }))).await;
+    let dm: DmChannel = nelly.call(reqwest::Method::POST, "/dms", Some(json!({ "recipient": bob_me.id }))).await.json().await.unwrap();
+    let mut bob_ws = gateway(&h, &bob.token).await;
+    next(&mut bob_ws, |e| if let SocialEvent::Ready(_) = e { Some(()) } else { None }).await;
+
+    // Nelly calls: Bob is rung, and she gets a token for the SFU that names her and the DM.
+    let join: proto::social::CallJoin = nelly.call(reqwest::Method::POST, &format!("/dms/{}/call", dm.id), None).await.json().await.unwrap();
+    assert_eq!(join.endpoint, "ws://sfu.test/ws");
+    let claims = proto::voice::token::verify(b"test-voice-secret", &join.token, 0).expect("signed with the call secret");
+    assert_eq!((claims.channel_id, claims.user_id), (dm.id, join.voice_id));
+    let ring = next(&mut bob_ws, |e| if let SocialEvent::CallUpdate(c) = e { Some(c) } else { None }).await;
+    assert_eq!(ring.ringing, vec![bob_me.id.clone()]);
+    assert_eq!(ring.participants[0].id, me.id);
+
+    // Bob answers: he's in, nobody's ringing.
+    bob.call(reqwest::Method::POST, &format!("/dms/{}/call", dm.id), None).await;
+    let both = next(&mut bob_ws, |e| if let SocialEvent::CallUpdate(c) = e { Some(c) } else { None }).await;
+    assert!(both.ringing.is_empty() && both.participants.len() == 2);
+
+    // Both leave: the call ends.
+    nelly.call(reqwest::Method::POST, &format!("/dms/{}/call/leave", dm.id), None).await;
+    next(&mut bob_ws, |e| if let SocialEvent::CallUpdate(c) = e { (c.participants.len() == 1).then_some(()) } else { None }).await;
+    bob.call(reqwest::Method::POST, &format!("/dms/{}/call/leave", dm.id), None).await;
+    let ended = next(&mut bob_ws, |e| if let SocialEvent::CallUpdate(c) = e { Some(c) } else { None }).await;
+    assert!(ended.participants.is_empty());
+
+    h.finish().await;
+}

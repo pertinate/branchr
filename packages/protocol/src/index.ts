@@ -57,6 +57,9 @@ export type * from "./generated/VoiceStateRef";
 export type * from "./generated/VoiceStateUpdate";
 
 // branchr ID social.
+export type * from "./generated/CallJoin";
+export type * from "./generated/CallParticipant";
+export type * from "./generated/CallState";
 export type * from "./generated/DmChannel";
 export type * from "./generated/DmChannelRef";
 export type * from "./generated/DmMessage";

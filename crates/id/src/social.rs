@@ -196,9 +196,23 @@ pub async fn remove(State(s): State<AppState>, headers: HeaderMap, Path(id): Pat
 
 // ---- Direct messages ----
 
-async fn members(s: &AppState, channel: i64) -> Result<Vec<Uuid>> {
+pub async fn members(s: &AppState, channel: i64) -> Result<Vec<Uuid>> {
     let rows: Vec<(Uuid,)> = sqlx::query_as("SELECT account_id FROM dm_members WHERE channel_id = $1").bind(channel).fetch_all(&s.db).await?;
     Ok(rows.into_iter().map(|(a,)| a).collect())
+}
+
+/// The channel's members, if `me` is one of them.
+pub async fn member_of_channel(s: &AppState, me: Uuid, channel: Id) -> Result<Vec<Uuid>> {
+    member_of(s, me, channel).await
+}
+
+pub async fn is_group(s: &AppState, channel: Id) -> Result<bool> {
+    let (kind,): (String,) = sqlx::query_as("SELECT kind FROM dm_channels WHERE id = $1").bind(channel.0).fetch_one(&s.db).await?;
+    Ok(kind == "group")
+}
+
+pub async fn kind_of(s: &AppState, me: Uuid, other: Uuid) -> Result<Option<RelationshipKind>> {
+    kind(s, me, other).await
 }
 
 /// The channel's members, if `me` is one of them.
@@ -574,6 +588,7 @@ pub async fn remove_member(State(s): State<AppState>, headers: HeaderMap, Path((
     }
     sqlx::query("DELETE FROM dm_members WHERE channel_id = $1 AND account_id = $2").bind(cid.0).bind(other).execute(&s.db).await?;
     s.hub.send(other, &SocialEvent::DmChannelDelete(DmChannelRef { id: cid }));
+    s.calls.drop_from(cid.0, other);
     let rest: Vec<Uuid> = members.into_iter().filter(|m| *m != other).collect();
     if rest.is_empty() {
         sqlx::query("DELETE FROM dm_channels WHERE id = $1").bind(cid.0).execute(&s.db).await?;
@@ -583,5 +598,6 @@ pub async fn remove_member(State(s): State<AppState>, headers: HeaderMap, Path((
     if owner == Some(other) {
         sqlx::query("UPDATE dm_channels SET owner_id = $1 WHERE id = $2").bind(rest[0]).bind(cid.0).execute(&s.db).await?;
     }
-    announce_group(&s, cid.0).await
+    announce_group(&s, cid.0).await?;
+    crate::calls::announce(&s, cid.0).await
 }

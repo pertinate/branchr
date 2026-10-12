@@ -10,6 +10,8 @@ import { UserAvatar } from "@/components/user-avatar";
 import { StreamDialog } from "@/components/voice/stream-dialog";
 import { hostOf, instance, useInstance } from "@/lib/instances";
 import { P, channelPermsOf, has } from "@/lib/perms";
+import { dmTitle, useSocial } from "@/lib/social";
+import { ALL_PERMS } from "@app/protocol";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/stores/app";
 import { useVoice } from "@/stores/voice";
@@ -45,7 +47,9 @@ export function UserPanel() {
   const guild = useStore(voiceInst.app, (s) => (v.guildId ? s.guilds[v.guildId] : undefined));
   const elsewhere = voiceInst.id !== here.id ? ` · ${hostOf(voiceInst.url)}` : "";
   // What this channel lets us send (the SFU refuses the rest).
-  const perms = useStore(voiceInst.app, (s) => (v.channelId ? channelPermsOf(s, v.channelId) : 0));
+  // (DM calls on branchr ID have no permissions to check.)
+  const perms = useStore(voiceInst.app, (s) => (v.call ? ALL_PERMS : v.channelId ? channelPermsOf(s, v.channelId) : 0));
+  const callTitle = useSocial((s) => (v.call && s.channels[v.call] ? dmTitle(s.channels[v.call]) : null));
   const [canSpeak, canVideo, canStream] = [has(perms, P.SPEAK), has(perms, P.VIDEO), has(perms, P.STREAM)];
   useEffect(() => {
     if (v.status === "connected" && !canSpeak && !v.muted) v.toggleMute();
@@ -107,8 +111,14 @@ export function UserPanel() {
                   {v.status === "connected" ? "Voice Connected" : v.status === "reconnecting" ? "Reconnecting…" : "Connecting…"}
                 </div>
                 <div className="truncate text-xs text-muted-foreground">
-                  {channel?.name} / {guild?.name}
-                  {elsewhere}
+                  {callTitle ? (
+                    `Call with ${callTitle}`
+                  ) : (
+                    <>
+                      {channel?.name} / {guild?.name}
+                      {elsewhere}
+                    </>
+                  )}
                 </div>
               </div>
               <IconButton label="Disconnect" onClick={() => { setPinned(false); setFocused(false); v.leave(); }} danger>

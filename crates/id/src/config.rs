@@ -16,6 +16,10 @@ pub struct Config {
     pub discord_authorize: String,
     /// Exact redirect URIs clients may ask for (`branchr://auth/callback` for the desktop app).
     pub redirects: Vec<String>,
+    /// The SFU that carries DM calls (`wss://…/ws`) and the secret its tokens are signed
+    /// with. Calls are off without both.
+    pub sfu_url: Option<String>,
+    pub voice_secret: Option<Vec<u8>>,
 }
 
 fn var(k: &str) -> Option<String> {
@@ -38,6 +42,8 @@ impl Config {
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
                 .collect(),
+            sfu_url: var("ID_SFU_URL"),
+            voice_secret: var("ID_VOICE_SECRET").map(String::into_bytes),
         })
     }
 
