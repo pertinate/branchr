@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Copy, LayoutGrid, LogOut, Settings } from "lucide-react";
+import { Copy, LogOut, Settings } from "lucide-react";
 
 import { guildInitials } from "@/components/guild/guild-badge";
 import { useHostOwner } from "@/components/host-admin-dialog";
@@ -15,36 +15,30 @@ import { useApp } from "@/stores/app";
 import { useDialogs } from "@/stores/ui";
 
 /** Every server you're in, by the host it lives on, with each host's own actions. */
-export function MyGuildsPage() {
+export function YourServers({ query }: { query: string }) {
   const ids = useInstanceList((s) => s.ids);
   return (
-    <main className="flex min-w-0 flex-1 flex-col overflow-y-auto bg-background">
-      <div className="bg-gradient-to-br from-primary/40 to-primary/5 px-8 py-10">
-        <h1 className="flex items-center gap-2 text-2xl font-bold">
-          <LayoutGrid /> My Guilds
-        </h1>
-        <p className="mt-1 text-muted-foreground">Your servers, by the host each one lives on.</p>
-      </div>
-      <div className="flex flex-col gap-8 px-8 py-6">
-        {ids.map((id) => {
-          const inst = instance(id);
-          return inst ? (
-            <InstanceProvider key={id} instance={inst}>
-              <HostSection />
-            </InstanceProvider>
-          ) : null;
-        })}
-      </div>
-    </main>
+    <div className="flex flex-col gap-8 px-8 py-6">
+      {ids.map((id) => {
+        const inst = instance(id);
+        return inst ? (
+          <InstanceProvider key={id} instance={inst}>
+            <HostSection query={query.toLowerCase()} />
+          </InstanceProvider>
+        ) : null;
+      })}
+    </div>
   );
 }
 
-function HostSection() {
+function HostSection({ query }: { query: string }) {
   const inst = useInstance();
   const host = hostOf(inst.url);
   const connection = useApp((s) => s.connection);
   const me = useApp((s) => s.me);
-  const order = useApp((s) => s.guildOrder);
+  const all = useApp((s) => s.guildOrder);
+  const guilds = useApp((s) => s.guilds);
+  const order = query ? all.filter((g) => guilds[g]?.name.toLowerCase().includes(query)) : all;
   return (
     <section data-testid="host-section" data-instance={inst.id} aria-label={host} className="flex flex-col gap-3">
       <header className="flex flex-wrap items-center gap-3 border-b border-border pb-2">
@@ -55,7 +49,7 @@ function HostSection() {
         <HostActions inst={inst} />
       </header>
       {order.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No servers on this host yet.</p>
+        <p className="text-sm text-muted-foreground">{query ? "No servers here match." : "No servers on this host yet."}</p>
       ) : (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
           {order.map((gid) => (
@@ -90,7 +84,7 @@ function HostActions({ inst }: { inst: Instance }) {
           forgetHost(inst.url);
           void inst.api("POST", "/auth/logout").catch(() => {});
           inst.auth.getState().logout();
-          void navigate({ to: "/guilds" });
+          void navigate({ to: "/explore", search: { tab: "yours" } });
         }}
       >
         <LogOut /> Log Out

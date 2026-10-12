@@ -6,8 +6,10 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { guildInitials } from "@/components/guild/guild-badge";
+import { YourServers } from "@/components/your-servers";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useDebounced } from "@/hooks/use-debounced";
 import { ID_URL } from "@/lib/branchr-id";
 import { hostOf, instance, instanceKey, normalizeUrl } from "@/lib/instances";
@@ -15,14 +17,19 @@ import { cn } from "@/lib/utils";
 
 const TAGS = ["gaming", "music", "art", "tech", "anime", "study", "community"];
 
-/** Servers that hosts publish to branchr ID, from every host. */
-export function ExplorePage() {
+export type ExploreTab = "yours" | "discover";
+
+/**
+ * Your servers (by host) and Discover (servers every host chose to list), under one search.
+ */
+export function ExplorePage({ tab, onTab }: { tab: ExploreTab; onTab: (t: ExploreTab) => void }) {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [tag, setTag] = useState<string | null>(null);
   const q = useDebounced(query.trim(), 250);
   const results = useQuery({
     queryKey: ["explore", q, tag],
+    enabled: tab === "discover",
     // A live directory: listings come and go, so never show a cached page as current.
     staleTime: 0,
     queryFn: async () => {
@@ -42,6 +49,11 @@ export function ExplorePage() {
       void navigate({ to: "/login", search: { redirect: undefined, server, invite: l.server.invite } });
       return;
     }
+    // Already in it: just go there.
+    if (inst.app.getState().guilds[l.server.guildId]) {
+      void navigate({ to: "/$instance/$guildId", params: { instance: inst.id, guildId: l.server.guildId } });
+      return;
+    }
     setJoining(`${l.hostUrl}/${l.server.guildId}`);
     try {
       const g = await inst.api<ReadyGuild>("POST", `/invites/${encodeURIComponent(l.server.invite)}`);
@@ -56,27 +68,36 @@ export function ExplorePage() {
 
   return (
     <main className="flex min-w-0 flex-1 flex-col overflow-y-auto bg-background">
-      <div className="bg-gradient-to-br from-primary/40 to-primary/5 px-8 py-10">
-        <h1 className="flex items-center gap-2 text-2xl font-bold">
-          <Compass /> Find your community
-        </h1>
-        <p className="mt-1 text-muted-foreground">Servers on every branchr host that chose to be listed.</p>
-        <div className="relative mt-4 max-w-xl">
-          <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Explore servers" aria-label="Explore servers" className="h-10 bg-background pl-9" />
+      <Tabs value={tab} onValueChange={(t) => onTab(t as ExploreTab)} className="gap-0">
+        <div className="bg-gradient-to-br from-primary/40 to-primary/5 px-8 pt-10 pb-4">
+          <h1 className="flex items-center gap-2 text-2xl font-bold">
+            <Compass /> Explore
+          </h1>
+          <p className="mt-1 text-muted-foreground">Your servers on every host, and servers anyone can join.</p>
+          <div className="relative mt-4 max-w-xl">
+            <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search servers" aria-label="Search servers" className="h-10 bg-background pl-9" />
+          </div>
+          <TabsList className="mt-4">
+            <TabsTrigger value="yours">Your Servers</TabsTrigger>
+            <TabsTrigger value="discover">Discover</TabsTrigger>
+          </TabsList>
         </div>
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {TAGS.map((t) => (
-            <button
-              key={t}
-              onClick={() => setTag(tag === t ? null : t)}
-              className={cn("rounded-full px-3 py-0.5 text-sm", tag === t ? "bg-primary text-white" : "bg-background/60 hover:bg-background")}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
-      </div>
+        <TabsContent value="yours">
+          <YourServers query={query.trim()} />
+        </TabsContent>
+        <TabsContent value="discover">
+          <div className="flex flex-wrap gap-1.5 px-8 pt-6">
+            {TAGS.map((t) => (
+              <button
+                key={t}
+                onClick={() => setTag(tag === t ? null : t)}
+                className={cn("rounded-full px-3 py-0.5 text-sm", tag === t ? "bg-primary text-white" : "bg-sidebar hover:bg-accent")}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
       <div className="grid gap-4 p-8 sm:grid-cols-2 xl:grid-cols-3" data-testid="explore-results">
         {results.isError && <p className="text-destructive">{(results.error as Error).message}</p>}
         {results.data?.length === 0 && <p className="text-muted-foreground">No servers match.</p>}
@@ -110,14 +131,25 @@ export function ExplorePage() {
                 <span className="flex items-center gap-1">
                   <Users className="size-3" /> {l.server.members} members
                 </span>
-                <Button size="sm" className="ml-auto" disabled={joining === key} onClick={() => void join(l)} aria-label={`Join ${l.server.name}`}>
-                  Join
-                </Button>
+                <JoinButton listing={l} busy={joining === key} onClick={() => void join(l)} />
               </div>
             </article>
           );
         })}
-      </div>
+          </div>
+        </TabsContent>
+      </Tabs>
     </main>
+  );
+}
+
+/** "Join", or "Open" for a server you're already in. */
+function JoinButton({ listing: l, busy, onClick }: { listing: Listing; busy: boolean; onClick: () => void }) {
+  const inst = instance(instanceKey(normalizeUrl(l.hostUrl)));
+  const joined = !!inst && !!inst.app((s) => s.guilds[l.server.guildId]);
+  return (
+    <Button size="sm" variant={joined ? "secondary" : "default"} className="ml-auto" disabled={busy} onClick={onClick} aria-label={`${joined ? "Open" : "Join"} ${l.server.name}`}>
+      {joined ? "Open" : "Join"}
+    </Button>
   );
 }

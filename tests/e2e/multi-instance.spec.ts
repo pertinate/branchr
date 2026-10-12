@@ -44,7 +44,7 @@ test("multiple instances: connect a second host, badges and voice across them, l
   await expect(alice.getByText("localhost:18081")).toBeVisible();
   expect((await sessions(alice)).map((s) => s.url)).toEqual([HOME, AWAY]);
   // My Guilds lists both hosts.
-  await alice.getByRole("link", { name: "My Guilds" }).click();
+  await alice.getByRole("link", { name: "Explore" }).click();
   await expect(alice.getByTestId("host-section")).toHaveCount(2);
 
   // Creating a server lands on the host on screen.
@@ -83,7 +83,7 @@ test("multiple instances: connect a second host, badges and voice across them, l
 
   // Log out of the second host only: its servers go, the first host and its voice stay.
   alice.on("dialog", (d) => void d.accept());
-  await alice.getByRole("link", { name: "My Guilds" }).click();
+  await alice.getByRole("link", { name: "Explore" }).click();
   await alice.getByRole("button", { name: "Log Out of localhost:18081" }).click();
   const rail = alice.getByRole("navigation", { name: "Servers" });
   await expect(rail.getByRole("link", { name: "Away B" })).toHaveCount(0);

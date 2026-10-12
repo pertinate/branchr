@@ -48,7 +48,7 @@ test("rail: newest on top, drag to reorder, folders, My Guilds", async ({ browse
   await expect.poll(() => railOrder(page)).toEqual([d, a, c, b]);
 
   // My Guilds: every server, by host.
-  await page.getByRole("link", { name: "My Guilds" }).click();
+  await page.getByRole("link", { name: "Explore" }).click();
   const section = page.getByTestId("host-section");
   await expect(section).toHaveCount(1);
   await expect(section.getByTestId("guild-card")).toHaveCount(4);

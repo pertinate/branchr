@@ -1,6 +1,6 @@
 import type { ReadyGuild } from "@app/protocol";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import { Compass, LayoutGrid, MessagesSquare, Plus } from "lucide-react";
+import { Compass, MessagesSquare, Plus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -37,7 +37,6 @@ export function ServerRail() {
       <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-2 overflow-y-auto pb-3">
         <HomeButton />
         <ExploreButton />
-        <MyGuildsButton />
         <div className="mx-auto h-0.5 w-8 shrink-0 rounded bg-accent" />
         <RailList />
         <div className="mx-auto h-0.5 w-8 shrink-0 rounded bg-accent" />
@@ -214,35 +213,7 @@ function HomeButton() {
   );
 }
 
-/** My Guilds: every server, by the host it lives on. */
-function MyGuildsButton() {
-  const active = useRouterState({ select: (s) => s.location.pathname === "/guilds" });
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Link to="/guilds" aria-label="My Guilds" className="group relative flex w-full justify-center">
-          <span
-            className={cn(
-              "absolute top-1/2 left-0 w-1 -translate-y-1/2 rounded-r-full bg-foreground transition-all",
-              active ? "h-10" : "h-0 group-hover:h-5",
-            )}
-          />
-          <div
-            className={cn(
-              "grid size-12 place-items-center transition-all",
-              active ? "rounded-2xl bg-primary text-white" : "rounded-3xl bg-background group-hover:rounded-2xl group-hover:bg-primary group-hover:text-white",
-            )}
-          >
-            <LayoutGrid className="size-6" />
-          </div>
-        </Link>
-      </TooltipTrigger>
-      <TooltipContent side="right">My Guilds</TooltipContent>
-    </Tooltip>
-  );
-}
-
-/** Explore: servers from every host that chose to be listed. */
+/** Explore: your servers by host, and servers every host chose to list. */
 function ExploreButton() {
   const active = useRouterState({ select: (s) => s.location.pathname === "/explore" });
   return (

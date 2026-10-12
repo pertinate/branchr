@@ -237,7 +237,7 @@ test("a new device reconnects to every host used with the branchr account", asyn
   await one.getByRole("button", { name: "Continue" }).click();
   await one.getByRole("button", { name: "Sign in with Discord" }).click();
   await expect(one).toHaveURL(/localhost-18080/);
-  await one.getByRole("link", { name: "My Guilds" }).click();
+  await one.getByRole("link", { name: "Explore" }).click();
   await expect(one.getByTestId("host-section")).toHaveCount(2);
 
   // A new device: sign in to one host, and the other comes along.
@@ -248,7 +248,7 @@ test("a new device reconnects to every host used with the branchr account", asyn
   await expect(two.getByRole("heading", { name: "No servers yet" })).toBeVisible();
   // Still on the host it signed in to.
   expect(two.url()).toContain("/localhost-18081");
-  await two.getByRole("link", { name: "My Guilds" }).click();
+  await two.getByRole("link", { name: "Explore" }).click();
   await expect(two.getByTestId("host-section")).toHaveCount(2);
   expect((await sessions(two)).map((s) => s.url).sort()).toEqual([FED, HOME].sort());
 
