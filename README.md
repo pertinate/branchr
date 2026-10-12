@@ -98,6 +98,18 @@ Big voice calls, where everyone hears everyone (`loadgen --speakers N --talking 
 | 100 people, 10 talking | 9,900 | 100% | 1.6 / 3.5 ms | 4.1 cores |
 | 50 people, all talking at once | 2,450 | 100% | 0.7 / 2.2 ms | 3.4 cores |
 
+A real self-hosted deployment (Docker on an Unraid server, release images, SQLite), loaded from another machine over a gigabit LAN:
+
+| Test | Result |
+|---|---|
+| Chat, 100 users, 1,000 messages (`chat.mjs`) | ~1,060–1,160 messages/s, all 100,000 deliveries, fan-out p50 / p99 52–56 / 112–116 ms |
+| Gateway fan-out (`gateway.mjs`) | 5,000 sessions: every message to all, p99 51–58 ms; 10,000 sessions: p99 104–131 ms |
+| Voice call, 50 people / 5 talking | 100% of speech delivered, p99 3.0 ms |
+| Voice call, 100 people / 10 talking | 100% of speech delivered, p99 9.1 ms |
+| Stream, 100 viewers × 2 Mbps (206 Mbps) | 60 fps for every viewer, p99 9.2 ms, no gaps |
+
+Above ~300 Mbps the single test machine's gigabit link, not the SFU, is the limit. **On Unraid, keep the data directory on a pool path (`/mnt/cache/appdata/...`), not `/mnt/user/...`**: the `/mnt/user` FUSE layer made SQLite five times slower (~200 messages/s).
+
 Viewers of one room are spread across all worker cores. Outgoing packets go out through `sendmmsg`. The gateway fans a message out to 5,000 connected sessions with p99 under 80 ms (`node tests/load/gateway.mjs http://host:8080 5000`).
 
 ## Self-hosting
