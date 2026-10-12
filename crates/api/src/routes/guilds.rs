@@ -273,10 +273,15 @@ pub async fn create_invite(
     State(state): State<AppState>,
     Auth(user): Auth,
     Path(gid): Path<Id>,
-    body: Option<Json<CreateInvite>>,
+    body: axum::body::Bytes,
 ) -> AppResult<Json<Invite>> {
     require_perm(&state, gid, user, perms::CREATE_INVITE).await?;
-    let body = body.map(|b| b.0).unwrap_or_default();
+    // Options are optional: no body (whatever its content type) means the defaults.
+    let body: CreateInvite = if body.iter().all(u8::is_ascii_whitespace) {
+        CreateInvite::default()
+    } else {
+        serde_json::from_slice(&body).map_err(|e| bad(format!("invalid invite options: {e}")))?
+    };
     if !(0..=30 * 24 * 3600).contains(&body.max_age) || !(0..=1000).contains(&body.max_uses) {
         return Err(bad("invites last up to 30 days and allow up to 1000 uses"));
     }
@@ -411,7 +416,6 @@ async fn announce_join(state: &AppState, g: &Guild, user: Id) {
             .bind(MessageKind::MemberJoin.as_str())
             .execute(&mut *tx)
             .await?;
-        sqlx::query("UPDATE channels SET last_message_id = $1 WHERE id = $2").bind(id.0).bind(cid.0).execute(&mut *tx).await?;
         tx.commit().await?;
         db::message(&state.db, id, user).await
     }

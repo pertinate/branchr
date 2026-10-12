@@ -306,7 +306,7 @@ pub async fn is_member(db: &Db, guild: Id, user: Id) -> sqlx::Result<bool> {
 
 pub async fn channels(db: &Db, guild: Id) -> sqlx::Result<Vec<Channel>> {
     let rows = sqlx::query_as::<_, ChannelRow>(
-        "SELECT id, guild_id, name, kind, parent_id, position, topic, last_message_id
+        "SELECT id, guild_id, name, kind, parent_id, position, topic, (SELECT max(m.id) FROM messages m WHERE m.channel_id = channels.id) AS last_message_id
          FROM channels WHERE guild_id = $1 ORDER BY position, id",
     )
     .bind(guild.0)
@@ -324,7 +324,8 @@ pub async fn channels(db: &Db, guild: Id) -> sqlx::Result<Vec<Channel>> {
 
 pub async fn channel(db: &Db, id: Id) -> sqlx::Result<Channel> {
     let c: Channel = sqlx::query_as::<_, ChannelRow>(
-        "SELECT id, guild_id, name, kind, parent_id, position, topic, last_message_id FROM channels WHERE id = $1",
+        "SELECT id, guild_id, name, kind, parent_id, position, topic, (SELECT max(m.id) FROM messages m WHERE m.channel_id = channels.id) AS last_message_id
+         FROM channels WHERE id = $1",
     )
     .bind(id.0)
     .fetch_one(db)

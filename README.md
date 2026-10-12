@@ -82,6 +82,9 @@ Chat throughput, with 100 users in one server each sending a burst of 10 message
 | Chat only | ~1,050 | 94 / 134 ms | 42 / 89 ms |
 | While the SFU relays a 100 viewer × 4 Mbps stream | ~900–1,000 | 93–108 / 163–200 ms | 42–50 / 106–115 ms |
 | In a private channel (`PRIVATE=1`: every delivery checks the recipient's channel permissions) | ~1,100–1,200 | 82–88 / 132–141 ms | 36–39 / 91–98 ms |
+| On Postgres (a home server's, on spinning disks: ~4.5 ms per commit, over the LAN) | ~560–590 | 110–125 / 520–575 ms | 97–111 / 515–575 ms |
+
+On Postgres, throughput follows commit latency (the disk's fsync); a server on SSDs commits several times faster.
 
 The stream stayed at 60 fps for every viewer with p99 under 7 ms while chat was loaded.
 

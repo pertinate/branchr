@@ -158,7 +158,6 @@ pub async fn create(
     .bind(snapshot_json(&mentions.roles))
     .execute(&mut *tx)
     .await?;
-    sqlx::query("UPDATE channels SET last_message_id = $1 WHERE id = $2").bind(id.0).bind(cid.0).execute(&mut *tx).await?;
     for a in &body.attachment_ids {
         // Only the uploader's own, unsent uploads to this channel can be attached.
         let r = sqlx::query("UPDATE attachments SET message_id = $1 WHERE id = $2 AND uploader_id = $3 AND channel_id = $4 AND message_id IS NULL")
