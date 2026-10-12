@@ -3,7 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { VList, type VListHandle } from "virtua";
 import { useShallow } from "zustand/react/shallow";
 
-import { MessageItem, shouldGroup } from "@/components/chat/message-item";
+import { MessageItem, shouldGroup, JoinMessage } from "@/components/chat/message-item";
 import { emoteMap } from "@/lib/emotes";
 import { P, useCan } from "@/lib/perms";
 import { useApp } from "@/stores/app";
@@ -96,6 +96,8 @@ export function MessageList({ channelId, guildId, onReply }: { channelId: string
               </>
             )}
           </div>
+        ) : m.kind === "member_join" ? (
+          <JoinMessage key={m.id} message={m} guildId={guildId} />
         ) : (
           <MessageItem
             key={m.nonce ?? m.id}

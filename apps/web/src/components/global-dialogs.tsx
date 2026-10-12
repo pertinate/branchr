@@ -52,18 +52,32 @@ function DialogFor({ dialog, close }: { dialog: DialogState; close: () => void }
   }
 }
 
+const EXPIRY = [
+  { secs: 0, label: "Never" },
+  { secs: 1800, label: "30 minutes" },
+  { secs: 3600, label: "1 hour" },
+  { secs: 86400, label: "1 day" },
+  { secs: 604800, label: "7 days" },
+];
+const USES = [0, 1, 5, 10, 25, 100];
+
 function InviteDialog({ guildId, onClose }: { guildId: string; onClose: () => void }) {
   const inst = useInstance();
   const api = inst.api;
   const guild = useApp((s) => s.guilds[guildId]);
   const [invite, setInvite] = useState<Invite | null>(null);
+  const [maxAge, setMaxAge] = useState("0");
+  const [maxUses, setMaxUses] = useState("0");
+  // A new invite whenever the options change.
   useEffect(() => {
-    api<Invite>("POST", `/guilds/${guildId}/invites`).then(setInvite, (e: Error) => {
+    setInvite(null);
+    api<Invite>("POST", `/guilds/${guildId}/invites`, { maxAge: Number(maxAge), maxUses: Number(maxUses) }).then(setInvite, (e: Error) => {
       toast.error(e.message);
       onClose();
     });
-  }, [guildId, onClose]);
+  }, [guildId, onClose, maxAge, maxUses]);
   const link = invite ? `${inst.url}/#/invite/${invite.code}` : "";
+  const vanity = guild?.vanityCode ? `${inst.url}/#/invite/${guild.vanityCode}` : null;
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
@@ -77,6 +91,46 @@ function InviteDialog({ guildId, onClose }: { guildId: string; onClose: () => vo
             <Copy /> Copy link
           </Button>
         </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <Label htmlFor="invite-expiry">Expire after</Label>
+            <Select value={maxAge} onValueChange={setMaxAge}>
+              <SelectTrigger id="invite-expiry" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {EXPIRY.map((e) => (
+                  <SelectItem key={e.secs} value={String(e.secs)}>
+                    {e.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="invite-uses">Max uses</Label>
+            <Select value={maxUses} onValueChange={setMaxUses}>
+              <SelectTrigger id="invite-uses" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {USES.map((n) => (
+                  <SelectItem key={n} value={String(n)}>
+                    {n === 0 ? "No limit" : n === 1 ? "1 use" : `${n} uses`}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        {vanity && (
+          <p className="text-sm text-muted-foreground">
+            Or share the server's own link:{" "}
+            <button className="font-mono text-primary hover:underline" onClick={() => void copy(vanity, "Copied invite link")}>
+              {guild!.vanityCode}
+            </button>
+          </p>
+        )}
       </DialogContent>
     </Dialog>
   );

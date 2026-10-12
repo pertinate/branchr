@@ -32,6 +32,7 @@ export type * from "./generated/MemberRef";
 export type * from "./generated/Message";
 export type * from "./generated/OverwriteKind";
 export type * from "./generated/PermissionOverwrite";
+export type * from "./generated/MessageKind";
 export type * from "./generated/MessageRef";
 export type * from "./generated/Presence";
 export type * from "./generated/PublishTrack";

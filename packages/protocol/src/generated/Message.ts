@@ -2,10 +2,15 @@
 import type { Attachment } from "./Attachment";
 import type { Emote } from "./Emote";
 import type { Id } from "./Id";
+import type { MessageKind } from "./MessageKind";
 import type { Reaction } from "./Reaction";
 import type { User } from "./User";
 
-export type Message = { id: Id, channelId: Id, author: User, content: string, editedAt: number | null, 
+export type Message = { id: Id, channelId: Id, 
+/**
+ * Regular, or a system message (the author is who it's about).
+ */
+kind: MessageKind, author: User, content: string, editedAt: number | null, 
 /**
  * Present when this message is a reply.
  */

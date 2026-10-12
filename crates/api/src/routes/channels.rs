@@ -116,9 +116,11 @@ pub async fn patch(
 pub async fn delete(State(state): State<AppState>, Auth(user): Auth, Path(cid): Path<Id>) -> AppResult<()> {
     let c = db::channel(&state.db, cid).await?;
     require_perm(&state, c.guild_id, user, perms::MANAGE_CHANNELS).await?;
+    let was_system = db::guild(&state.db, c.guild_id).await?.system_channel_id == Some(cid);
     let mut tx = state.db.begin().await?;
     // Children of a deleted category become top level.
     sqlx::query("UPDATE channels SET parent_id = NULL WHERE parent_id = $1").bind(cid.0).execute(&mut *tx).await?;
+    sqlx::query("UPDATE guilds SET system_channel_id = NULL WHERE system_channel_id = $1").bind(cid.0).execute(&mut *tx).await?;
     sqlx::query("DELETE FROM channels WHERE id = $1").bind(cid.0).execute(&mut *tx).await?;
     tx.commit().await?;
     if c.kind == ChannelKind::Category {
@@ -131,6 +133,11 @@ pub async fn delete(State(state): State<AppState>, Auth(user): Auth, Path(cid): 
     state.channel_guild.remove(&cid);
     state.perms.invalidate(c.guild_id);
     audit::log(&state, c.guild_id, user, Entry::new(AuditAction::ChannelDelete, Some(cid), c.name)).await;
+    // It may have been where join messages went.
+    let g = db::guild(&state.db, c.guild_id).await?;
+    if was_system {
+        state.hub.to_guild(c.guild_id, &ServerEvent::GuildUpdate(g));
+    }
     Ok(())
 }
 

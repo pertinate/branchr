@@ -1,5 +1,5 @@
 import type { Emote } from "@app/protocol";
-import { Copy, CornerUpLeft, Download, ExternalLink, Image as ImageIcon, Link2, Pencil, RotateCw, SmilePlus, Sparkles, Trash2 } from "lucide-react";
+import { Copy, CornerUpLeft, Download, ExternalLink, Image as ImageIcon, Link2, Pencil, RotateCw, SmilePlus, Sparkles, Trash2, ArrowRight } from "lucide-react";
 import { memo, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -63,8 +63,33 @@ function msgTime(m: UiMessage) {
 }
 
 export function shouldGroup(prev: UiMessage | undefined, m: UiMessage) {
-  return !!prev && prev.author.id === m.author.id && !m.replyTo && msgTime(m) - msgTime(prev) < 7 * 60_000;
+  return !!prev && prev.kind === "default" && m.kind === "default" && prev.author.id === m.author.id && !m.replyTo && msgTime(m) - msgTime(prev) < 7 * 60_000;
 }
+
+/** Friendly ways to say someone arrived (picked by message id, so it's stable). */
+const ARRIVALS = ["{} joined the server.", "{} just showed up.", "Welcome, {}!", "{} hopped in.", "Everyone welcome {}!"];
+
+/** A system message: someone joined. */
+export const JoinMessage = memo(function JoinMessage({ message: m, guildId }: { message: UiMessage; guildId: string }) {
+  const nick = useApp((s) => s.members[guildId]?.[m.author.id]?.nick);
+  const tint = useRoleColor(guildId, m.author.id);
+  const [before, after] = ARRIVALS[Number(BigInt(m.id) % BigInt(ARRIVALS.length))].split("{}");
+  return (
+    <div className="flex items-center gap-3 px-4 py-1 text-muted-foreground hover:bg-black/5" data-testid="join-message">
+      <ArrowRight className="size-4 shrink-0 text-online" />
+      <span className="text-sm">
+        {before}
+        <Menu items={<UserMenuItems guildId={guildId} userId={m.author.id} />}>
+          <span className="cursor-pointer font-medium text-foreground hover:underline" style={{ color: tint }}>
+            {nick ?? m.author.displayName}
+          </span>
+        </Menu>
+        {after}
+      </span>
+      <time className="text-xs">{new Date(msgTime(m)).toLocaleString()}</time>
+    </div>
+  );
+});
 
 function reactionPath(m: UiMessage, emoji: string) {
   return `/channels/${m.channelId}/messages/${m.id}/reactions/${encodeURIComponent(emoji)}`;

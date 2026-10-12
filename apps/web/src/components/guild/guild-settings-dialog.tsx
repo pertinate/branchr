@@ -14,6 +14,7 @@ import { useDebounced } from "@/hooks/use-debounced";
 import { AuditLogSettings, BansSettings } from "@/components/guild/moderation-settings";
 import { RolesSettings } from "@/components/guild/roles-settings";
 import { PicturePicker } from "@/components/picture-picker";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { uploadPicture } from "@/lib/media";
 import { useInstance } from "@/lib/instances";
@@ -81,10 +82,20 @@ function Overview({ guildId }: { guildId: string }) {
   const guild = useApp((s) => s.guilds[guildId]);
   const [name, setName] = useState(guild?.name ?? "");
   const [description, setDescription] = useState(guild?.description ?? "");
+  const [vanity, setVanity] = useState(guild?.vanityCode ?? "");
+  const [system, setSystem] = useState(guild?.systemChannelId ?? "none");
+  const textChannels = useApp(useShallow((s) => Object.values(s.channels).filter((c) => c.guildId === guildId && c.kind === "text")));
   const applied = (g: Guild) => inst.app.getState().apply({ t: "GUILD_UPDATE", d: g });
   const save = async () => {
     try {
-      applied(await api<Guild>("PATCH", `/guilds/${guildId}`, { name, description }));
+      applied(
+        await api<Guild>("PATCH", `/guilds/${guildId}`, {
+          name,
+          description,
+          vanityCode: vanity.trim() || null,
+          systemChannelId: system === "none" ? null : system,
+        }),
+      );
       toast.success("Saved");
     } catch (e) {
       toast.error((e as Error).message);
@@ -117,6 +128,27 @@ function Overview({ guildId }: { guildId: string }) {
       <div className="space-y-2">
         <Label htmlFor="guild-description">Description</Label>
         <Textarea id="guild-description" value={description} onChange={(e) => setDescription(e.target.value)} maxLength={300} rows={3} placeholder="What's this server about?" />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="system-channel">Join messages</Label>
+        <Select value={system} onValueChange={setSystem}>
+          <SelectTrigger id="system-channel" className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">Don't post join messages</SelectItem>
+            {textChannels.map((c) => (
+              <SelectItem key={c.id} value={c.id}>
+                #{c.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="vanity-code">Vanity invite code</Label>
+        <Input id="vanity-code" value={vanity} onChange={(e) => setVanity(e.target.value)} maxLength={32} placeholder="my-server" className="font-mono" />
+        <p className="text-xs text-muted-foreground">A permanent invite anyone can use, like {inst.url}/#/invite/my-server.</p>
       </div>
       <Button onClick={save}>Save Changes</Button>
     </div>

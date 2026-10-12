@@ -5,4 +5,12 @@ export type Guild = { id: Id, name: string, iconUrl: string | null, ownerId: Id,
 /**
  * Shown above the channel list. Like `icon_url`, a path on this server when uploaded.
  */
-bannerUrl: string | null, description: string | null, };
+bannerUrl: string | null, description: string | null, 
+/**
+ * Where "X joined" messages go.
+ */
+systemChannelId: Id | null, 
+/**
+ * A permanent invite code of the server's choosing.
+ */
+vanityCode: string | null, };

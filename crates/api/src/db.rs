@@ -129,11 +129,22 @@ struct GuildRow {
     owner_id: i64,
     banner_url: Option<String>,
     description: Option<String>,
+    system_channel_id: Option<i64>,
+    vanity_code: Option<String>,
 }
 
 impl From<GuildRow> for Guild {
     fn from(r: GuildRow) -> Self {
-        Guild { id: Id(r.id), name: r.name, icon_url: r.icon_url, owner_id: Id(r.owner_id), banner_url: r.banner_url, description: r.description }
+        Guild {
+            id: Id(r.id),
+            name: r.name,
+            icon_url: r.icon_url,
+            owner_id: Id(r.owner_id),
+            banner_url: r.banner_url,
+            description: r.description,
+            system_channel_id: r.system_channel_id.map(Id),
+            vanity_code: r.vanity_code,
+        }
     }
 }
 
@@ -240,6 +251,7 @@ struct MessageRow {
     #[sqlx(rename = "mid")]
     id: i64,
     channel_id: i64,
+    kind: String,
     content: String,
     edited_at: Option<i64>,
     reply_to: Option<i64>,
@@ -267,7 +279,7 @@ pub async fn user(db: &Db, id: Id) -> sqlx::Result<User> {
 }
 
 pub async fn guild(db: &Db, id: Id) -> sqlx::Result<Guild> {
-    sqlx::query_as::<_, GuildRow>("SELECT id, name, icon_url, owner_id, banner_url, description FROM guilds WHERE id = $1")
+    sqlx::query_as::<_, GuildRow>("SELECT id, name, icon_url, owner_id, banner_url, description, system_channel_id, vanity_code FROM guilds WHERE id = $1")
         .bind(id.0)
         .fetch_one(db)
         .await
@@ -464,7 +476,7 @@ pub async fn messages(
     viewer: Id,
 ) -> sqlx::Result<Vec<Message>> {
     let rows = sqlx::query_as::<_, MessageRow>(AssertSqlSafe(format!(
-        "SELECT m.id AS mid, m.channel_id, m.content, m.edited_at, m.reply_to, m.emotes, m.mentions, m.mention_everyone, m.mention_roles, {USER_COLS}
+        "SELECT m.id AS mid, m.channel_id, m.kind, m.content, m.edited_at, m.reply_to, m.emotes, m.mentions, m.mention_everyone, m.mention_roles, {USER_COLS}
          FROM messages m JOIN users u ON u.id = m.author_id
          WHERE m.channel_id = $1 AND m.id < $2 AND m.id > $3
          ORDER BY m.id {} LIMIT $4",
@@ -484,6 +496,7 @@ pub async fn messages(
         .map(|r| Message {
             id: Id(r.id),
             channel_id: Id(r.channel_id),
+            kind: MessageKind::parse(&r.kind),
             author: r.author.into(),
             content: r.content,
             edited_at: r.edited_at,
@@ -505,7 +518,7 @@ pub async fn messages(
 
 pub async fn message(db: &Db, id: Id, viewer: Id) -> sqlx::Result<Message> {
     let r = sqlx::query_as::<_, MessageRow>(AssertSqlSafe(format!(
-        "SELECT m.id AS mid, m.channel_id, m.content, m.edited_at, m.reply_to, m.emotes, m.mentions, m.mention_everyone, m.mention_roles, {USER_COLS}
+        "SELECT m.id AS mid, m.channel_id, m.kind, m.content, m.edited_at, m.reply_to, m.emotes, m.mentions, m.mention_everyone, m.mention_roles, {USER_COLS}
          FROM messages m JOIN users u ON u.id = m.author_id WHERE m.id = $1"
     )))
     .bind(id.0)
@@ -516,6 +529,7 @@ pub async fn message(db: &Db, id: Id, viewer: Id) -> sqlx::Result<Message> {
     Ok(Message {
         id: Id(r.id),
         channel_id: Id(r.channel_id),
+        kind: MessageKind::parse(&r.kind),
         author: r.author.into(),
         content: r.content,
         edited_at: r.edited_at,

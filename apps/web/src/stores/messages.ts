@@ -134,6 +134,7 @@ export function createMessagesStore(inst: Instance) {
       const optimistic: UiMessage = {
         id: `pending-${n}`,
         channelId,
+        kind: "default",
         author: me,
         content: local.content,
         mentions: local.mentions,

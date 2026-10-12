@@ -29,6 +29,10 @@ wire! {
         /// Shown above the channel list. Like `icon_url`, a path on this server when uploaded.
         pub banner_url: Option<String>,
         pub description: Option<String>,
+        /// Where "X joined" messages go.
+        pub system_channel_id: Option<Id>,
+        /// A permanent invite code of the server's choosing.
+        pub vanity_code: Option<String>,
     }
 
     /// A guild role. `@everyone` is the role whose id is the guild's, at position 0.
@@ -88,6 +92,9 @@ wire! {
     pub struct Message {
         pub id: Id,
         pub channel_id: Id,
+        /// Regular, or a system message (the author is who it's about).
+        #[serde(default)]
+        pub kind: MessageKind,
         pub author: User,
         pub content: String,
         #[cfg_attr(feature = "ts", ts(type = "number | null"))]
@@ -156,7 +163,13 @@ wire! {
         pub code: String,
         pub guild_id: Id,
         pub guild_name: String,
+        pub guild_icon_url: Option<String>,
         pub member_count: u32,
+        /// When it stops working (ms), if it does.
+        #[cfg_attr(feature = "ts", ts(type = "number | null"))]
+        pub expires_at: Option<i64>,
+        pub max_uses: Option<u32>,
+        pub uses: u32,
     }
 
     pub struct VoiceState {
@@ -289,6 +302,28 @@ wire! {
 
     pub struct ApiError {
         pub error: String,
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub enum MessageKind {
+    #[default]
+    Default,
+    MemberJoin,
+}
+
+impl MessageKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            MessageKind::Default => "default",
+            MessageKind::MemberJoin => "member_join",
+        }
+    }
+
+    pub fn parse(s: &str) -> Self {
+        if s == "member_join" { MessageKind::MemberJoin } else { MessageKind::Default }
     }
 }
 

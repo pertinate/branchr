@@ -54,3 +54,43 @@ test("customization: server icon, banner and description, and an avatar, seen by
   await alice.getByRole("button", { name: "Remove" }).first().click();
   await expect(bob.getByRole("link", { name: "Pretty" }).locator("img")).toHaveCount(0);
 });
+
+test("invites: join messages, a one-use invite, and a vanity code", async ({ browser }) => {
+  const alice = await register(browser, "inv_a");
+  await createServer(alice, "Gated");
+
+  // A one-use invite.
+  await alice.getByRole("button", { name: "Gated" }).click();
+  await alice.getByRole("menuitem", { name: "Invite People" }).click();
+  await alice.getByLabel("Max uses").click();
+  await alice.getByRole("option", { name: "1 use", exact: true }).click();
+  const field = alice.getByLabel("Invite code");
+  await expect(field).not.toHaveValue("");
+  const once = await field.inputValue();
+  await alice.keyboard.press("Escape");
+
+  const bob = await register(browser, "inv_b");
+  await joinServer(bob, once);
+  // Alice sees Bob arrive in #general.
+  await expect(alice.getByTestId("join-message").filter({ hasText: "inv_b" })).toBeVisible();
+
+  // It's used up now.
+  const carol = await register(browser, "inv_c");
+  await carol.getByRole("button", { name: "Add a Server" }).click();
+  await carol.getByRole("tab", { name: "Join" }).click();
+  await carol.getByPlaceholder("Invite code or link").fill(once);
+  await carol.getByRole("button", { name: "Join Server" }).click();
+  await expect(carol.getByText(/expired or been used up/)).toBeVisible();
+  await carol.keyboard.press("Escape");
+
+  // A vanity code works for anyone.
+  const vanity = `gated-${Date.now().toString(36)}`;
+  await alice.getByRole("button", { name: "Gated" }).click();
+  await alice.getByRole("menuitem", { name: "Server Settings" }).click();
+  await alice.getByLabel("Vanity invite code").fill(vanity);
+  await alice.getByRole("button", { name: "Save Changes" }).click();
+  await expect(alice.getByText("Saved")).toBeVisible();
+  await alice.keyboard.press("Escape");
+  await joinServer(carol, vanity);
+  await expect(alice.getByTestId("join-message").filter({ hasText: "inv_c" })).toBeVisible();
+});

@@ -178,6 +178,7 @@ pub async fn create(
     let msg = Message {
         id,
         channel_id: cid,
+        kind: MessageKind::Default,
         author: db::user(&state.db, user).await?,
         content,
         edited_at: None,

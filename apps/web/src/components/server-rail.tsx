@@ -246,7 +246,7 @@ function AddServerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
     } catch (err) {
       toast.error(
         (err as Error).message === "not found"
-          ? `No invite "${parsed.code}" on ${hostOf(inst.url)}. Invites only work on the host that created them.`
+          ? `No invite "${parsed.code}" on ${hostOf(inst.url)}: it may have expired or been used up. Invites only work on the host that created them.`
           : (err as Error).message,
         { duration: 10_000 },
       );
