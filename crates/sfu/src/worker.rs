@@ -18,7 +18,7 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use proto::Id;
-use proto::voice::{LayerPref, PublishTrack, TrackInfo, TrackSource, VoiceClientMsg, VoiceServerMsg};
+use proto::voice::{LayerPref, PublishTrack, TrackInfo, TrackSource, VoiceClaims, VoiceClientMsg, VoiceServerMsg};
 use str0m::bwe::{Bitrate, BweKind};
 use str0m::change::SdpOffer;
 use str0m::format::{Codec, PayloadParams};
@@ -50,7 +50,7 @@ pub struct Frame {
 }
 
 pub enum Cmd {
-    Join { peer: PeerId, user: Id, room: Id, out: mpsc::UnboundedSender<VoiceServerMsg> },
+    Join { peer: PeerId, user: Id, room: Id, claims: VoiceClaims, out: mpsc::UnboundedSender<VoiceServerMsg> },
     Msg { peer: PeerId, msg: VoiceClientMsg },
     Leave { peer: PeerId },
     /// Another worker's publisher produced a frame we have subscribers for.
@@ -170,6 +170,8 @@ struct Slot {
 struct Peer {
     user: Id,
     room: Id,
+    /// What the voice token lets them publish.
+    claims: VoiceClaims,
     rtc: Rtc,
     out: mpsc::UnboundedSender<VoiceServerMsg>,
     /// Publish metadata from the latest offer, keyed by mid, consumed on `MediaAdded`.
@@ -512,7 +514,7 @@ impl Worker {
 
     fn handle_cmd(&mut self, cmd: Cmd) {
         match cmd {
-            Cmd::Join { peer, user, room, out } => self.join(peer, user, room, out),
+            Cmd::Join { peer, user, room, claims, out } => self.join(peer, user, room, claims, out),
             Cmd::Leave { peer } => self.remove_peer(peer),
             Cmd::Kick { peer, reason } => {
                 if let Some(p) = self.peers.get(&peer) {
@@ -552,7 +554,7 @@ impl Worker {
         }
     }
 
-    fn join(&mut self, id: PeerId, user: Id, room_id: Id, out: mpsc::UnboundedSender<VoiceServerMsg>) {
+    fn join(&mut self, id: PeerId, user: Id, room_id: Id, claims: VoiceClaims, out: mpsc::UnboundedSender<VoiceServerMsg>) {
         let mut rtc = Rtc::builder()
             .set_ice_lite(true)
             .enable_bwe(Some(Bitrate::bps(self.initial_bwe)))
@@ -586,6 +588,7 @@ impl Worker {
             Peer {
                 user,
                 room: room_id,
+                claims,
                 rtc,
                 out,
                 pending_publish: HashMap::new(),
@@ -675,6 +678,16 @@ impl Worker {
                     MediaKind::Audio => TrackSource::Mic,
                     MediaKind::Video => TrackSource::Camera,
                 });
+                // Not allowed to send this: it's never forwarded (its packets find no track).
+                if !peer.claims.may_publish(source) {
+                    tracing::info!(peer = id.0, ?source, "refused a track the voice token doesn't allow");
+                    peer.send(VoiceServerMsg::Error { message: format!("you don't have permission to send {}", match source {
+                        TrackSource::Mic => "audio here",
+                        TrackSource::Camera => "video here",
+                        _ => "your screen here",
+                    }) });
+                    return;
+                }
                 let group = meta.as_ref().and_then(|m| m.group.clone());
                 let track_id: Arc<str> = match &group {
                     Some(g) => format!("{}-g{}", id.0, g),

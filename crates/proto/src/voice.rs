@@ -149,6 +149,25 @@ pub struct VoiceClaims {
     pub channel_id: Id,
     /// Unix seconds.
     pub exp: u64,
+    /// What they may not send: the mic, a camera, or a screen (with its audio). Absent means
+    /// allowed, so tokens from servers without these still work.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub deny_speak: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub deny_video: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub deny_stream: bool,
+}
+
+impl VoiceClaims {
+    /// Whether these claims allow publishing a track from `source`.
+    pub fn may_publish(&self, source: TrackSource) -> bool {
+        match source {
+            TrackSource::Mic => !self.deny_speak,
+            TrackSource::Camera => !self.deny_video,
+            TrackSource::Screen | TrackSource::ScreenAudio => !self.deny_stream,
+        }
+    }
 }
 
 #[cfg(feature = "token")]
@@ -190,11 +209,21 @@ pub mod token {
 
         #[test]
         fn roundtrip() {
-            let c = VoiceClaims { user_id: Id(1), guild_id: Id(2), channel_id: Id(3), exp: 100 };
+            let c = VoiceClaims { user_id: Id(1), guild_id: Id(2), channel_id: Id(3), exp: 100, deny_speak: false, deny_video: true, deny_stream: false };
             let t = sign(b"secret", &c);
             assert_eq!(verify(b"secret", &t, 50), Some(c.clone()));
             assert_eq!(verify(b"other", &t, 50), None);
             assert_eq!(verify(b"secret", &t, 150), None);
+            // The denials travel in the token and decide what may be published.
+            use crate::voice::TrackSource;
+            let back = verify(b"secret", &t, 50).unwrap();
+            assert!(back.may_publish(TrackSource::Mic) && !back.may_publish(TrackSource::Camera) && back.may_publish(TrackSource::Screen));
+            // Tokens without them (older servers) allow everything.
+            let mut v = serde_json::to_value(&c).unwrap();
+            v.as_object_mut().unwrap().retain(|k, _| !k.starts_with("deny"));
+            let body = serde_json::to_vec(&v).unwrap();
+            let old = format!("{}.{}", B64.encode(&body), B64.encode(mac(b"secret", &body)));
+            assert!(verify(b"secret", &old, 50).is_some_and(|c| c.may_publish(TrackSource::Camera)));
         }
     }
 }

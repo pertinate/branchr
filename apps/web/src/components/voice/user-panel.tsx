@@ -9,6 +9,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { UserAvatar } from "@/components/user-avatar";
 import { StreamDialog } from "@/components/voice/stream-dialog";
 import { hostOf, instance, useInstance } from "@/lib/instances";
+import { P, channelPermsOf, has } from "@/lib/perms";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/stores/app";
 import { useVoice } from "@/stores/voice";
@@ -43,6 +44,12 @@ export function UserPanel() {
   const channel = useStore(voiceInst.app, (s) => (v.channelId ? s.channels[v.channelId] : undefined));
   const guild = useStore(voiceInst.app, (s) => (v.guildId ? s.guilds[v.guildId] : undefined));
   const elsewhere = voiceInst.id !== here.id ? ` · ${hostOf(voiceInst.url)}` : "";
+  // What this channel lets us send (the SFU refuses the rest).
+  const perms = useStore(voiceInst.app, (s) => (v.channelId ? channelPermsOf(s, v.channelId) : 0));
+  const [canSpeak, canVideo, canStream] = [has(perms, P.SPEAK), has(perms, P.VIDEO), has(perms, P.STREAM)];
+  useEffect(() => {
+    if (v.status === "connected" && !canSpeak && !v.muted) v.toggleMute();
+  }, [v.status, canSpeak, v.muted, v]);
   const root = useRef<HTMLDivElement>(null);
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -111,14 +118,18 @@ export function UserPanel() {
             {v.status === "connected" && (
               <div className="mt-2 grid grid-cols-2 gap-1">
                 <button
+                  disabled={!canVideo && !v.camera}
+                  title={canVideo ? undefined : "You can't turn on video in this channel"}
                   onClick={() => v.toggleCamera().catch((e) => toast.error(`Camera: ${(e as Error).message}`))}
-                  className={cn("flex items-center justify-center gap-1 rounded-md py-1.5 text-sm", v.camera ? "bg-primary text-white" : "bg-sidebar-accent hover:bg-accent")}
+                  className={cn("flex items-center justify-center gap-1 rounded-md py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-40", v.camera ? "bg-primary text-white" : "bg-sidebar-accent hover:bg-accent")}
                 >
                   {v.camera ? <Video className="size-4" /> : <VideoOff className="size-4" />} Video
                 </button>
                 <button
+                  disabled={!canStream && !v.screen}
+                  title={canStream ? undefined : "You can't stream in this channel"}
                   onClick={() => (v.screen ? void v.stopStream() : setStreamOpen(true))}
-                  className={cn("flex items-center justify-center gap-1 rounded-md py-1.5 text-sm", v.screen ? "bg-live text-white" : "bg-sidebar-accent hover:bg-accent")}
+                  className={cn("flex items-center justify-center gap-1 rounded-md py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-40", v.screen ? "bg-live text-white" : "bg-sidebar-accent hover:bg-accent")}
                 >
                   <MonitorUp className="size-4" /> {v.screen ? "Stop" : "Stream"}
                 </button>
@@ -147,7 +158,11 @@ export function UserPanel() {
               <div className="flex shrink-0 items-center gap-0.5 pr-2">
                 {inVoice && (
                   <>
-                    <IconButton label={v.muted ? "Unmute" : "Mute"} onClick={v.toggleMute} danger={v.muted}>
+                    <IconButton
+                      label={!canSpeak ? "You can't speak in this channel" : v.muted ? "Unmute" : "Mute"}
+                      onClick={canSpeak ? v.toggleMute : () => undefined}
+                      danger={v.muted}
+                    >
                       {v.muted ? <MicOff className="size-5" /> : <Mic className="size-5" />}
                     </IconButton>
                     <IconButton label={v.deafened ? "Undeafen" : "Deafen"} onClick={v.toggleDeafen} danger={v.deafened}>

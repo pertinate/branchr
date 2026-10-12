@@ -99,7 +99,7 @@ async fn main() -> anyhow::Result<()> {
     let token = |user: i64| {
         proto::voice::token::sign(
             a.secret.as_bytes(),
-            &VoiceClaims { user_id: Id(user), guild_id: Id(1), channel_id: Id(a.room), exp: now_unix() + 3600 },
+            &VoiceClaims { user_id: Id(user), guild_id: Id(1), channel_id: Id(a.room), exp: now_unix() + 3600, deny_speak: false, deny_video: false, deny_stream: false },
         )
     };
 

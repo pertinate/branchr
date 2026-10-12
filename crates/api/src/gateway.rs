@@ -201,10 +201,10 @@ async fn voice_state_update(state: &AppState, key: SessionKey, user: Id, u: Voic
     if !db::is_member(&state.db, u.guild_id, user).await.unwrap_or(false) {
         return;
     }
-    match state.perms.guild(&state.db, u.guild_id).await {
-        Ok(g) if g.can_in(user, channel_id, proto::perms::VIEW_CHANNEL | proto::perms::CONNECT) => {}
+    let allowed = match state.perms.guild(&state.db, u.guild_id).await {
+        Ok(g) if g.can_in(user, channel_id, proto::perms::VIEW_CHANNEL | proto::perms::CONNECT) => g.in_channel(user, channel_id),
         _ => return,
-    }
+    };
 
     let prev = hub.voice_state(u.guild_id, user);
     let vs = VoiceState {
@@ -227,6 +227,10 @@ async fn voice_state_update(state: &AppState, key: SessionKey, user: Id, u: Voic
             guild_id: u.guild_id,
             channel_id,
             exp: (db::now_ms() / 1000) as u64 + 120,
+            // The SFU refuses tracks these deny.
+            deny_speak: allowed & proto::perms::SPEAK == 0,
+            deny_video: allowed & proto::perms::VIDEO == 0,
+            deny_stream: allowed & proto::perms::STREAM == 0,
         };
         let urls = &state.config.sfu_urls;
         let endpoint = urls[(channel_id.0 as u64 % urls.len() as u64) as usize].clone();

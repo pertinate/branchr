@@ -69,7 +69,7 @@ async fn run(mut ws: WebSocket, app: Arc<App>) -> anyhow::Result<()> {
     // Peers go to the least loaded worker regardless of room, so big rooms use every core.
     let worker = app.shared.least_loaded();
     let (out_tx, mut out_rx) = mpsc::unbounded_channel();
-    app.shared.send(worker, Cmd::Join { peer, user: claims.user_id, room: claims.channel_id, out: out_tx });
+    app.shared.send(worker, Cmd::Join { peer, user: claims.user_id, room: claims.channel_id, claims: claims.clone(), out: out_tx });
     let _leave = LeaveGuard { shared: app.shared.clone(), worker, peer };
 
     loop {

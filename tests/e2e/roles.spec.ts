@@ -131,4 +131,17 @@ test("channel permissions: hide a channel from everyone, open it to one person, 
   await alice.getByRole("radio", { name: "Send Messages: deny" }).click();
   await alice.getByRole("button", { name: "Save Changes" }).click();
   await expect(bob.getByTestId("composer-locked")).toBeVisible();
+  await alice.keyboard.press("Escape");
+
+  // No streaming in the General voice channel: the button is off for Bob there.
+  await alice.getByRole("link", { name: "General", exact: true }).click({ button: "right" });
+  await item(alice, "Edit Channel").click();
+  await alice.getByRole("tab", { name: "Permissions" }).click();
+  await alice.getByRole("radio", { name: "Stream: deny" }).click();
+  await alice.getByRole("button", { name: "Save Changes" }).click();
+  await alice.keyboard.press("Escape");
+  await bob.getByRole("link", { name: "General", exact: true }).click();
+  await expect(bob.getByText("Voice Connected")).toBeVisible();
+  await expect(bob.getByRole("button", { name: "Stream" })).toBeDisabled();
+  await expect(bob.getByRole("button", { name: "Video" })).toBeEnabled();
 });
