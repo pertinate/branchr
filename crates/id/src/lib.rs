@@ -4,10 +4,13 @@
 pub mod config;
 pub mod discord;
 pub mod error;
+pub mod gateway;
 pub mod hosts;
+pub mod hub;
 pub mod instances;
 pub mod keys;
 pub mod oauth;
+pub mod social;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -27,6 +30,9 @@ pub struct AppState {
     pub db: PgPool,
     pub keys: Arc<Keys>,
     pub http: reqwest::Client,
+    pub hub: Arc<hub::Hub>,
+    /// Snowflakes for DM channels and messages.
+    pub ids: Arc<proto::id::IdGen>,
 }
 
 /// Connects and migrates. `schema` (tests) keeps everything in its own Postgres schema.
@@ -54,7 +60,8 @@ pub async fn connect(url: &str, schema: Option<&str>) -> anyhow::Result<PgPool> 
 pub async fn state(config: Config, db: PgPool) -> anyhow::Result<AppState> {
     let keys = Keys::load(&db).await?;
     let http = reqwest::Client::builder().user_agent(discord::USER_AGENT).timeout(Duration::from_secs(10)).build()?;
-    Ok(AppState { config: Arc::new(config), db, keys: Arc::new(keys), http })
+    let worker = std::env::var("WORKER_ID").ok().and_then(|w| w.parse().ok()).unwrap_or(0);
+    Ok(AppState { config: Arc::new(config), db, keys: Arc::new(keys), http, hub: Default::default(), ids: Arc::new(proto::id::IdGen::new(worker)) })
 }
 
 pub fn router(state: AppState) -> Router {
@@ -68,6 +75,13 @@ pub fn router(state: AppState) -> Router {
         .route("/me", get(oauth::me))
         .route("/me/instances", get(hosts::list).put(hosts::add).delete(hosts::remove))
         .route("/me/owned", get(instances::owned))
+        .route("/people/@me", get(social::me))
+        .route("/relationships", get(social::list).post(social::add))
+        .route("/relationships/{id}", axum::routing::put(social::put).delete(social::remove))
+        .route("/dms", get(social::dms).post(social::open))
+        .route("/dms/{cid}/messages", get(social::messages).post(social::send))
+        .route("/dms/{cid}/messages/{mid}", axum::routing::patch(social::edit).delete(social::delete))
+        .route("/gateway", get(gateway::upgrade))
         .route("/instances", post(instances::register))
         .route("/instances/{id}", get(instances::status))
         .route("/instances/{id}/claim-code", post(instances::new_claim_code))

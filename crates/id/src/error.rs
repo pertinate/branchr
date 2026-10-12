@@ -9,6 +9,10 @@ pub enum Error {
     BadRequest(&'static str, String),
     #[error("unauthorized")]
     Unauthorized,
+    #[error("not found")]
+    NotFound,
+    #[error("{0}")]
+    Forbidden(String),
     #[error("{0}")]
     Upstream(String),
     #[error(transparent)]
@@ -32,6 +36,8 @@ impl IntoResponse for Error {
         let (status, code, msg) = match &self {
             Error::BadRequest(code, m) => (StatusCode::BAD_REQUEST, *code, m.clone()),
             Error::Unauthorized => (StatusCode::UNAUTHORIZED, "invalid_token", "unauthorized".into()),
+            Error::NotFound => (StatusCode::NOT_FOUND, "not_found", "not found".into()),
+            Error::Forbidden(m) => (StatusCode::FORBIDDEN, "forbidden", m.clone()),
             Error::Upstream(m) => (StatusCode::BAD_GATEWAY, "upstream_error", m.clone()),
             Error::Internal(e) => {
                 tracing::error!("{e:#}");

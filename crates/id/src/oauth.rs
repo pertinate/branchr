@@ -145,6 +145,21 @@ async fn upsert_discord_account(s: &AppState, u: &discord::DiscordUser) -> Resul
     }
 }
 
+/// A handle for a new account: the Discord username, lowercased, or with a number added
+/// when someone has it already.
+async fn free_handle(tx: &mut sqlx::PgConnection, username: &str) -> Result<String> {
+    let mut base: String = username.to_lowercase().chars().filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '.').take(28).collect();
+    if base.len() < 2 {
+        base = "user".into();
+    }
+    let taken: Vec<(String,)> = sqlx::query_as("SELECT handle FROM accounts WHERE handle LIKE $1 || '%'").bind(&base).fetch_all(&mut *tx).await?;
+    let taken: std::collections::HashSet<String> = taken.into_iter().map(|(h,)| h).collect();
+    if !taken.contains(&base) {
+        return Ok(base);
+    }
+    Ok((2..).map(|n| format!("{base}{n}")).find(|h| !taken.contains(h)).expect("some number is free"))
+}
+
 async fn try_upsert(s: &AppState, u: &discord::DiscordUser) -> Result<Option<Uuid>> {
     let mut tx = s.db.begin().await?;
     let existing: Option<(Uuid,)> = sqlx::query_as("SELECT account_id FROM identities WHERE provider = 'discord' AND subject = $1 FOR UPDATE")
@@ -168,10 +183,12 @@ async fn try_upsert(s: &AppState, u: &discord::DiscordUser) -> Result<Option<Uui
         }
         None => {
             let id = Uuid::now_v7();
-            sqlx::query("INSERT INTO accounts (id, display_name, avatar_url) VALUES ($1, $2, $3)")
+            let handle = free_handle(&mut tx, &u.username).await?;
+            sqlx::query("INSERT INTO accounts (id, display_name, avatar_url, handle) VALUES ($1, $2, $3, $4)")
                 .bind(id)
                 .bind(u.display_name())
                 .bind(u.avatar_url())
+                .bind(handle)
                 .execute(&mut *tx)
                 .await?;
             let r = sqlx::query(

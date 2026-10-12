@@ -56,4 +56,18 @@ export type * from "./generated/VoiceState";
 export type * from "./generated/VoiceStateRef";
 export type * from "./generated/VoiceStateUpdate";
 
+// branchr ID social.
+export type * from "./generated/DmChannel";
+export type * from "./generated/DmMessage";
+export type * from "./generated/DmMessageRef";
+export type * from "./generated/DmTyping";
+export type * from "./generated/Person";
+export type * from "./generated/PersonRef";
+export type * from "./generated/Relationship";
+export type * from "./generated/RelationshipKind";
+export type * from "./generated/SocialEvent";
+export type * from "./generated/SocialOp";
+export type * from "./generated/SocialPresence";
+export type * from "./generated/SocialReady";
+
 export * from "./permissions";

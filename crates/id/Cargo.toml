@@ -11,6 +11,7 @@ name = "branchr-id"
 path = "src/main.rs"
 
 [dependencies]
+proto.workspace = true
 tokio.workspace = true
 axum.workspace = true
 serde.workspace = true
@@ -29,6 +30,10 @@ reqwest = { version = "0.13", default-features = false, features = ["rustls", "j
 jsonwebtoken = { version = "10", default-features = false, features = ["rust_crypto"] }
 ed25519-dalek = { version = "2", features = ["pkcs8"] }
 url = "2"
+futures.workspace = true
+dashmap = "6"
 
 [dev-dependencies]
+futures.workspace = true
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "form", "query"] }
+tokio-tungstenite = "0.30"
