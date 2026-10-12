@@ -21,6 +21,7 @@ export type * from "./generated/GuildRef";
 export type * from "./generated/Hello";
 export type * from "./generated/HostGuild";
 export type * from "./generated/HostOverview";
+export type * from "./generated/HostRole";
 export type * from "./generated/HostUser";
 export type * from "./generated/Id";
 export type * from "./generated/InstanceInfo";

@@ -225,6 +225,8 @@ wire! {
         pub messages: u64,
         #[cfg_attr(feature = "ts", ts(type = "number"))]
         pub attachment_bytes: u64,
+        /// What you may do here.
+        pub my_role: HostRole,
     }
 
     /// A user on the host, for its owner.
@@ -236,6 +238,8 @@ wire! {
         pub linked: bool,
         /// The host's owner (can't be banned).
         pub owner: bool,
+        /// Their staff role, if any (the owner's is `owner`).
+        pub role: Option<HostRole>,
         pub guilds: u32,
         pub banned: bool,
         pub ban_reason: Option<String>,
@@ -305,6 +309,35 @@ wire! {
 
     pub struct ApiError {
         pub error: String,
+    }
+}
+
+/// Who runs a host, highest first: the owner (who claimed it) appoints admins and moderators.
+/// Admins change settings and remove servers; moderators ban people.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub enum HostRole {
+    Moderator,
+    Admin,
+    Owner,
+}
+
+impl HostRole {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "admin" => Some(HostRole::Admin),
+            "moderator" => Some(HostRole::Moderator),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            HostRole::Owner => "owner",
+            HostRole::Admin => "admin",
+            HostRole::Moderator => "moderator",
+        }
     }
 }
 

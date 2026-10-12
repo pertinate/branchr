@@ -102,6 +102,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/admin/settings", patch(admin::settings))
         .route("/admin/users", get(admin::users))
         .route("/admin/bans/{uid}", put(admin::ban).delete(admin::unban))
+        .route("/admin/staff/{uid}", put(admin::set_staff))
         .route("/admin/guilds", get(admin::guilds))
         .route("/admin/guilds/{gid}", delete(admin::delete_guild))
         .route("/users/@me", get(users::me).patch(users::patch_me))

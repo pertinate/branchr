@@ -1,4 +1,4 @@
-import type { HostGuild, HostOverview, HostUser } from "@app/protocol";
+import type { HostGuild, HostOverview, HostRole, HostUser } from "@app/protocol";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ban, Search, ShieldCheck, Trash2, Undo2 } from "lucide-react";
 import { useState } from "react";
@@ -9,13 +9,17 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { UserAvatar } from "@/components/user-avatar";
 import { type Instance, hostOf, useInstance } from "@/lib/instances";
 import { formatBytes } from "@/lib/upload";
 
-/** Whether we own (claimed) `inst`: its admin overview answers only for the owner. */
+const ROLE_NAMES: Record<HostRole, string> = { owner: "Owner", admin: "Admin", moderator: "Moderator" };
+const RANK: Record<HostRole, number> = { moderator: 0, admin: 1, owner: 2 };
+
+/** Whether we run `inst` (owner or staff): its admin overview answers only for them. */
 export function useHostOwner(inst: Instance) {
   const q = useQuery({
     queryKey: ["host-overview", inst.id],
@@ -29,18 +33,25 @@ export function useHostOwner(inst: Instance) {
 /** Manage a host you've claimed: settings, people, servers. Rendered in its instance's provider. */
 export function HostAdminDialog({ onClose }: { onClose: () => void }) {
   const inst = useInstance();
+  const role = useQuery({ queryKey: ["host-overview", inst.id], queryFn: () => inst.api<HostOverview>("GET", "/admin/overview") }).data?.myRole;
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="flex h-[75vh] flex-col sm:max-w-3xl" data-testid="host-admin">
         <DialogHeader>
           <DialogTitle>Manage {hostOf(inst.url)}</DialogTitle>
-          <DialogDescription>You claimed this host, so you can change its settings, ban people and remove servers.</DialogDescription>
+          <DialogDescription>
+            {role === "owner"
+              ? "You claimed this host: change its settings, appoint staff, ban people and remove servers."
+              : role === "admin"
+                ? "You're an admin here: change its settings, ban people and remove servers."
+                : "You're a moderator here: you can ban people."}
+          </DialogDescription>
         </DialogHeader>
         <Tabs defaultValue="overview" className="flex min-h-0 flex-1 flex-col">
           <TabsList>
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="members">Members</TabsTrigger>
-            <TabsTrigger value="servers">Servers</TabsTrigger>
+            {role !== "moderator" && <TabsTrigger value="servers">Servers</TabsTrigger>}
           </TabsList>
           <TabsContent value="overview" className="overflow-y-auto">
             <Overview />
@@ -108,7 +119,7 @@ function Overview() {
           <Label htmlFor="open-registration">Open registration</Label>
           <p className="mt-1 text-xs text-muted-foreground">When off, only people who already have an account here can log in.</p>
         </div>
-        <Switch id="open-registration" checked={o.openRegistration} onCheckedChange={(v) => void setOpen(v)} />
+        <Switch id="open-registration" checked={o.openRegistration} disabled={o.myRole === "moderator"} onCheckedChange={(v) => void setOpen(v)} />
       </div>
     </div>
   );
@@ -134,6 +145,18 @@ function Members() {
     try {
       await inst.api("PUT", `/admin/bans/${u.user.id}`, { reason });
       toast.success(`Banned ${u.user.displayName}`);
+      refresh();
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  };
+  const myRole = useQuery({ queryKey: ["host-overview", inst.id], queryFn: () => inst.api<HostOverview>("GET", "/admin/overview") }).data?.myRole;
+  // Staff only act on people below them.
+  const outranked = (u: HostUser) => !!u.role && !!myRole && RANK[u.role] >= RANK[myRole];
+  const setStaff = async (u: HostUser, role: string | null) => {
+    try {
+      await inst.api("PUT", `/admin/staff/${u.user.id}`, { role });
+      toast.success(role ? `${u.user.displayName} is now ${role === "admin" ? "an admin" : "a moderator"}` : `${u.user.displayName} has no host role`);
       refresh();
     } catch (e) {
       toast.error((e as Error).message);
@@ -166,9 +189,9 @@ function Members() {
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
                 <span className="truncate font-medium">{u.user.displayName}</span>
-                {u.owner && (
+                {u.role && (
                   <Badge variant="secondary">
-                    <ShieldCheck /> Owner
+                    <ShieldCheck /> {ROLE_NAMES[u.role]}
                   </Badge>
                 )}
                 {u.linked && !u.owner && <Badge variant="outline">branchr</Badge>}
@@ -179,7 +202,19 @@ function Members() {
                 {u.banReason && ` · "${u.banReason}"`}
               </div>
             </div>
-            {!u.owner &&
+            {myRole === "owner" && !u.owner && (
+              <Select value={u.role ?? "none"} onValueChange={(v) => void setStaff(u, v === "none" ? null : v)}>
+                <SelectTrigger size="sm" className="w-32" aria-label={`Host role for ${u.user.displayName}`}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No role</SelectItem>
+                  <SelectItem value="moderator">Moderator</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+            {!u.owner && !outranked(u) &&
               (u.banned ? (
                 <Button size="sm" variant="outline" onClick={() => void unban(u)}>
                   <Undo2 /> Unban

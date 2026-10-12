@@ -1,5 +1,6 @@
-//! Managing the host itself, for the branchr account that claimed it: overview and
-//! settings, people (bans), and every server (guild) on it.
+//! Managing the host itself: the branchr account that claimed it (the owner), and the
+//! admins and moderators it appoints. Overview and settings, people (bans and staff), and
+//! every server (guild) on it.
 
 use std::sync::atomic::Ordering;
 
@@ -7,7 +8,7 @@ use axum::Json;
 use axum::extract::{Path, Query, State};
 use proto::Id;
 use proto::gateway::{GuildRef, ServerEvent};
-use proto::models::{HostGuild, HostOverview, HostUser};
+use proto::models::{HostGuild, HostOverview, HostRole, HostUser};
 use serde::Deserialize;
 
 use crate::auth::Auth;
@@ -26,15 +27,25 @@ async fn owner_id(state: &AppState) -> AppResult<Option<Id>> {
     Ok(row.map(|(id,)| Id(id)))
 }
 
-async fn require_host_owner(state: &AppState, user: Id) -> AppResult<()> {
-    match owner_id(state).await? {
-        Some(o) if o == user => Ok(()),
+/// `user`'s role on this host, if they have one.
+pub async fn host_role(state: &AppState, user: Id) -> AppResult<Option<HostRole>> {
+    if owner_id(state).await? == Some(user) {
+        return Ok(Some(HostRole::Owner));
+    }
+    let row: Option<(String,)> = sqlx::query_as("SELECT role FROM instance_staff WHERE user_id = $1").bind(user.0).fetch_optional(&state.db).await?;
+    Ok(row.and_then(|(r,)| HostRole::parse(&r)))
+}
+
+/// Requires at least `min`; returns the role they have.
+async fn require_role(state: &AppState, user: Id, min: HostRole) -> AppResult<HostRole> {
+    match host_role(state, user).await? {
+        Some(r) if r >= min => Ok(r),
         _ => Err(AppError::Forbidden),
     }
 }
 
 pub async fn overview(State(state): State<AppState>, Auth(user): Auth) -> AppResult<Json<HostOverview>> {
-    require_host_owner(&state, user).await?;
+    let my_role = require_role(&state, user, HostRole::Moderator).await?;
     let (users, banned, guilds, messages, bytes): (i64, i64, i64, i64, i64) = sqlx::query_as(
         "SELECT (SELECT count(*) FROM users), (SELECT count(*) FROM instance_bans), (SELECT count(*) FROM guilds),
                 (SELECT count(*) FROM messages), (SELECT CAST(coalesce(sum(size), 0) AS BIGINT) FROM attachments)",
@@ -55,6 +66,7 @@ pub async fn overview(State(state): State<AppState>, Auth(user): Auth) -> AppRes
         guilds: guilds as u32,
         messages: messages as u64,
         attachment_bytes: bytes as u64,
+        my_role,
     }))
 }
 
@@ -65,7 +77,7 @@ pub struct PatchSettings {
 }
 
 pub async fn settings(State(state): State<AppState>, Auth(user): Auth, Json(body): Json<PatchSettings>) -> AppResult<Json<HostOverview>> {
-    require_host_owner(&state, user).await?;
+    require_role(&state, user, HostRole::Admin).await?;
     if let Some(open) = body.open_registration {
         sqlx::query("INSERT INTO instance_settings (key, value) VALUES ('open_registration', $1) ON CONFLICT (key) DO UPDATE SET value = $1")
             .bind(if open { "true" } else { "false" })
@@ -109,8 +121,9 @@ struct HostUserRow {
 }
 
 pub async fn users(State(state): State<AppState>, Auth(user): Auth, Query(q): Query<UserQuery>) -> AppResult<Json<Vec<HostUser>>> {
-    require_host_owner(&state, user).await?;
+    require_role(&state, user, HostRole::Moderator).await?;
     let owner = owner_id(&state).await?;
+    let staff: Vec<(i64, String)> = sqlx::query_as("SELECT user_id, role FROM instance_staff").fetch_all(&state.db).await?;
     let pattern = format!("%{}%", q.q.trim().replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_"));
     let rows: Vec<HostUserRow> = sqlx::query_as(
         "SELECT u.id, u.username, u.display_name, u.avatar_url, u.created_at, u.global_id,
@@ -130,6 +143,11 @@ pub async fn users(State(state): State<AppState>, Auth(user): Auth, Query(q): Qu
         rows.into_iter()
             .map(|r| HostUser {
                 owner: owner == Some(Id(r.id)),
+                role: if owner == Some(Id(r.id)) {
+                    Some(HostRole::Owner)
+                } else {
+                    staff.iter().find(|(u, _)| *u == r.id).and_then(|(_, role)| HostRole::parse(role))
+                },
                 user: proto::models::User { id: Id(r.id), username: r.username, display_name: r.display_name, avatar_url: r.avatar_url, global_id: r.global_id.clone() },
                 created_at: r.created_at,
                 linked: r.global_id.is_some(),
@@ -149,7 +167,11 @@ pub struct Ban {
 
 /// Bans someone from the whole host: their sessions end and they can't log back in.
 pub async fn ban(State(state): State<AppState>, Auth(user): Auth, Path(target): Path<Id>, Json(body): Json<Ban>) -> AppResult<()> {
-    require_host_owner(&state, user).await?;
+    let mine = require_role(&state, user, HostRole::Moderator).await?;
+    // Staff can only act on people below them.
+    if host_role(&state, target).await?.is_some_and(|theirs| theirs >= mine) {
+        return Err(bad("you can't ban someone whose host role is the same as or above yours"));
+    }
     if target == user {
         return Err(bad("you can't ban yourself"));
     }
@@ -175,7 +197,7 @@ pub async fn ban(State(state): State<AppState>, Auth(user): Auth, Path(target): 
 }
 
 pub async fn unban(State(state): State<AppState>, Auth(user): Auth, Path(target): Path<Id>) -> AppResult<()> {
-    require_host_owner(&state, user).await?;
+    require_role(&state, user, HostRole::Moderator).await?;
     sqlx::query("DELETE FROM instance_bans WHERE user_id = $1").bind(target.0).execute(&state.db).await?;
     Ok(())
 }
@@ -203,7 +225,7 @@ struct HostGuildRow {
 }
 
 pub async fn guilds(State(state): State<AppState>, Auth(user): Auth, Query(q): Query<GuildQuery>) -> AppResult<Json<Vec<HostGuild>>> {
-    require_host_owner(&state, user).await?;
+    require_role(&state, user, HostRole::Admin).await?;
     let pattern = format!("%{}%", q.q.trim().replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_"));
     let rows: Vec<HostGuildRow> = sqlx::query_as(
         "SELECT g.id AS gid, g.name, g.icon_url, g.owner_id, g.banner_url, g.description, g.system_channel_id, g.vanity_code,
@@ -239,7 +261,7 @@ pub async fn guilds(State(state): State<AppState>, Auth(user): Auth, Query(q): Q
 
 /// Deletes any server on the host (abuse, spam).
 pub async fn delete_guild(State(state): State<AppState>, Auth(user): Auth, Path(gid): Path<Id>) -> AppResult<()> {
-    require_host_owner(&state, user).await?;
+    require_role(&state, user, HostRole::Admin).await?;
     let r = sqlx::query("DELETE FROM guilds WHERE id = $1").bind(gid.0).execute(&state.db).await?;
     if r.rows_affected() == 0 {
         return Err(AppError::NotFound);
@@ -249,4 +271,36 @@ pub async fn delete_guild(State(state): State<AppState>, Auth(user): Auth, Path(
     state.channel_guild.retain(|_, g| *g != gid);
     tracing::info!("host owner deleted guild {}", gid.0);
     Ok(())
+}
+
+#[derive(Deserialize)]
+pub struct SetStaff {
+    /// `admin`, `moderator`, or null to take the role away.
+    role: Option<String>,
+}
+
+/// The owner appoints (or removes) admins and moderators.
+pub async fn set_staff(State(state): State<AppState>, Auth(user): Auth, Path(target): Path<Id>, Json(body): Json<SetStaff>) -> AppResult<Json<HostUser>> {
+    require_role(&state, user, HostRole::Owner).await?;
+    if target == user {
+        return Err(bad("you're the owner"));
+    }
+    db::user(&state.db, target).await?;
+    match body.role.as_deref() {
+        None => {
+            sqlx::query("DELETE FROM instance_staff WHERE user_id = $1").bind(target.0).execute(&state.db).await?;
+        }
+        Some(r) => {
+            let role = HostRole::parse(r).ok_or_else(|| bad("role is admin or moderator"))?;
+            sqlx::query("INSERT INTO instance_staff (user_id, role) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET role = excluded.role")
+                .bind(target.0)
+                .bind(role.as_str())
+                .execute(&state.db)
+                .await?;
+        }
+    }
+    tracing::info!("host owner set {}'s role to {:?}", target.0, body.role);
+    let q = UserQuery { q: db::user(&state.db, target).await?.username, banned: false, offset: 0 };
+    let list = users(State(state), Auth(user), Query(q)).await?.0;
+    list.into_iter().find(|u| u.user.id == target).map(Json).ok_or(AppError::NotFound)
 }

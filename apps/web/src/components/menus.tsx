@@ -25,6 +25,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { Slider } from "@/components/ui/slider";
+import { useHostOwner } from "@/components/host-admin-dialog";
 import { copy, deleteChannel, insertIntoComposer, kick, leaveGuild, markGuildRead, setStatus } from "@/lib/actions";
 import { useInstance } from "@/lib/instances";
 import { P, SETTINGS_PERMS, roleColor, topOf, useCan, useCanAny, useOutranks } from "@/lib/perms";
@@ -261,7 +262,9 @@ export function UserMenuItems({ guildId, userId }: { guildId: string; userId: st
 
 /** Your own avatar in the user panel. */
 export function SelfMenuItems() {
-  const instanceId = useInstance().id;
+  const inst = useInstance();
+  const instanceId = inst.id;
+  const staff = useHostOwner(inst);
   const me = useApp((s) => s.me);
   const status = useApp((s) => (s.me ? (s.presences[s.me.id] ?? "online") : "online"));
   const { guildId } = useParams({ strict: false }) as { guildId?: string };
@@ -283,6 +286,11 @@ export function SelfMenuItems() {
       {guildId && (
         <ContextMenuItem onSelect={() => open({ instanceId, kind: "nickname", guildId })}>
           Change Nickname <Pencil className="ml-auto" />
+        </ContextMenuItem>
+      )}
+      {staff && (
+        <ContextMenuItem onSelect={() => open({ instanceId, kind: "host-admin" })}>
+          Manage Host <Settings className="ml-auto" />
         </ContextMenuItem>
       )}
       <ContextMenuSeparator />

@@ -115,6 +115,21 @@ test("federated server: sign in with Discord from the login screen, claim it, co
   await expect(row.getByRole("button", { name: "Ban" })).toBeVisible();
   await bad.getByRole("button", { name: "Log In" }).click();
   await expect(bad.getByRole("heading", { name: "No servers yet" })).toBeVisible();
+
+  // The owner makes them a moderator: they can manage people, but not servers or the owner.
+  await row.getByLabel(`Host role for ${`spammer_${run}`}`).click();
+  await page.getByRole("option", { name: "Moderator" }).click();
+  await expect(row.getByText("Moderator")).toBeVisible();
+  await bad.getByRole("button", { name: "Your account" }).click({ button: "right" });
+  await bad.getByRole("menuitem", { name: "Manage Host" }).click();
+  const modView = bad.getByTestId("host-admin");
+  await expect(modView.getByText("You're a moderator here")).toBeVisible();
+  await expect(modView.getByRole("tab", { name: "Servers" })).toHaveCount(0);
+  await modView.getByRole("tab", { name: "Members" }).click();
+  const ownerRow = modView.getByTestId("host-user").filter({ hasText: "Owner" });
+  await expect(ownerRow).toBeVisible();
+  await expect(ownerRow.getByRole("button", { name: "Ban" })).toHaveCount(0);
+  await bad.keyboard.press("Escape");
   await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
 
