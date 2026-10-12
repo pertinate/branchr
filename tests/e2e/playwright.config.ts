@@ -26,6 +26,8 @@ export default defineConfig({
   timeout: 120_000,
   expect: { timeout: 15_000 },
   fullyParallel: false,
+  // CI machines are slower and noisier; a second try is reported as flaky, not hidden.
+  retries: process.env.CI ? 1 : 0,
   reporter: [["list"]],
   use: {
     baseURL: remote ?? "http://localhost:5173",

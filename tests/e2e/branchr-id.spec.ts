@@ -17,18 +17,12 @@ test("branchr account: sign in with Discord, survive a reload, sign out", async 
   // The code doesn't linger in the address bar.
   expect(new URL(page.url()).search).toBe("");
 
-  // The refresh token persists; a fresh load can mint access tokens with it.
+  // The refresh token persists: after a fresh load the app mints access tokens with it, which
+  // is what connects friends and DMs (rotating it by hand here would race the app doing so).
   await page.reload();
-  const token = await page.evaluate(async () => {
-    const id = JSON.parse(localStorage.getItem("branchr-id") ?? "{}").state;
-    const r = await fetch("http://localhost:8070/token", { method: "POST", body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: id.refreshToken }) });
-    const t = await r.json();
-    // Keep the rotated token, as the app would.
-    localStorage.setItem("branchr-id", JSON.stringify({ state: { ...id, refreshToken: t.refresh_token }, version: 0 }));
-    return t.access_token as string;
-  });
-  const me = await page.evaluate(async (t) => (await fetch("http://localhost:8070/me", { headers: { authorization: `Bearer ${t}` } })).json(), token);
-  expect(me.displayName).toBe("E2E Nelly");
+  await page.getByRole("link", { name: "Direct Messages" }).click();
+  await expect(page.getByRole("tab", { name: "Add Friend" })).toBeVisible();
+  await page.goBack();
 
   await page.getByRole("button", { name: "Your account" }).hover();
   await page.getByRole("button", { name: "User Settings" }).click();
