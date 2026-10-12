@@ -26,7 +26,7 @@ use tower_http::services::{ServeDir, ServeFile};
 use tracing_subscriber::EnvFilter;
 
 use crate::config::Config;
-use crate::routes::{attachments, channels, emotes, guilds, messages, users};
+use crate::routes::{admin, attachments, channels, emotes, guilds, messages, users};
 use crate::state::{AppState, State};
 
 #[tokio::main]
@@ -48,9 +48,11 @@ async fn main() -> anyhow::Result<()> {
         sessions: DashMap::new(),
         channel_guild: DashMap::new(),
         message_limiter: ratelimit::RateLimiter::new(10, 5.0),
+        open_registration: std::sync::atomic::AtomicBool::new(config.open_registration),
         federation: (config.auth_mode != config::AuthMode::Local).then(|| Arc::new(federation::Federation::new(&config))),
         config: config.clone(),
     });
+    admin::load_settings(&state).await?;
     if let Some(fed) = state.federation.clone() {
         tokio::spawn({
             let (db, config) = (state.db.clone(), config.clone());
@@ -65,6 +67,12 @@ async fn main() -> anyhow::Result<()> {
         .route("/auth/federated", post(auth::federated))
         .route("/auth/link", get(auth::link_status).post(auth::link))
         .route("/instance", get(auth::instance_info))
+        .route("/admin/overview", get(admin::overview))
+        .route("/admin/settings", patch(admin::settings))
+        .route("/admin/users", get(admin::users))
+        .route("/admin/bans/{uid}", put(admin::ban).delete(admin::unban))
+        .route("/admin/guilds", get(admin::guilds))
+        .route("/admin/guilds/{gid}", delete(admin::delete_guild))
         .route("/users/@me", get(users::me).patch(users::patch_me))
         .route("/guilds", post(guilds::create))
         .route("/guilds/{gid}", patch(guilds::patch).delete(guilds::delete))

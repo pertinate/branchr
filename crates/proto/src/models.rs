@@ -159,6 +159,42 @@ wire! {
         pub user: User,
     }
 
+    /// A host at a glance, for its owner (`GET /api/admin/overview`).
+    pub struct HostOverview {
+        pub name: String,
+        pub auth_mode: String,
+        pub open_registration: bool,
+        pub users: u32,
+        pub banned: u32,
+        pub guilds: u32,
+        #[cfg_attr(feature = "ts", ts(type = "number"))]
+        pub messages: u64,
+        #[cfg_attr(feature = "ts", ts(type = "number"))]
+        pub attachment_bytes: u64,
+    }
+
+    /// A user on the host, for its owner.
+    pub struct HostUser {
+        pub user: User,
+        #[cfg_attr(feature = "ts", ts(type = "number"))]
+        pub created_at: i64,
+        /// Signed in with (or linked to) a branchr account.
+        pub linked: bool,
+        /// The host's owner (can't be banned).
+        pub owner: bool,
+        pub guilds: u32,
+        pub banned: bool,
+        pub ban_reason: Option<String>,
+    }
+
+    /// A server (guild) on the host, for its owner.
+    pub struct HostGuild {
+        pub guild: Guild,
+        pub owner: User,
+        pub members: u32,
+        pub channels: u32,
+    }
+
     /// How to log in to this server (`GET /api/instance`).
     pub struct InstanceInfo {
         /// `local` (own accounts), `federated` (branchr accounts) or `both`.

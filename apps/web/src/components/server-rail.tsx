@@ -1,11 +1,12 @@
 import type { ReadyGuild } from "@app/protocol";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
-import { Copy, LogOut, Plus, Volume2 } from "lucide-react";
+import { Copy, LogOut, Plus, Settings, Volume2 } from "lucide-react";
 import { memo, useState } from "react";
 import { toast } from "sonner";
 
 import { UserPanel } from "@/components/voice/user-panel";
 import { guildInitials } from "@/components/guild/guild-badge";
+import { useHostOwner } from "@/components/host-admin-dialog";
 import { MentionBadge } from "@/components/mention-badge";
 import { GuildMenuItems, Menu } from "@/components/menus";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,7 @@ import { compareIds } from "@/lib/ids";
 import { type Instance, InstanceProvider, hostOf, instance, instanceKey, useActive, useInstance, useInstanceList } from "@/lib/instances";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/stores/app";
+import { useDialogs } from "@/stores/ui";
 import { useVoice } from "@/stores/voice";
 
 /** Accepts a bare code or a link like `https://host/#/invite/CODE`. */
@@ -95,12 +97,18 @@ function InstanceHeader() {
   const navigate = useNavigate();
   const host = hostOf(inst.url);
   const label = host.split(".")[0].split(":")[0];
+  const owner = useHostOwner(inst);
   return (
     <Tooltip>
       <Menu
         items={
           <>
             <ContextMenuLabel className="truncate">{host}</ContextMenuLabel>
+            {owner && (
+              <ContextMenuItem onSelect={() => useDialogs.getState().open({ instanceId: inst.id, kind: "host-admin" })}>
+                Manage Host <Settings className="ml-auto" />
+              </ContextMenuItem>
+            )}
             <ContextMenuItem onSelect={() => void copy(inst.url, "Copied address")}>
               Copy Address <Copy className="ml-auto" />
             </ContextMenuItem>

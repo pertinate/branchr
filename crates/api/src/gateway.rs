@@ -128,14 +128,27 @@ struct SessionGuard {
 
 impl Drop for SessionGuard {
     fn drop(&mut self) {
-        let hub = &self.state.hub;
-        let Some((user, guilds, offline)) = hub.disconnect(self.key) else { return };
-        if let Some(r) = hub.clear_voice(user, Some(self.key)) {
-            hub.to_guild(r.guild_id, &ServerEvent::VoiceStateRemove(r));
-        }
-        if offline {
-            broadcast_presence(&self.state, user, Status::Offline, &guilds);
-        }
+        end_session(&self.state, self.key);
+    }
+}
+
+/// Removes a session from the hub (leaving voice, going offline if it was the last one).
+/// Its socket loop then ends, since the hub held its only sender.
+fn end_session(state: &AppState, key: SessionKey) {
+    let hub = &state.hub;
+    let Some((user, guilds, offline)) = hub.disconnect(key) else { return };
+    if let Some(r) = hub.clear_voice(user, Some(key)) {
+        hub.to_guild(r.guild_id, &ServerEvent::VoiceStateRemove(r));
+    }
+    if offline {
+        broadcast_presence(state, user, Status::Offline, &guilds);
+    }
+}
+
+/// Disconnects every session of `user` (e.g. banned from the host).
+pub fn evict_user(state: &AppState, user: Id) {
+    for key in state.hub.session_keys(user) {
+        end_session(state, key);
     }
 }
 

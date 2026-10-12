@@ -8,6 +8,7 @@ export type DialogState = { instanceId: string } & (
   | { kind: "nickname"; guildId: string }
   | { kind: "create-channel"; guildId: string; parentId: string | null }
   | { kind: "edit-channel"; channelId: string }
+  | { kind: "host-admin" }
 );
 
 export const useDialogs = create<{ dialog: DialogState | null; open: (d: DialogState) => void; close: () => void }>()((set) => ({

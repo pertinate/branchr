@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import { CreateChannelDialog } from "@/components/guild/create-channel-dialog";
 import { GuildSettingsDialog } from "@/components/guild/guild-settings-dialog";
+import { HostAdminDialog } from "@/components/host-admin-dialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -40,6 +41,8 @@ function DialogFor({ dialog, close }: { dialog: DialogState; close: () => void }
       return <CreateChannelDialog guildId={dialog.guildId} parentId={dialog.parentId} open onOpenChange={(o) => !o && close()} />;
     case "edit-channel":
       return <EditChannelDialog channelId={dialog.channelId} onClose={close} />;
+    case "host-admin":
+      return <HostAdminDialog onClose={close} />;
   }
 }
 

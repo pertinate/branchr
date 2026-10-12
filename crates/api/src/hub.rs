@@ -82,6 +82,11 @@ impl Hub {
         Some((s.user, s.guilds.into_iter().collect(), offline))
     }
 
+    /// Every live session of `user`.
+    pub fn session_keys(&self, user: Id) -> Vec<SessionKey> {
+        self.user_sessions.get(&user).map(|s| s.iter().copied().collect()).unwrap_or_default()
+    }
+
     /// Subscribes all sessions of `user` to `guild` (after joining/creating it).
     pub fn join_guild(&self, user: Id, guild: Id) {
         let keys: Vec<_> = self.user_sessions.get(&user).map(|s| s.iter().copied().collect()).unwrap_or_default();

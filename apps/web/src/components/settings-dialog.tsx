@@ -1,5 +1,6 @@
 import type { Status, User } from "@app/protocol";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -13,13 +14,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MicTest } from "@/components/voice/mic-test";
 import { setStatus } from "@/lib/actions";
 import { api } from "@/lib/api";
-import { claimServer, signOut, startSignIn, useBranchrId } from "@/lib/branchr-id";
+import { claimServer, ownedHosts, signOut, startSignIn, useBranchrId } from "@/lib/branchr-id";
 import { desktop } from "@/lib/desktop";
-import { useActive } from "@/lib/instances";
+import { hostOf, instanceKey, normalizeUrl, useActive, useInstanceList } from "@/lib/instances";
 import { instanceInfo, linkToBranchr } from "@/lib/server-login";
 import { useApp } from "@/stores/app";
 import { useAuth } from "@/stores/auth";
-import { usePrefs } from "@/stores/ui";
+import { useDialogs, usePrefs } from "@/stores/ui";
 import { useVoice, useVoiceSettings } from "@/stores/voice";
 import { type NoiseSuppression, noiseSuppressionModes } from "@/voice/mic";
 
@@ -127,10 +128,12 @@ function BranchrAccount() {
     }
   };
   const [code, setCode] = useState("");
+  const qc = useQueryClient();
   const claim = async () => {
     try {
       const name = await claimServer(code.trim());
       setCode("");
+      void qc.invalidateQueries({ queryKey: ["owned-hosts"] });
       toast.success(`You now own ${name}`);
     } catch (e) {
       toast.error("Couldn't claim the server", { description: (e as Error).message });
@@ -165,6 +168,7 @@ function BranchrAccount() {
           )}
         </div>
       )}
+      {account && <OwnedHosts />}
       {account && (
         <form
           className="space-y-1"
@@ -361,6 +365,43 @@ function Advanced() {
         </div>
         <Switch id="dev-mode" checked={devMode} onCheckedChange={(v) => usePrefs.getState().set({ devMode: v })} />
       </div>
+    </div>
+  );
+}
+
+/** Hosts this branchr account has claimed: manage the ones we're connected to, connect to the rest. */
+function OwnedHosts() {
+  const owned = useQuery({ queryKey: ["owned-hosts"], queryFn: ownedHosts });
+  const connected = useInstanceList((s) => s.ids);
+  const navigate = useNavigate();
+  // A host that registered again (e.g. its data was wiped) leaves older claims for the
+  // same address behind; show each address once, newest first.
+  const hosts = [...new Map((owned.data ?? []).map((h) => [h.publicUrl ? normalizeUrl(h.publicUrl) : h.instanceId, h])).values()].reverse();
+  if (!hosts.length) return null;
+  return (
+    <div className="space-y-1" data-testid="owned-hosts">
+      <div className="text-xs font-semibold text-muted-foreground uppercase">Your hosts</div>
+      {hosts.map((h) => {
+        const id = h.publicUrl ? instanceKey(normalizeUrl(h.publicUrl)) : null;
+        const here = !!id && connected.includes(id);
+        return (
+          <div key={h.instanceId} data-testid="owned-host" className="flex items-center gap-3 rounded-md bg-muted px-3 py-2">
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-medium">{h.name}</div>
+              <div className="truncate text-xs text-muted-foreground">{h.publicUrl ? hostOf(h.publicUrl) : "address unknown"}</div>
+            </div>
+            {here ? (
+              <Button size="sm" variant="outline" onClick={() => useDialogs.getState().open({ instanceId: id!, kind: "host-admin" })}>
+                Manage
+              </Button>
+            ) : h.publicUrl ? (
+              <Button size="sm" variant="outline" onClick={() => void navigate({ to: "/login", search: { server: h.publicUrl } })}>
+                Connect
+              </Button>
+            ) : null}
+          </div>
+        );
+      })}
     </div>
   );
 }

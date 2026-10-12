@@ -23,6 +23,8 @@ pub struct State {
     /// channel id -> guild id, channels never move between guilds.
     pub channel_guild: DashMap<Id, Id>,
     pub message_limiter: RateLimiter,
+    /// Whether new people may join (owner-adjustable; starts from OPEN_REGISTRATION).
+    pub open_registration: std::sync::atomic::AtomicBool,
     /// Set when this server accepts branchr accounts.
     pub federation: Option<Arc<crate::federation::Federation>>,
 }

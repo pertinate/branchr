@@ -1,3 +1,4 @@
+pub mod admin;
 pub mod attachments;
 pub mod channels;
 pub mod emotes;

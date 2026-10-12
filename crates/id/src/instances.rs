@@ -228,3 +228,19 @@ mod tests {
         assert_eq!(normalize_code(" abcd-efgh "), "ABCD-EFGH");
     }
 }
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Owned {
+    pub instance_id: Uuid,
+    pub name: String,
+    pub public_url: String,
+}
+
+/// The servers the signed-in account has claimed.
+pub async fn owned(State(s): State<AppState>, headers: HeaderMap) -> Result<Json<Vec<Owned>>> {
+    let account = authed(&s, &headers).await?;
+    let rows: Vec<(Uuid, String, String)> =
+        sqlx::query_as("SELECT id, name, public_url FROM instances WHERE owner_id = $1 ORDER BY created_at").bind(account).fetch_all(&s.db).await?;
+    Ok(Json(rows.into_iter().map(|(instance_id, name, public_url)| Owned { instance_id, name, public_url }).collect()))
+}

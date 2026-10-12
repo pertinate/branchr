@@ -67,6 +67,7 @@ pub fn router(state: AppState) -> Router {
         .route("/logout", post(oauth::logout))
         .route("/me", get(oauth::me))
         .route("/me/instances", get(hosts::list).put(hosts::add).delete(hosts::remove))
+        .route("/me/owned", get(instances::owned))
         .route("/instances", post(instances::register))
         .route("/instances/{id}", get(instances::status))
         .route("/instances/{id}/claim-code", post(instances::new_claim_code))

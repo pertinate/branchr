@@ -190,3 +190,18 @@ export async function claimServer(code: string): Promise<string> {
   if (!r.ok) throw new Error(await errorOf(r));
   return ((await r.json()) as { name: string }).name;
 }
+
+/** A server (host) the signed-in account has claimed. */
+export interface OwnedHost {
+  instanceId: string;
+  name: string;
+  publicUrl: string;
+}
+
+export async function ownedHosts(): Promise<OwnedHost[]> {
+  const at = await accessToken();
+  if (!at) return [];
+  const r = await fetch(`${ID_URL}/me/owned`, { headers: { authorization: `Bearer ${at}` } });
+  if (!r.ok) throw new Error(await errorOf(r));
+  return r.json();
+}

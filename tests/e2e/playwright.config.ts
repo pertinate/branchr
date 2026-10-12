@@ -44,7 +44,7 @@ export default defineConfig({
         MAX_UPLOAD_MB: "1",
         // With branchr ID around, this host takes branchr accounts too (password logins still work).
         ...(idDb
-          ? { AUTH_MODE: "both", BRANCHR_ID_URL: "http://localhost:8070", INSTANCE_NAME: "e2e home", CLAIM_FILE: `${SCRATCH}/claim-code.txt`, BRANCHR_POLL_SECS: "1" }
+          ? { AUTH_MODE: "both", BRANCHR_ID_URL: "http://localhost:8070", INSTANCE_NAME: "e2e home", PUBLIC_URL: "http://localhost:8080", CLAIM_FILE: `${SCRATCH}/claim-code.txt`, BRANCHR_POLL_SECS: "1" }
           : {}),
       },
     },
@@ -72,6 +72,7 @@ export default defineConfig({
               AUTH_MODE: "both",
               BRANCHR_ID_URL: "http://localhost:8070",
               INSTANCE_NAME: "e2e federated",
+              PUBLIC_URL: "http://localhost:8081",
               CLAIM_FILE: `${fedDir}/claim-code.txt`,
               BRANCHR_POLL_SECS: "1",
             }

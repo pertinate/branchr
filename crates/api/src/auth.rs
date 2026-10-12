@@ -77,6 +77,15 @@ fn valid_username(u: &str) -> bool {
     (2..=32).contains(&u.len()) && u.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
 }
 
+/// Banned from this host by its owner.
+async fn refuse_banned(state: &AppState, user: Id) -> AppResult<()> {
+    let banned: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM instance_bans WHERE user_id = ?").bind(user.0).fetch_optional(&state.db).await?;
+    match banned {
+        Some(_) => Err(AppError::BadRequest("you're banned from this host".into())),
+        None => Ok(()),
+    }
+}
+
 /// Password accounts are off when the server only takes branchr accounts.
 fn local_allowed(state: &AppState) -> AppResult<()> {
     if state.config.auth_mode == AuthMode::Federated {
@@ -87,7 +96,7 @@ fn local_allowed(state: &AppState) -> AppResult<()> {
 
 pub async fn register(State(state): State<AppState>, Json(body): Json<Register>) -> AppResult<Json<AuthResponse>> {
     local_allowed(&state)?;
-    if !state.config.open_registration {
+    if !state.open_registration.load(std::sync::atomic::Ordering::Relaxed) {
         return Err(AppError::Forbidden);
     }
     let username = body.username.trim().to_string();
@@ -160,6 +169,7 @@ pub async fn login(State(state): State<AppState>, Json(body): Json<Login>) -> Ap
         return Err(AppError::Unauthorized);
     }
     let id = Id(id);
+    refuse_banned(&state, id).await?;
     let token = create_session(&state, id).await?;
     Ok(Json(AuthResponse { token, user: db::user(&state.db, id).await? }))
 }
@@ -179,6 +189,7 @@ pub async fn federated(State(state): State<AppState>, Json(body): Json<Federated
     let existing: Option<(i64,)> = sqlx::query_as("SELECT id FROM users WHERE global_id = ?").bind(&pass.sub).fetch_optional(&state.db).await?;
     let id = match existing {
         Some((id,)) => {
+            refuse_banned(&state, Id(id)).await?;
             // The branchr profile is the source of truth for name and avatar.
             sqlx::query("UPDATE users SET display_name = ?, avatar_url = ? WHERE id = ?")
                 .bind(&display_name)
@@ -189,7 +200,7 @@ pub async fn federated(State(state): State<AppState>, Json(body): Json<Federated
             Id(id)
         }
         None => {
-            if !state.config.open_registration {
+            if !state.open_registration.load(std::sync::atomic::Ordering::Relaxed) {
                 return Err(AppError::Forbidden);
             }
             let id = state.ids.next();

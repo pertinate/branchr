@@ -75,6 +75,53 @@ test("federated server: sign in with Discord from the login screen, claim it, co
   await expect.poll(async () => (await (await fetch(`${FED}/api/instance`)).json()).claimed, { timeout: 15_000 }).toBe(true);
   await expect.poll(() => existsSync(claimFile)).toBe(false);
 
+  // The owner manages the host: someone with a password account misbehaves there.
+  const run = Date.now().toString(36);
+  const bad = await (await browser.newContext()).newPage();
+  await bad.goto("/#/login");
+  await bad.getByLabel("Server", { exact: true }).fill(FED);
+  await bad.getByRole("button", { name: "Register" }).click();
+  await bad.getByLabel("Username").fill(`spammer_${run}`);
+  await bad.getByLabel("Password").fill("correct horse battery");
+  await bad.getByRole("button", { name: "Continue" }).click();
+  await createServer(bad, "Spam Palace");
+
+  await page.getByRole("button", { name: "Your account" }).hover();
+  await page.getByRole("button", { name: "User Settings" }).click();
+  const ours = page.getByTestId("owned-host").filter({ hasText: "localhost:8081" });
+  await expect(ours.getByText("e2e federated")).toBeVisible();
+  await ours.getByRole("button", { name: "Manage" }).click();
+  const admin = page.getByTestId("host-admin");
+  await expect(admin.getByText("Open registration")).toBeVisible();
+  await expect(admin.getByText("Discord or a password")).toBeVisible();
+
+  // Ban: they're logged out at once and can't log back in.
+  page.on("dialog", (d) => void d.accept(d.type() === "prompt" ? "spam" : undefined));
+  await admin.getByRole("tab", { name: "Members" }).click();
+  await admin.getByLabel("Search people").fill(`spammer_${run}`);
+  const row = admin.getByTestId("host-user").filter({ hasText: `spammer_${run}` });
+  await row.getByRole("button", { name: "Ban" }).click();
+  await expect(row.getByText("Banned")).toBeVisible();
+  await expect(bad.getByRole("heading", { name: /Welcome back|Create an account/ })).toBeVisible({ timeout: 30_000 });
+  await bad.getByLabel("Server", { exact: true }).fill(FED);
+  await bad.getByLabel("Username").fill(`spammer_${run}`);
+  await bad.getByLabel("Password").fill("correct horse battery");
+  await bad.getByRole("button", { name: "Log In" }).click();
+  await expect(bad.getByText("you're banned from this host")).toBeVisible();
+
+  // Remove their server, then unban.
+  await admin.getByRole("tab", { name: "Servers" }).click();
+  await admin.getByLabel("Search servers").fill("Spam Palace");
+  await admin.getByRole("button", { name: "Delete Spam Palace" }).click();
+  await expect(admin.getByTestId("host-guild")).toHaveCount(0);
+  await admin.getByRole("tab", { name: "Members" }).click();
+  await row.getByRole("button", { name: "Unban" }).click();
+  await expect(row.getByRole("button", { name: "Ban" })).toBeVisible();
+  await bad.getByRole("button", { name: "Log In" }).click();
+  await expect(bad.getByRole("heading", { name: "No servers yet" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+
   // Log out of the server and back in: same user, no second Discord trip (already signed in).
   await forgetSessions(page);
   await page.goto("/#/login");

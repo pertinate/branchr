@@ -350,6 +350,12 @@ async fn servers_register_get_claimed_and_issue_passes() {
 
     let r = h.http.post(format!("{}/instances/{}/token", h.base, uuid::Uuid::now_v7())).bearer_auth(&at).send().await.unwrap();
     assert_eq!(r.status(), StatusCode::BAD_REQUEST, "unknown server");
+
+    // The owner sees it among their servers.
+    let owned: Vec<serde_json::Value> = h.http.get(format!("{}/me/owned", h.base)).bearer_auth(&at).send().await.unwrap().json().await.unwrap();
+    assert_eq!(owned.len(), 1);
+    assert_eq!(owned[0]["instanceId"], reg.instance_id.to_string());
+    assert_eq!(owned[0]["publicUrl"], "https://chat.example.com");
     h.finish().await;
 }
 
