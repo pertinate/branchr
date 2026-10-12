@@ -47,7 +47,9 @@ pub async fn ready_guild(state: &AppState, guild: Id, viewer: Id) -> anyhow::Res
     let gp = state.perms.guild(&state.db, guild).await.map_err(|e| anyhow::anyhow!("{e:?}"))?;
     let channels = channels.into_iter().filter(|c| gp.can_in(viewer, c.id, proto::perms::VIEW_CHANNEL)).collect();
     let presences = state.hub.presences(members.iter().map(|m| m.user.id));
-    Ok(ReadyGuild { guild: g, channels, roles, members, emotes, voice_states: state.hub.voice_states(guild), presences })
+    // Who's in a voice channel is only for those who can see it.
+    let voice_states = state.hub.voice_states(guild).into_iter().filter(|v| gp.can_in(viewer, v.channel_id, proto::perms::VIEW_CHANNEL)).collect();
+    Ok(ReadyGuild { guild: g, channels, roles, members, emotes, voice_states, presences })
 }
 
 async fn run(mut ws: WebSocket, state: AppState) -> anyhow::Result<()> {
@@ -219,7 +221,7 @@ async fn voice_state_update(state: &AppState, key: SessionKey, user: Id, u: Voic
     if let Some(old_guild) = hub.set_voice(key, vs.clone()) {
         hub.to_guild(old_guild, &ServerEvent::VoiceStateRemove(VoiceStateRef { guild_id: old_guild, user_id: user }));
     }
-    hub.to_guild(u.guild_id, &ServerEvent::VoiceStateUpdate(vs));
+    state.to_channel(u.guild_id, channel_id, &ServerEvent::VoiceStateUpdate(vs)).await;
 
     if prev.map(|p| p.channel_id) != Some(channel_id) {
         let claims = VoiceClaims {
