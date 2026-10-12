@@ -13,6 +13,8 @@ pub enum AppError {
     NotFound,
     Conflict(String),
     TooManyRequests,
+    /// Too soon, with why (e.g. slow mode).
+    Wait(String),
     PayloadTooLarge(String),
     BadGateway(String),
     Internal(anyhow::Error),
@@ -30,6 +32,7 @@ impl IntoResponse for AppError {
             AppError::NotFound => (StatusCode::NOT_FOUND, "not found".into()),
             AppError::Conflict(m) => (StatusCode::CONFLICT, m),
             AppError::TooManyRequests => (StatusCode::TOO_MANY_REQUESTS, "slow down".into()),
+            AppError::Wait(m) => (StatusCode::TOO_MANY_REQUESTS, m),
             AppError::PayloadTooLarge(m) => (StatusCode::PAYLOAD_TOO_LARGE, m),
             AppError::BadGateway(m) => (StatusCode::BAD_GATEWAY, m),
             AppError::Internal(e) => {

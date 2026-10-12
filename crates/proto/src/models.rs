@@ -73,6 +73,10 @@ wire! {
         pub last_message_id: Option<Id>,
         /// Per-channel permission changes for roles and members.
         pub overwrites: Vec<PermissionOverwrite>,
+        /// Slow mode: seconds each member waits between messages (0 = off). People who can
+        /// manage messages or the channel aren't held to it.
+        #[serde(default)]
+        pub slowmode_secs: u32,
     }
 
     /// Adjusts a role's or member's permissions in one channel: `deny` bits are taken

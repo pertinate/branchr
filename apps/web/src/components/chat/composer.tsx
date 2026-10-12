@@ -1,5 +1,5 @@
 import type { Attachment, Emote, Role, User } from "@app/protocol";
-import { FileIcon, Paperclip, Smile, X } from "lucide-react";
+import { FileIcon, Paperclip, Smile, Timer, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
@@ -18,6 +18,23 @@ import { P, roleColor, useChannelCan } from "@/lib/perms";
 import { useApp } from "@/stores/app";
 import { useEmoteGroups } from "@/stores/emotes";
 import { type UiMessage, useMessages } from "@/stores/messages";
+
+/** When each slowed channel lets us send again (this session; the server has the final say). */
+const slowmodeUntil = new Map<string, number>();
+
+/** Seconds left before we can send in `channelId` again, ticking down. */
+function useSlowmodeWait(channelId: string) {
+  const left = () => Math.max(0, Math.ceil(((slowmodeUntil.get(channelId) ?? 0) - Date.now()) / 1000));
+  const [secs, setSecs] = useState(left);
+  useEffect(() => {
+    const tick = () => setSecs(left());
+    tick();
+    const t = setInterval(tick, 250);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channelId]);
+  return secs;
+}
 
 const TYPING_INTERVAL = 6000;
 
@@ -48,6 +65,12 @@ export function Composer({ channelId, guildId, replyTo, clearReply }: { channelI
   const channelName = useApp((s) => s.channels[channelId]?.name);
   const canSend = useChannelCan(channelId, P.SEND_MESSAGES);
   const canAttach = useChannelCan(channelId, P.ATTACH_FILES);
+  const slowmode = useApp((s) => s.channels[channelId]?.slowmodeSecs ?? 0);
+  const manageMessages = useChannelCan(channelId, P.MANAGE_MESSAGES);
+  const manageChannel = useChannelCan(channelId, P.MANAGE_CHANNELS);
+  const exempt = manageMessages || manageChannel;
+  const held = slowmode > 0 && !exempt;
+  const wait = useSlowmodeWait(channelId);
   const groups = useEmoteGroups(guildId);
   const members = useApp((s) => s.members[guildId]);
   const roles = useApp((s) => s.roles[guildId]);
@@ -201,7 +224,8 @@ export function Composer({ channelId, guildId, replyTo, clearReply }: { channelI
   const send = () => {
     const content = value.trim();
     const ready = uploads.filter((u) => u.attachment).map((u) => u.attachment!);
-    if ((!content && !ready.length) || uploading) return;
+    if ((!content && !ready.length) || uploading || (held && wait > 0)) return;
+    if (held) slowmodeUntil.set(channelId, Date.now() + slowmode * 1000);
     setValue("");
     clearReply();
     for (const u of uploads) if (u.preview) URL.revokeObjectURL(u.preview);
@@ -254,6 +278,11 @@ export function Composer({ channelId, guildId, replyTo, clearReply }: { channelI
 
   return (
     <div className="relative px-4">
+      {held && (
+        <div data-testid="slowmode" className="absolute -top-5 right-6 flex items-center gap-1 text-xs text-muted-foreground" title={`Slow mode: one message every ${slowmode}s`}>
+          <Timer className="size-3.5" /> {wait > 0 ? `${wait}s` : "Slow mode"}
+        </div>
+      )}
       {suggestion?.kind === "mention" && (
         <div className="absolute right-4 bottom-full left-4 mb-1 rounded-md border border-border bg-popover p-1 shadow-lg">
           <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase">Members</div>

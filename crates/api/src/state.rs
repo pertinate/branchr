@@ -32,6 +32,10 @@ pub struct State {
     /// channel id -> guild id, channels never move between guilds.
     pub channel_guild: DashMap<Id, Id>,
     pub message_limiter: throttle::Buckets<Id>,
+    /// channel id -> slow mode seconds, filled as channels are written to.
+    pub slowmode: DashMap<Id, u32>,
+    /// (channel, user) -> when they last sent there, for slow mode.
+    pub last_sent: DashMap<(Id, Id), std::time::Instant>,
     /// Link previews, unless turned off.
     pub unfurl: Option<crate::unfurl::Unfurler>,
     /// Whether new people may join (owner-adjustable; starts from OPEN_REGISTRATION).
@@ -41,6 +45,16 @@ pub struct State {
 }
 
 impl State {
+    pub async fn slowmode_of(&self, channel: Id) -> sqlx::Result<u32> {
+        if let Some(s) = self.slowmode.get(&channel) {
+            return Ok(*s);
+        }
+        let (s,): (i64,) = sqlx::query_as("SELECT slowmode FROM channels WHERE id = $1").bind(channel.0).fetch_one(&self.db).await?;
+        let s = s.clamp(0, u32::MAX as i64) as u32;
+        self.slowmode.insert(channel, s);
+        Ok(s)
+    }
+
     pub async fn guild_of_channel(&self, channel: Id) -> sqlx::Result<Id> {
         if let Some(g) = self.channel_guild.get(&channel) {
             return Ok(*g);

@@ -71,12 +71,16 @@ pub async fn create(
     Ok(Json(c))
 }
 
+/// Six hours, as on Discord.
+const MAX_SLOWMODE: u32 = 6 * 3600;
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PatchChannel {
     name: Option<String>,
     topic: Option<Option<String>>,
     position: Option<i32>,
+    slowmode_secs: Option<u32>,
 }
 
 pub async fn patch(
@@ -98,13 +102,21 @@ pub async fn patch(
         }
         sqlx::query("UPDATE channels SET topic = $1 WHERE id = $2").bind(topic).bind(cid.0).execute(&state.db).await?;
     }
+    if let Some(secs) = body.slowmode_secs {
+        if secs > MAX_SLOWMODE {
+            return Err(bad("slow mode is at most 6 hours"));
+        }
+        sqlx::query("UPDATE channels SET slowmode = $1 WHERE id = $2").bind(secs as i64).bind(cid.0).execute(&state.db).await?;
+        state.slowmode.insert(cid, secs);
+    }
     if let Some(pos) = body.position {
         sqlx::query("UPDATE channels SET position = $1 WHERE id = $2").bind(pos).bind(cid.0).execute(&state.db).await?;
     }
     let c = db::channel(&state.db, cid).await?;
     let entry = Entry::new(AuditAction::ChannelUpdate, Some(cid), c.name.clone())
         .change("name", Some(&before.name), Some(&c.name))
-        .change("topic", before.topic.as_ref(), c.topic.as_ref());
+        .change("topic", before.topic.as_ref(), c.topic.as_ref())
+        .change("slow mode", Some(&format!("{}s", before.slowmode_secs)), Some(&format!("{}s", c.slowmode_secs)));
     // Reordering alone isn't worth an entry.
     if !entry.changes.is_empty() {
         audit::log(&state, c.guild_id, user, entry).await;

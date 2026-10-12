@@ -125,6 +125,14 @@ pub async fn create(
         return Err(AppError::TooManyRequests);
     }
     let (guild, gp) = channel_perm(&state, cid, user, perms::SEND_MESSAGES).await?;
+    let slowmode = state.slowmode_of(cid).await?;
+    let held = slowmode > 0 && !gp.can_in(user, cid, perms::MANAGE_MESSAGES) && !gp.can_in(user, cid, perms::MANAGE_CHANNELS);
+    if held && let Some(last) = state.last_sent.get(&(cid, user)) {
+        let wait = std::time::Duration::from_secs(slowmode.into()).saturating_sub(last.elapsed());
+        if !wait.is_zero() {
+            return Err(AppError::Wait(format!("slow mode is on: wait {}s", wait.as_secs().max(1))));
+        }
+    }
     let content = body.content.trim();
     if (content.is_empty() && body.attachment_ids.is_empty()) || content.chars().count() > MAX_LEN {
         return Err(bad(format!("message must be 1-{MAX_LEN} characters")));
@@ -172,6 +180,14 @@ pub async fn create(
         }
     }
     tx.commit().await?;
+    if held {
+        let now = std::time::Instant::now();
+        // Keep this from growing without end: forget waits that are long over.
+        if state.last_sent.len() > 100_000 {
+            state.last_sent.retain(|_, t| now.duration_since(*t).as_secs() < 6 * 3600);
+        }
+        state.last_sent.insert((cid, user), now);
+    }
     bump_mentions(&state, &gp, cid, user, &mentions).await;
 
     let msg = Message {

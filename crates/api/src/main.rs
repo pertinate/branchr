@@ -81,6 +81,8 @@ async fn main() -> anyhow::Result<()> {
         sessions: DashMap::new(),
         channel_guild: DashMap::new(),
         message_limiter: throttle::Buckets::new(10, 5.0),
+        slowmode: DashMap::new(),
+        last_sent: DashMap::new(),
         // LINK_PREVIEWS=0 turns link previews off; EMBED_ALLOW_PRIVATE (tests only) lets them reach localhost.
         unfurl: (std::env::var("LINK_PREVIEWS").as_deref() != Ok("0"))
             .then(|| unfurl::Unfurler::new(std::env::var("EMBED_ALLOW_PRIVATE").as_deref() == Ok("1"))),

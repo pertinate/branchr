@@ -19,6 +19,23 @@ import { P, useChannelCan } from "@/lib/perms";
 import { useApp } from "@/stores/app";
 import { type DialogState, useDialogs } from "@/stores/ui";
 
+const SLOWMODES: [number, string][] = [
+  [0, "Off"],
+  [5, "5 seconds"],
+  [10, "10 seconds"],
+  [15, "15 seconds"],
+  [30, "30 seconds"],
+  [60, "1 minute"],
+  [120, "2 minutes"],
+  [300, "5 minutes"],
+  [600, "10 minutes"],
+  [900, "15 minutes"],
+  [1800, "30 minutes"],
+  [3600, "1 hour"],
+  [7200, "2 hours"],
+  [21600, "6 hours"],
+];
+
 /** Dialogs opened from menus anywhere in the app. Mounted once. */
 export function GlobalDialogs() {
   const dialog = useDialogs((s) => s.dialog);
@@ -246,6 +263,7 @@ function EditChannelDialog({ channelId, onClose }: { channelId: string; onClose:
   const channel = useApp((s) => s.channels[channelId]);
   const [name, setName] = useState(channel?.name ?? "");
   const [topic, setTopic] = useState(channel?.topic ?? "");
+  const [slowmode, setSlowmode] = useState(String(channel?.slowmodeSecs ?? 0));
   const canPerms = useChannelCan(channelId, P.MANAGE_ROLES);
   if (!channel) return null;
   const save = async (e: React.FormEvent) => {
@@ -253,7 +271,7 @@ function EditChannelDialog({ channelId, onClose }: { channelId: string; onClose:
     try {
       const c = await api<Channel>("PATCH", `/channels/${channelId}`, {
         name: name.trim(),
-        ...(channel.kind === "text" ? { topic: topic.trim() || null } : {}),
+        ...(channel.kind === "text" ? { topic: topic.trim() || null, slowmodeSecs: Number(slowmode) } : {}),
       });
       inst.app.getState().apply({ t: "CHANNEL_UPDATE", d: c });
       onClose();
@@ -271,6 +289,24 @@ function EditChannelDialog({ channelId, onClose }: { channelId: string; onClose:
         <div className="space-y-1">
           <Label htmlFor="channel-topic">Topic</Label>
           <Input id="channel-topic" value={topic} onChange={(e) => setTopic(e.target.value)} maxLength={1024} placeholder="What's this channel about?" />
+        </div>
+      )}
+      {channel.kind === "text" && (
+        <div className="space-y-1">
+          <Label htmlFor="channel-slowmode">Slow mode</Label>
+          <Select value={slowmode} onValueChange={setSlowmode}>
+            <SelectTrigger id="channel-slowmode" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SLOWMODES.map(([secs, label]) => (
+                <SelectItem key={secs} value={String(secs)}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">How long members wait between messages. People who can manage messages or the channel aren't limited.</p>
         </div>
       )}
       <div className="flex justify-end">
