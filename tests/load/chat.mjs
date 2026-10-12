@@ -1,8 +1,10 @@
 // Chat throughput: N users in one guild, all on the gateway; each sends a burst of PER
 // messages (mixing @user, @here and plain). Measures send latency and fan-out.
-//   node chat.mjs http://host:8080          (USERS=50 PER=10 MENTIONS=1)
+//   node chat.mjs http://host:8080          (USERS=50 PER=10 MENTIONS=1 PRIVATE=0)
+// PRIVATE=1 hides the channel from @everyone and opens it to a role everyone has, so every
+// event takes the per-recipient permission check instead of the guild-wide fast path.
 const BASE = process.argv[2] ?? "http://localhost:8080";
-const N = +(process.env.USERS ?? 50), PER = +(process.env.PER ?? 10), MENTIONS = process.env.MENTIONS !== "0";
+const N = +(process.env.USERS ?? 50), PER = +(process.env.PER ?? 10), MENTIONS = process.env.MENTIONS !== "0", PRIVATE = process.env.PRIVATE === "1";
 const run = Date.now().toString(36);
 async function api(method, path, token, body) {
   for (;;) {
@@ -18,6 +20,13 @@ for (let i = 0; i < N; i++) users.push({ name: `b${i}_${run}`, ...(await api("PO
 const created = await api("POST", "/guilds", users[0].token, { name: "bench" }); const g = created.guild ?? created;
 const inv = await api("POST", `/guilds/${g.id}/invites`, users[0].token);
 for (const u of users.slice(1)) await api("POST", `/invites/${inv.code}`, u.token);
+if (PRIVATE) {
+  const text = created.channels.find((c) => c.kind === "text").id;
+  const role = await api("POST", `/guilds/${g.id}/roles`, users[0].token, { name: "members" });
+  for (const u of users) await api("PUT", `/guilds/${g.id}/members/${u.user.id}/roles/${role.id}`, users[0].token);
+  await api("PUT", `/channels/${text}/permissions/${g.id}`, users[0].token, { kind: "role", deny: 1 });
+  await api("PUT", `/channels/${text}/permissions/${role.id}`, users[0].token, { kind: "role", allow: 1 });
+}
 // Gateway sessions.
 const sent = new Map(); const delivery = []; let delivered = 0; let channel;
 await Promise.all(users.map((u) => new Promise((res) => {
@@ -44,6 +53,6 @@ await Promise.all(users.map(async (u, i) => {
 const want = N * PER * N;
 while (delivered < want && performance.now() - t0 < 30000) await new Promise((s) => setTimeout(s, 20));
 const secs = (performance.now() - t0) / 1000;
-console.log(JSON.stringify({ mentions: MENTIONS, users: N, messages: N * PER, secs: secs.toFixed(2), msgsPerSec: (N * PER / secs).toFixed(0), deliveries: `${delivered}/${want}`, deliveriesPerSec: (delivered / secs).toFixed(0), sendMs: { p50: pct(sendLat, 0.5), p99: pct(sendLat, 0.99) }, fanoutMs: { p50: pct(delivery, 0.5), p99: pct(delivery, 0.99) } }));
+console.log(JSON.stringify({ mentions: MENTIONS, private: PRIVATE, users: N, messages: N * PER, secs: secs.toFixed(2), msgsPerSec: (N * PER / secs).toFixed(0), deliveries: `${delivered}/${want}`, deliveriesPerSec: (delivered / secs).toFixed(0), sendMs: { p50: pct(sendLat, 0.5), p99: pct(sendLat, 0.99) }, fanoutMs: { p50: pct(delivery, 0.5), p99: pct(delivery, 0.99) } }));
 for (const u of users) u.ws.close();
 process.exit(0);

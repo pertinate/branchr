@@ -7,7 +7,8 @@
 - **Client**: Vite, React, TanStack Router, shadcn/ui and Tailwind v4. It ships as an **Electron AppImage** for Linux and also works as a web app served by the API.
 - **Emotes** come from [7TV](https://7tv.app/emotes), [BetterTTV](https://betterttv.com) and [FrankerFaceZ](https://www.frankerfacez.com). You can search 7TV and FFZ, paste a link to any emote, import a 7TV set or user, or import a Twitch channel's emotes from all three. The server only uses each provider's public API and identifies itself honestly (no browser impersonation). That's why BetterTTV has no search there: BTTV emotes come from a Twitch channel import, or from a link plus a name.
 - **Several hosts at once**: the app stays connected to every self-hosted branchr you're logged in to. The rail groups each host's servers, and badges, notifications and voice keep working while you're on another host. Add one with "Add a Server → Connect", or by opening an invite link for it.
-- **Mentions**: `@user`, `@here` (online members) and `@everyone`, with autocomplete. Replies ping the author. Unread mention counts are kept on the server, so pings sent while you're offline still show, and reading on one device clears the others. They appear on channels, servers, the taskbar badge and as desktop notifications. Anyone can ping `@everyone`/`@here` by default; the server owner can switch that off in Server Settings, which becomes a role permission once roles exist. Role mentions (`<@&id>`) are parsed but render as unknown until roles exist.
+- **Mentions**: `@user`, `@here` (online members) and `@everyone`, with autocomplete. Replies ping the author. Unread mention counts are kept on the server, so pings sent while you're offline still show, and reading on one device clears the others. They appear on channels, servers, the taskbar badge and as desktop notifications. Anyone can ping `@everyone`/`@here` by default; that's the *Mention @everyone* permission on the `@everyone` role. `@Role` pings everyone with the role when it's mentionable, or when the sender has *Mention @everyone*.
+- **Roles and permissions**, modelled on Discord's. Roles carry permissions, a colour, and a position in a hierarchy: you can only manage roles below your highest one, and only kick people below you. *Display separately* groups members under the role. Channels take per-role and per-member overrides (deny / neutral / allow), so private channels disappear entirely for people who can't see them, including their events on the gateway.
 
 ```
 apps/web        React client (also bundled into the desktop app)
@@ -79,6 +80,7 @@ Chat throughput, with 100 users in one server each sending a burst of 10 message
 |---|---|---|---|
 | Chat only | ~1,050 | 94 / 134 ms | 42 / 89 ms |
 | While the SFU relays a 100 viewer × 4 Mbps stream | ~900–1,000 | 93–108 / 163–200 ms | 42–50 / 106–115 ms |
+| In a private channel (`PRIVATE=1`: every delivery checks the recipient's channel permissions) | ~1,100–1,200 | 82–88 / 132–141 ms | 36–39 / 91–98 ms |
 
 The stream stayed at 60 fps for every viewer with p99 under 7 ms while chat was loaded.
 
