@@ -33,7 +33,7 @@ use tower_http::services::{ServeDir, ServeFile};
 use tracing_subscriber::EnvFilter;
 
 use crate::config::Config;
-use crate::routes::{admin, attachments, bans, channels, emotes, guilds, messages, pictures, roles, users};
+use crate::routes::{admin, attachments, bans, channels, emotes, guilds, messages, pictures, roles, search, users};
 use crate::state::{AppState, State};
 
 #[tokio::main]
@@ -133,6 +133,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/channels/{cid}/permissions/{kind}/{target}", delete(channels::delete_overwrite))
         .route("/channels/{cid}/messages", get(messages::list).post(messages::create))
         .route("/channels/{cid}/messages/{mid}", patch(messages::edit).delete(messages::delete))
+        .route("/channels/{cid}/pins", get(search::pins))
+        .route("/channels/{cid}/pins/{mid}", put(search::pin).delete(search::unpin))
+        .route("/guilds/{gid}/messages/search", get(search::search))
         .route("/channels/{cid}/messages/{mid}/reactions/{emoji}", put(messages::react).delete(messages::unreact))
         .route("/emotes/search", get(emotes::search))
         .route("/emotes/lookup", get(emotes::lookup))

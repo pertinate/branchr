@@ -1,5 +1,5 @@
 import type { Emote } from "@app/protocol";
-import { Copy, CornerUpLeft, Download, ExternalLink, Image as ImageIcon, Link2, Pencil, RotateCw, SmilePlus, Sparkles, Trash2, ArrowRight } from "lucide-react";
+import { Copy, CornerUpLeft, Download, ExternalLink, Image as ImageIcon, Link2, Pencil, RotateCw, SmilePlus, Sparkles, Trash2, ArrowRight, Pin } from "lucide-react";
 import { memo, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -217,6 +217,15 @@ export const MessageItem = memo(function MessageItem({
       {m.content && (
         <ContextMenuItem onSelect={() => void copy(plainText(m, guildId), "Copied text")}>
           Copy Text <Copy className="ml-auto" />
+        </ContextMenuItem>
+      )}
+      {real && canManage && (
+        <ContextMenuItem
+          onSelect={() =>
+            void api(m.pinned ? "DELETE" : "PUT", `/channels/${m.channelId}/pins/${m.id}`).catch((e: Error) => toast.error(e.message))
+          }
+        >
+          {m.pinned ? "Unpin Message" : "Pin Message"} <Pin className="ml-auto" />
         </ContextMenuItem>
       )}
       {real && (isMine || canManage) && (

@@ -135,6 +135,7 @@ export function createMessagesStore(inst: Instance) {
         id: `pending-${n}`,
         channelId,
         kind: "default",
+        pinned: false,
         author: me,
         content: local.content,
         mentions: local.mentions,

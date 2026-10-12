@@ -187,6 +187,7 @@ pub async fn create(
         emotes,
         mention_everyone: mentions.everyone || mentions.here,
         mention_roles: mentions.roles.clone(),
+        pinned: false,
         mentions: mentions.users,
         nonce: body.nonce,
     };

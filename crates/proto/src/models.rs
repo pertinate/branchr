@@ -124,6 +124,9 @@ wire! {
         /// Roles the message pinged (`<@&id>` of a mentionable role, or from someone allowed to
         /// mention everyone).
         pub mention_roles: Vec<Id>,
+        /// Pinned to its channel.
+        #[serde(default)]
+        pub pinned: bool,
         /// Client-generated id echoed back so optimistic sends can be reconciled.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub nonce: Option<String>,

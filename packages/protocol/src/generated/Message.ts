@@ -34,6 +34,10 @@ mentionEveryone: boolean,
  */
 mentionRoles: Array<Id>, 
 /**
+ * Pinned to its channel.
+ */
+pinned: boolean, 
+/**
  * Client-generated id echoed back so optimistic sends can be reconciled.
  */
 nonce?: string | null, };
