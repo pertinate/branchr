@@ -5,6 +5,7 @@ pub mod channels;
 pub mod emotes;
 pub mod guilds;
 pub mod messages;
+pub mod pictures;
 pub mod roles;
 pub mod users;
 

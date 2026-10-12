@@ -11,12 +11,14 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PicturePicker } from "@/components/picture-picker";
 import { MicTest } from "@/components/voice/mic-test";
 import { setStatus } from "@/lib/actions";
 import { api } from "@/lib/api";
 import { claimServer, ownedHosts, signOut, startSignIn, useBranchrId } from "@/lib/branchr-id";
 import { desktop } from "@/lib/desktop";
-import { hostOf, instanceKey, normalizeUrl, useActive, useInstanceList } from "@/lib/instances";
+import { hostOf, instanceKey, normalizeUrl, useActive, useInstance, useInstanceList } from "@/lib/instances";
+import { uploadPicture } from "@/lib/media";
 import { instanceInfo, linkToBranchr } from "@/lib/server-login";
 import { useApp } from "@/stores/app";
 import { useAuth } from "@/stores/auth";
@@ -60,12 +62,14 @@ function Account() {
   const me = useApp((s) => s.me)!;
   const status = useApp((s) => s.presences[me.id] ?? "online");
   const [name, setName] = useState(me.displayName);
-  const [avatar, setAvatar] = useState(me.avatarUrl ?? "");
+  const inst = useInstance();
+  const applied = (u: User) => {
+    useApp.getState().apply({ t: "USER_UPDATE", d: u });
+    useAuth.getState().setUser(u);
+  };
   const save = async () => {
     try {
-      const u = await api<User>("PATCH", "/users/@me", { displayName: name, avatarUrl: avatar.trim() || null });
-      useApp.getState().apply({ t: "USER_UPDATE", d: u });
-      useAuth.getState().setUser(u);
+      applied(await api<User>("PATCH", "/users/@me", { displayName: name }));
       toast.success("Profile updated");
     } catch (e) {
       toast.error((e as Error).message);
@@ -83,10 +87,13 @@ function Account() {
         <Label>Display name</Label>
         <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={32} />
       </div>
-      <div className="space-y-2">
-        <Label>Avatar URL</Label>
-        <Input value={avatar} onChange={(e) => setAvatar(e.target.value)} placeholder="https://…" />
-      </div>
+      <PicturePicker
+        label="Avatar"
+        shape="circle"
+        url={me.avatarUrl}
+        onUpload={async (f) => applied(await uploadPicture<User>(inst, "/users/@me/avatar", f))}
+        onRemove={async () => applied(await api<User>("DELETE", "/users/@me/avatar"))}
+      />
       <div className="space-y-2">
         <Label>Status</Label>
         <Select value={status} onValueChange={(v) => setStatus(v as Status)}>

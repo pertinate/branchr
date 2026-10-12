@@ -90,6 +90,7 @@ pub async fn create(
 pub struct PatchGuild {
     name: Option<String>,
     icon_url: Option<Option<String>>,
+    description: Option<String>,
 }
 
 pub async fn patch(
@@ -104,13 +105,21 @@ pub async fn patch(
         let name = check_name(&name)?;
         sqlx::query("UPDATE guilds SET name = $1 WHERE id = $2").bind(name).bind(gid.0).execute(&state.db).await?;
     }
+    if let Some(d) = body.description {
+        let d = d.trim();
+        if d.chars().count() > 300 {
+            return Err(bad("the description can be at most 300 characters"));
+        }
+        sqlx::query("UPDATE guilds SET description = $1 WHERE id = $2").bind((!d.is_empty()).then_some(d)).bind(gid.0).execute(&state.db).await?;
+    }
     if let Some(icon) = body.icon_url {
         sqlx::query("UPDATE guilds SET icon_url = $1 WHERE id = $2").bind(icon).bind(gid.0).execute(&state.db).await?;
     }
     let g = db::guild(&state.db, gid).await?;
     let entry = Entry::new(AuditAction::GuildUpdate, Some(gid), g.name.clone())
         .change("name", Some(&before.name), Some(&g.name))
-        .change("icon", before.icon_url.as_ref(), g.icon_url.as_ref());
+        .change("icon", before.icon_url.as_ref(), g.icon_url.as_ref())
+        .change("description", before.description.as_ref(), g.description.as_ref());
     if !entry.changes.is_empty() {
         audit::log(&state, gid, user, entry).await;
     }

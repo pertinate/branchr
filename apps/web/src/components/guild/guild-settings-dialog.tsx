@@ -13,6 +13,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useDebounced } from "@/hooks/use-debounced";
 import { AuditLogSettings, BansSettings } from "@/components/guild/moderation-settings";
 import { RolesSettings } from "@/components/guild/roles-settings";
+import { PicturePicker } from "@/components/picture-picker";
+import { Textarea } from "@/components/ui/textarea";
+import { uploadPicture } from "@/lib/media";
 import { useInstance } from "@/lib/instances";
 import { P, useCan } from "@/lib/perms";
 import { type EmoteSource, emoteSource, emoteSrcSet, emoteUrl, providerNames } from "@/lib/emotes";
@@ -77,25 +80,43 @@ function Overview({ guildId }: { guildId: string }) {
   const api = inst.api;
   const guild = useApp((s) => s.guilds[guildId]);
   const [name, setName] = useState(guild?.name ?? "");
-  const [icon, setIcon] = useState(guild?.iconUrl ?? "");
+  const [description, setDescription] = useState(guild?.description ?? "");
+  const applied = (g: Guild) => inst.app.getState().apply({ t: "GUILD_UPDATE", d: g });
   const save = async () => {
     try {
-      const g = await api<Guild>("PATCH", `/guilds/${guildId}`, { name, iconUrl: icon.trim() || null });
-      inst.app.getState().apply({ t: "GUILD_UPDATE", d: g });
+      applied(await api<Guild>("PATCH", `/guilds/${guildId}`, { name, description }));
       toast.success("Saved");
     } catch (e) {
       toast.error((e as Error).message);
     }
   };
   return (
-    <div className="max-w-md space-y-4 pt-4">
-      <div className="space-y-2">
-        <Label>Server name</Label>
-        <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={100} />
+    <div className="max-w-md space-y-4 overflow-y-auto pt-4">
+      <div className="flex flex-wrap gap-8">
+        <PicturePicker
+          label="Server icon"
+          shape="square"
+          url={guild?.iconUrl}
+          hint="Cropped to a square."
+          onUpload={async (f) => applied(await uploadPicture<Guild>(inst, `/guilds/${guildId}/icon`, f))}
+          onRemove={async () => applied(await api<Guild>("DELETE", `/guilds/${guildId}/icon`))}
+        />
+        <PicturePicker
+          label="Banner"
+          shape="banner"
+          url={guild?.bannerUrl}
+          hint="Shown above the channel list."
+          onUpload={async (f) => applied(await uploadPicture<Guild>(inst, `/guilds/${guildId}/banner`, f))}
+          onRemove={async () => applied(await api<Guild>("DELETE", `/guilds/${guildId}/banner`))}
+        />
       </div>
       <div className="space-y-2">
-        <Label>Icon URL</Label>
-        <Input value={icon} onChange={(e) => setIcon(e.target.value)} placeholder="https://…" />
+        <Label htmlFor="guild-name">Server name</Label>
+        <Input id="guild-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={100} />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="guild-description">Description</Label>
+        <Textarea id="guild-description" value={description} onChange={(e) => setDescription(e.target.value)} maxLength={300} rows={3} placeholder="What's this server about?" />
       </div>
       <Button onClick={save}>Save Changes</Button>
     </div>

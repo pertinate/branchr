@@ -11,6 +11,7 @@ import { UserAvatar } from "@/components/user-avatar";
 import { compareIds } from "@/lib/ids";
 import { useInstance } from "@/lib/instances";
 import { cn } from "@/lib/utils";
+import { useMediaUrl } from "@/lib/media";
 import { P, useCan } from "@/lib/perms";
 import { useApp } from "@/stores/app";
 import { useDialogs } from "@/stores/ui";
@@ -35,6 +36,7 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
   return (
     <aside className="flex w-60 shrink-0 flex-col bg-sidebar">
       <GuildMenu guildId={guildId} />
+      <GuildBanner guildId={guildId} />
       <div className="flex-1 space-y-0.5 overflow-y-auto px-2 pb-2">
         {groups.map(({ cat, items }) => (
           <div key={cat?.id ?? "root"} className={cat ? "pt-4" : "pt-2"}>
@@ -161,3 +163,9 @@ const VoiceParticipant = memo(function VoiceParticipant(p: {
     </Menu>
   );
 });
+
+function GuildBanner({ guildId }: { guildId: string }) {
+  const banner = useMediaUrl(useApp((s) => s.guilds[guildId]?.bannerUrl));
+  if (!banner) return null;
+  return <img src={banner} alt="" data-testid="guild-banner" className="aspect-video w-full shrink-0 object-cover" draggable={false} />;
+}

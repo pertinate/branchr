@@ -127,11 +127,13 @@ struct GuildRow {
     name: String,
     icon_url: Option<String>,
     owner_id: i64,
+    banner_url: Option<String>,
+    description: Option<String>,
 }
 
 impl From<GuildRow> for Guild {
     fn from(r: GuildRow) -> Self {
-        Guild { id: Id(r.id), name: r.name, icon_url: r.icon_url, owner_id: Id(r.owner_id) }
+        Guild { id: Id(r.id), name: r.name, icon_url: r.icon_url, owner_id: Id(r.owner_id), banner_url: r.banner_url, description: r.description }
     }
 }
 
@@ -265,7 +267,7 @@ pub async fn user(db: &Db, id: Id) -> sqlx::Result<User> {
 }
 
 pub async fn guild(db: &Db, id: Id) -> sqlx::Result<Guild> {
-    sqlx::query_as::<_, GuildRow>("SELECT id, name, icon_url, owner_id FROM guilds WHERE id = $1")
+    sqlx::query_as::<_, GuildRow>("SELECT id, name, icon_url, owner_id, banner_url, description FROM guilds WHERE id = $1")
         .bind(id.0)
         .fetch_one(db)
         .await

@@ -61,6 +61,44 @@ pub fn make(src: &[u8]) -> Option<Thumb> {
     Some(Thumb { bytes, content_type, width, height })
 }
 
+/// How an uploaded picture is fitted.
+#[derive(Clone, Copy)]
+pub enum Fit {
+    /// Centre-cropped to a `size`×`size` square (icons, avatars).
+    Square(u32),
+    /// Centre-cropped to fill `w`×`h` (banners).
+    Cover(u32, u32),
+}
+
+/// Decodes an uploaded picture and fits it, as WebP (lossless; these are small) or JPEG
+/// for big opaque ones. `None` if it isn't a PNG, JPEG, WebP or GIF (first frame).
+pub fn picture(src: &[u8], fit: Fit) -> Option<(Vec<u8>, &'static str)> {
+    let mut reader = ImageReader::new(Cursor::new(src)).with_guessed_format().ok()?;
+    if !matches!(reader.format(), Some(ImageFormat::Png | ImageFormat::Jpeg | ImageFormat::WebP | ImageFormat::Gif)) {
+        return None;
+    }
+    let mut limits = Limits::default();
+    limits.max_image_width = Some(8192);
+    limits.max_image_height = Some(8192);
+    limits.max_alloc = Some(256 * 1024 * 1024);
+    reader.limits(limits);
+    let img = reader.decode().ok()?;
+    let (w, h) = match fit {
+        Fit::Square(s) => (s, s),
+        Fit::Cover(w, h) => (w, h),
+    };
+    let img = img.resize_to_fill(w, h, image::imageops::FilterType::Lanczos3);
+    let mut out = Cursor::new(Vec::new());
+    let ct = if img.color().has_alpha() || w * h <= 256 * 256 {
+        DynamicImage::ImageRgba8(img.to_rgba8()).write_to(&mut out, ImageFormat::WebP).ok()?;
+        "image/webp"
+    } else {
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 85).encode_image(&DynamicImage::ImageRgb8(img.to_rgb8())).ok()?;
+        "image/jpeg"
+    };
+    Some((out.into_inner(), ct))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -90,6 +128,19 @@ mod tests {
         let img = image::RgbaImage::from_fn(1600, 1600, |x, y| image::Rgba([(x ^ y) as u8, x as u8, y as u8, (x % 255) as u8]));
         let t = make(&encode(DynamicImage::ImageRgba8(img), ImageFormat::Png)).expect("preview");
         assert_eq!(t.content_type, "image/webp");
+    }
+
+    #[test]
+    fn pictures_are_cropped_to_fit() {
+        let src = encode(DynamicImage::ImageRgb8(noisy(1200, 800)), ImageFormat::Png);
+        let (icon, ct) = picture(&src, Fit::Square(256)).unwrap();
+        assert_eq!(ct, "image/webp");
+        assert_eq!(image::load_from_memory(&icon).unwrap().width(), 256);
+        let (banner, ct) = picture(&src, Fit::Cover(960, 540)).unwrap();
+        assert_eq!(ct, "image/jpeg");
+        let b = image::load_from_memory(&banner).unwrap();
+        assert_eq!((b.width(), b.height()), (960, 540));
+        assert!(picture(b"nope", Fit::Square(64)).is_none());
     }
 
     #[test]

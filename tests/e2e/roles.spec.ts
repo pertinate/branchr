@@ -44,7 +44,7 @@ test("roles: a moderator role can delete others' messages and is listed separate
   await memberList(alice).getByText("role_b").click({ button: "right" });
   await menu(alice).getByRole("menuitem", { name: "Roles" }).click();
   await alice.getByRole("menuitemcheckbox", { name: "Mods" }).click();
-  await expect(alice.getByRole("menuitemcheckbox", { name: "Mods" })).toHaveAttribute("aria-checked", "true");
+  // (The submenu may close as the pointer leaves it; the member list below confirms the role.)
   await alice.keyboard.press("Escape");
   await alice.keyboard.press("Escape");
 

@@ -18,6 +18,7 @@ mod thumbs;
 use std::sync::Arc;
 
 use axum::Router;
+use axum::extract::DefaultBodyLimit;
 use axum::routing::{delete, get, patch, post, put};
 use dashmap::DashMap;
 use proto::id::IdGen;
@@ -30,7 +31,7 @@ use tower_http::services::{ServeDir, ServeFile};
 use tracing_subscriber::EnvFilter;
 
 use crate::config::Config;
-use crate::routes::{admin, attachments, bans, channels, emotes, guilds, messages, roles, users};
+use crate::routes::{admin, attachments, bans, channels, emotes, guilds, messages, pictures, roles, users};
 use crate::state::{AppState, State};
 
 #[tokio::main]
@@ -96,6 +97,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/admin/guilds", get(admin::guilds))
         .route("/admin/guilds/{gid}", delete(admin::delete_guild))
         .route("/users/@me", get(users::me).patch(users::patch_me))
+        .route("/users/@me/avatar", put(pictures::put_avatar).delete(pictures::delete_avatar).layer(DefaultBodyLimit::max(pictures::MAX_BYTES)))
+        .route("/guilds/{gid}/icon", put(pictures::put_icon).delete(pictures::delete_icon).layer(DefaultBodyLimit::max(pictures::MAX_BYTES)))
+        .route("/guilds/{gid}/banner", put(pictures::put_banner).delete(pictures::delete_banner).layer(DefaultBodyLimit::max(pictures::MAX_BYTES)))
+        .route("/files/{*key}", get(pictures::serve))
         .route("/guilds", post(guilds::create))
         .route("/guilds/{gid}", patch(guilds::patch).delete(guilds::delete))
         .route("/guilds/{gid}/members/@me", delete(guilds::leave).patch(guilds::patch_me_member))

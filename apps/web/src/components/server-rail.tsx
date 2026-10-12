@@ -20,6 +20,7 @@ import { copy } from "@/lib/actions";
 import { forgetHost } from "@/lib/host-sync";
 import { compareIds } from "@/lib/ids";
 import { type Instance, InstanceProvider, hostOf, instance, instanceKey, useActive, useInstance, useInstanceList } from "@/lib/instances";
+import { useMediaUrl } from "@/lib/media";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/stores/app";
 import { useDialogs } from "@/stores/ui";
@@ -41,6 +42,7 @@ export function parseInvite(input: string): { code: string; server: string | nul
 const GuildIcon = memo(function GuildIcon({ guildId, active }: { guildId: string; active: boolean }) {
   const instanceId = useInstance().id;
   const guild = useApp((s) => s.guilds[guildId]);
+  const icon = useMediaUrl(guild?.iconUrl);
   const unread = useApp((s) =>
     Object.values(s.channels).some(
       (c) =>
@@ -74,7 +76,7 @@ const GuildIcon = memo(function GuildIcon({ guildId, active }: { guildId: string
               active ? "rounded-2xl bg-primary text-white" : "rounded-3xl bg-background group-hover:rounded-2xl group-hover:bg-primary group-hover:text-white",
             )}
           >
-            {guild.iconUrl ? <img src={guild.iconUrl} alt="" className="size-full object-cover" /> : guildInitials(guild.name)}
+            {icon ? <img src={icon} alt="" className="size-full object-cover" /> : guildInitials(guild.name)}
           </div>
           {pings > 0 && <MentionBadge count={pings} className="absolute right-1 bottom-0 border-4 border-rail" />}
           {inVoice && !pings && (

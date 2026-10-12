@@ -36,3 +36,5 @@ zune-jpeg = { opt-level = 3 }
 png = { opt-level = 3 }
 image-webp = { opt-level = 3 }
 fdeflate = { opt-level = 3 }
+gif = { opt-level = 3 }
+weezl = { opt-level = 3 }

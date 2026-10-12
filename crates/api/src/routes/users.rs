@@ -1,5 +1,6 @@
 use axum::Json;
 use axum::extract::State;
+use proto::Id;
 use proto::gateway::ServerEvent;
 use proto::models::User;
 use serde::Deserialize;
@@ -38,12 +39,16 @@ pub async fn patch_me(
         }
         sqlx::query("UPDATE users SET avatar_url = $1 WHERE id = $2").bind(url).bind(user.0).execute(&state.db).await?;
     }
+    Ok(Json(announce(&state, user).await?))
+}
+
+/// Sends `user`'s current profile to everyone who shares a guild with them, and returns it.
+pub async fn announce(state: &AppState, user: Id) -> AppResult<User> {
     let u = db::user(&state.db, user).await?;
-    // Everyone sharing a guild with this user needs the new profile.
     let ev = ServerEvent::UserUpdate(u.clone());
     for g in db::guild_ids_for_user(&state.db, user).await? {
         state.hub.to_guild(g, &ev);
     }
     state.hub.to_user(user, &ev);
-    Ok(Json(u))
+    Ok(u)
 }

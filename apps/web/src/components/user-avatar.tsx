@@ -1,6 +1,7 @@
 import type { Status, User } from "@app/protocol";
 import { memo } from "react";
 
+import { useMediaUrl } from "@/lib/media";
 import { cn } from "@/lib/utils";
 
 const COLORS = ["#5865f2", "#3ba55c", "#faa61a", "#ed4245", "#eb459e", "#00a8fc", "#9b59b6", "#1abc9c"];
@@ -32,6 +33,7 @@ export const UserAvatar = memo(function UserAvatar({
   className?: string;
 }) {
   const dot = Math.max(10, Math.round(size * 0.32));
+  const avatar = useMediaUrl(user.avatarUrl);
   return (
     <div className={cn("relative shrink-0", className)} style={{ width: size, height: size }}>
       <div
@@ -39,10 +41,10 @@ export const UserAvatar = memo(function UserAvatar({
           "grid size-full place-items-center overflow-hidden rounded-full font-semibold text-white transition-shadow",
           speaking && "ring-2 ring-online ring-offset-2 ring-offset-background",
         )}
-        style={{ background: user.avatarUrl ? undefined : userColor(user.id), fontSize: size * 0.4 }}
+        style={{ background: avatar ? undefined : userColor(user.id), fontSize: size * 0.4 }}
       >
-        {user.avatarUrl ? (
-          <img src={user.avatarUrl} alt="" className="size-full object-cover" loading="lazy" draggable={false} />
+        {avatar ? (
+          <img src={avatar} alt="" className="size-full object-cover" loading="lazy" draggable={false} />
         ) : (
           user.displayName.slice(0, 1).toUpperCase()
         )}

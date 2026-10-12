@@ -26,6 +26,9 @@ wire! {
         pub name: String,
         pub icon_url: Option<String>,
         pub owner_id: Id,
+        /// Shown above the channel list. Like `icon_url`, a path on this server when uploaded.
+        pub banner_url: Option<String>,
+        pub description: Option<String>,
     }
 
     /// A guild role. `@everyone` is the role whose id is the guild's, at position 0.
