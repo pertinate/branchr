@@ -34,11 +34,12 @@ export const P = {
   ADMINISTRATOR: 1 << 23,
   VIEW_AUDIT_LOG: 1 << 24,
   EMBED_LINKS: 1 << 25,
+  MANAGE_WEBHOOKS: 1 << 26,
 } as const;
 
 export type Perm = keyof typeof P;
 
-export const ALL_PERMS = (1 << 26) - 1;
+export const ALL_PERMS = (1 << 27) - 1;
 
 /** For settings screens, grouped as Discord does. */
 export const PERM_GROUPS: { title: string; perms: { perm: Perm; label: string; hint: string }[] }[] = [
@@ -56,6 +57,7 @@ export const PERM_GROUPS: { title: string; perms: { perm: Perm; label: string; h
       { perm: "KICK_MEMBERS", label: "Kick Members", hint: "Remove people below their highest role." },
       { perm: "BAN_MEMBERS", label: "Ban Members", hint: "Ban people below their highest role." },
       { perm: "VIEW_AUDIT_LOG", label: "View Audit Log", hint: "See who changed what in the server." },
+      { perm: "MANAGE_WEBHOOKS", label: "Manage Webhooks", hint: "Create, edit and delete webhooks that post into channels." },
     ],
   },
   {

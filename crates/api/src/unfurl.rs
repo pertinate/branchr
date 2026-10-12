@@ -121,6 +121,25 @@ impl Unfurler {
         Some(Embed { url: link.to_string(), site_name, title, description, large: large && image.is_some(), image, color })
     }
 
+    /// A copy of a picture from a URL as a square avatar (a webhook post's own), as a path here.
+    pub async fn copy_avatar(&self, state: &AppState, link: &str) -> Option<String> {
+        let url = Url::parse(link).ok()?;
+        if !allowed_url(&url, self.allow_private) {
+            return None;
+        }
+        let _slot = self.slots.acquire().await.ok()?;
+        let resp = tokio::time::timeout(TIMEOUT, self.http.get(url).header(reqwest::header::ACCEPT, "image/*").send()).await.ok()?.ok()?;
+        if !resp.status().is_success() {
+            return None;
+        }
+        let bytes = read(resp, IMAGE_BYTES, false).await?;
+        let (out, ct) = tokio::task::spawn_blocking(move || thumbs::picture(&bytes, Fit::Square(128))).await.ok()??;
+        let hash: String = Sha256::digest(format!("{link}#avatar").as_bytes())[..12].iter().map(|b| format!("{b:02x}")).collect();
+        let key = format!("embed/{hash}.{}", if ct == "image/webp" { "webp" } else { "jpg" });
+        state.storage.put(&key, ct, futures::stream::iter([Ok::<_, AppError>(Bytes::from(out))])).await.ok()?;
+        Some(format!("{PREFIX}{key}"))
+    }
+
     async fn download_image(&self, state: &AppState, url: &Url, large: bool) -> Option<EmbedImage> {
         let resp = self.http.get(url.clone()).header(reqwest::header::ACCEPT, "image/*").send().await.ok()?;
         if !resp.status().is_success() {

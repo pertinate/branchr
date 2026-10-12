@@ -142,7 +142,7 @@ pub async fn register(State(state): State<AppState>, Json(body): Json<Register>)
     };
 
     let token = create_session(&state, id).await?;
-    Ok(Json(AuthResponse { token, user: User { id, username, display_name, avatar_url: None, global_id: None } }))
+    Ok(Json(AuthResponse { token, user: User { id, username, display_name, avatar_url: None, global_id: None, bot: false } }))
 }
 
 #[derive(Deserialize)]

@@ -33,6 +33,7 @@ const TABLES: &[&str] = &[
     "instance_staff",
     "guild_bans",
     "audit_log",
+    "webhooks",
 ];
 
 pub async fn run(from: &str, to: &str) -> anyhow::Result<()> {

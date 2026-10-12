@@ -114,11 +114,12 @@ pub struct UserRow {
     pub display_name: String,
     pub avatar_url: Option<String>,
     pub global_id: Option<String>,
+    pub bot: DbBool,
 }
 
 impl From<UserRow> for User {
     fn from(r: UserRow) -> Self {
-        User { id: Id(r.id), username: r.username, display_name: r.display_name, avatar_url: r.avatar_url, global_id: r.global_id }
+        User { id: Id(r.id), username: r.username, display_name: r.display_name, avatar_url: r.avatar_url, global_id: r.global_id, bot: r.bot.0 }
     }
 }
 
@@ -272,6 +273,8 @@ struct MessageRow {
     mention_roles: Option<String>,
     pinned_at: Option<i64>,
     embeds: Option<String>,
+    author_name: Option<String>,
+    author_avatar: Option<String>,
     #[sqlx(flatten)]
     author: UserRow,
 }
@@ -281,7 +284,7 @@ fn snapshot<T: serde::de::DeserializeOwned>(json: Option<&str>) -> Vec<T> {
     json.and_then(|j| serde_json::from_str(j).ok()).unwrap_or_default()
 }
 
-pub const USER_COLS: &str = "u.id, u.username, u.display_name, u.avatar_url, u.global_id";
+pub const USER_COLS: &str = "u.id, u.username, u.display_name, u.avatar_url, u.global_id, u.bot";
 
 pub async fn user(db: &Db, id: Id) -> sqlx::Result<User> {
     sqlx::query_as::<_, UserRow>(AssertSqlSafe(format!("SELECT {USER_COLS} FROM users u WHERE u.id = $1")))
@@ -490,7 +493,7 @@ pub async fn messages(
     viewer: Id,
 ) -> sqlx::Result<Vec<Message>> {
     let rows = sqlx::query_as::<_, MessageRow>(AssertSqlSafe(format!(
-        "SELECT m.id AS mid, m.channel_id, m.kind, m.content, m.edited_at, m.reply_to, m.emotes, m.mentions, m.mention_everyone, m.mention_roles, m.pinned_at, m.embeds, {USER_COLS}
+        "SELECT m.id AS mid, m.channel_id, m.kind, m.content, m.edited_at, m.reply_to, m.emotes, m.mentions, m.mention_everyone, m.mention_roles, m.pinned_at, m.embeds, m.author_name, m.author_avatar, {USER_COLS}
          FROM messages m JOIN users u ON u.id = m.author_id
          WHERE m.channel_id = $1 AND m.id < $2 AND m.id > $3
          ORDER BY m.id {} LIMIT $4",
@@ -511,7 +514,7 @@ pub async fn messages(
             id: Id(r.id),
             channel_id: Id(r.channel_id),
             kind: MessageKind::parse(&r.kind),
-            author: r.author.into(),
+            author: posted_as(r.author.into(), r.author_name, r.author_avatar),
             content: r.content,
             edited_at: r.edited_at,
             reply_to: r.reply_to.map(Id),
@@ -534,7 +537,7 @@ pub async fn messages(
 
 pub async fn message(db: &Db, id: Id, viewer: Id) -> sqlx::Result<Message> {
     let r = sqlx::query_as::<_, MessageRow>(AssertSqlSafe(format!(
-        "SELECT m.id AS mid, m.channel_id, m.kind, m.content, m.edited_at, m.reply_to, m.emotes, m.mentions, m.mention_everyone, m.mention_roles, m.pinned_at, m.embeds, {USER_COLS}
+        "SELECT m.id AS mid, m.channel_id, m.kind, m.content, m.edited_at, m.reply_to, m.emotes, m.mentions, m.mention_everyone, m.mention_roles, m.pinned_at, m.embeds, m.author_name, m.author_avatar, {USER_COLS}
          FROM messages m JOIN users u ON u.id = m.author_id WHERE m.id = $1"
     )))
     .bind(id.0)
@@ -546,7 +549,7 @@ pub async fn message(db: &Db, id: Id, viewer: Id) -> sqlx::Result<Message> {
         id: Id(r.id),
         channel_id: Id(r.channel_id),
         kind: MessageKind::parse(&r.kind),
-        author: r.author.into(),
+        author: posted_as(r.author.into(), r.author_name, r.author_avatar),
         content: r.content,
         edited_at: r.edited_at,
         reply_to: r.reply_to.map(Id),
@@ -560,6 +563,17 @@ pub async fn message(db: &Db, id: Id, viewer: Id) -> sqlx::Result<Message> {
         embeds: snapshot(r.embeds.as_deref()),
         nonce: None,
     })
+}
+
+/// A webhook post's own name and avatar, over the webhook's.
+fn posted_as(mut user: User, name: Option<String>, avatar: Option<String>) -> User {
+    if let Some(n) = name {
+        user.display_name = n;
+    }
+    if avatar.is_some() {
+        user.avatar_url = avatar;
+    }
+    user
 }
 
 #[derive(FromRow)]

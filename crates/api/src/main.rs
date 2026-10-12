@@ -33,7 +33,7 @@ use tower_http::services::{ServeDir, ServeFile};
 use tracing_subscriber::EnvFilter;
 
 use crate::config::Config;
-use crate::routes::{admin, attachments, bans, channels, emotes, guilds, messages, pictures, roles, search, users};
+use crate::routes::{admin, attachments, bans, channels, emotes, guilds, messages, pictures, roles, search, users, webhooks};
 use crate::state::{AppState, State};
 
 #[tokio::main]
@@ -81,6 +81,7 @@ async fn main() -> anyhow::Result<()> {
         sessions: DashMap::new(),
         channel_guild: DashMap::new(),
         message_limiter: throttle::Buckets::new(10, 5.0),
+        webhook_limiter: throttle::Buckets::new(5, 2.0),
         slowmode: DashMap::new(),
         last_sent: DashMap::new(),
         // LINK_PREVIEWS=0 turns link previews off; EMBED_ALLOW_PRIVATE (tests only) lets them reach localhost.
@@ -112,6 +113,10 @@ async fn main() -> anyhow::Result<()> {
         .merge(sign_in)
         .merge(invites)
         .route("/auth/logout", post(auth::logout))
+        .route("/guilds/{gid}/webhooks", get(webhooks::list))
+        .route("/channels/{cid}/webhooks", post(webhooks::create))
+        .route("/webhooks/{wid}", patch(webhooks::patch).delete(webhooks::delete))
+        .route("/webhooks/{wid}/{token}", post(webhooks::execute))
         .route("/auth/link", get(auth::link_status).post(auth::link))
         .route("/instance", get(auth::instance_info))
         .route("/admin/overview", get(admin::overview))

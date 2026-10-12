@@ -22,6 +22,9 @@ wire! {
         /// Their branchr account, when they signed in with one (to befriend or message them).
         #[serde(default)]
         pub global_id: Option<String>,
+        /// A webhook, not a person.
+        #[serde(default)]
+        pub bot: bool,
     }
 
     pub struct Guild {
@@ -173,6 +176,21 @@ wire! {
         pub url: String,
         pub width: u32,
         pub height: u32,
+    }
+
+    /// Posts into a channel from outside: `POST /api/webhooks/{id}/{token}` with `{"content"}`
+    /// (and optionally `username` / `avatar_url` for that post).
+    pub struct Webhook {
+        /// Also the id its messages are authored by.
+        pub id: Id,
+        pub guild_id: Id,
+        pub channel_id: Id,
+        pub name: String,
+        pub creator_id: Id,
+        #[cfg_attr(feature = "ts", ts(type = "number"))]
+        pub created_at: i64,
+        /// Only in the reply that creates it or resets its token; it isn't stored readably.
+        pub token: Option<String>,
     }
 
     pub struct Reaction {
@@ -420,6 +438,9 @@ pub enum AuditAction {
     EmoteUpdate,
     EmoteDelete,
     MessageDelete,
+    WebhookCreate,
+    WebhookUpdate,
+    WebhookDelete,
 }
 
 impl AuditAction {
@@ -443,6 +464,9 @@ impl AuditAction {
             AuditAction::EmoteUpdate => "emote_update",
             AuditAction::EmoteDelete => "emote_delete",
             AuditAction::MessageDelete => "message_delete",
+            AuditAction::WebhookCreate => "webhook_create",
+            AuditAction::WebhookUpdate => "webhook_update",
+            AuditAction::WebhookDelete => "webhook_delete",
         }
     }
 

@@ -2,6 +2,7 @@
 export type * from "./generated/ApiError";
 export type * from "./generated/Attachment";
 export type * from "./generated/Embed";
+export type * from "./generated/Webhook";
 export type * from "./generated/EmbedImage";
 export type * from "./generated/AuditAction";
 export type * from "./generated/AuditChange";

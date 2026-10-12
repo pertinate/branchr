@@ -32,6 +32,8 @@ pub struct State {
     /// channel id -> guild id, channels never move between guilds.
     pub channel_guild: DashMap<Id, Id>,
     pub message_limiter: throttle::Buckets<Id>,
+    /// Posts per webhook.
+    pub webhook_limiter: throttle::Buckets<Id>,
     /// channel id -> slow mode seconds, filled as channels are written to.
     pub slowmode: DashMap<Id, u32>,
     /// (channel, user) -> when they last sent there, for slow mode.

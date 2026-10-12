@@ -8,6 +8,7 @@ pub mod messages;
 pub mod pictures;
 pub mod roles;
 pub mod search;
+pub mod webhooks;
 pub mod users;
 
 use std::sync::Arc;

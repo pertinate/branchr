@@ -78,6 +78,9 @@ const VERBS: Record<AuditEntry["action"], string> = {
   emote_update: "renamed the emote",
   emote_delete: "removed the emote",
   message_delete: "deleted a message by",
+  webhook_create: "created webhook",
+  webhook_update: "updated webhook",
+  webhook_delete: "deleted webhook",
 };
 
 /** Server Settings → Audit Log: newest first, loading older pages on demand. */

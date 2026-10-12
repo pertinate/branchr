@@ -23,8 +23,9 @@ import { P, useCan } from "@/lib/perms";
 import { type EmoteSource, emoteSource, emoteSrcSet, emoteUrl, providerNames } from "@/lib/emotes";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/stores/app";
+import { WebhooksSettings } from "@/components/guild/webhooks-settings";
 
-type Tab = "overview" | "roles" | "emotes" | "bans" | "audit";
+type Tab = "overview" | "roles" | "emotes" | "bans" | "audit" | "webhooks";
 
 export function GuildSettingsDialog({ guildId, tab, onClose }: { guildId: string; tab: Tab; onClose: () => void }) {
   const canGuild = useCan(guildId, P.MANAGE_GUILD);
@@ -32,7 +33,8 @@ export function GuildSettingsDialog({ guildId, tab, onClose }: { guildId: string
   const canEmotes = useCan(guildId, P.MANAGE_EMOTES);
   const canBans = useCan(guildId, P.BAN_MEMBERS);
   const canAudit = useCan(guildId, P.VIEW_AUDIT_LOG);
-  const allowed: Record<Tab, boolean> = { overview: canGuild, roles: canRoles, emotes: true, bans: canBans, audit: canAudit };
+  const canWebhooks = useCan(guildId, P.MANAGE_WEBHOOKS);
+  const allowed: Record<Tab, boolean> = { overview: canGuild, roles: canRoles, emotes: true, bans: canBans, audit: canAudit, webhooks: canWebhooks };
   const first = allowed[tab] ? tab : canGuild ? "overview" : canRoles ? "roles" : "emotes";
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -46,6 +48,7 @@ export function GuildSettingsDialog({ guildId, tab, onClose }: { guildId: string
             {canRoles && <TabsTrigger value="roles">Roles</TabsTrigger>}
             <TabsTrigger value="emotes">Emotes</TabsTrigger>
             {canBans && <TabsTrigger value="bans">Bans</TabsTrigger>}
+            {canWebhooks && <TabsTrigger value="webhooks">Webhooks</TabsTrigger>}
             {canAudit && <TabsTrigger value="audit">Audit Log</TabsTrigger>}
           </TabsList>
           {canGuild && (
@@ -64,6 +67,11 @@ export function GuildSettingsDialog({ guildId, tab, onClose }: { guildId: string
           {canBans && (
             <TabsContent value="bans" className="min-h-0 flex-1">
               <BansSettings guildId={guildId} />
+            </TabsContent>
+          )}
+          {canWebhooks && (
+            <TabsContent value="webhooks" className="min-h-0 flex-1">
+              <WebhooksSettings guildId={guildId} />
             </TabsContent>
           )}
           {canAudit && (

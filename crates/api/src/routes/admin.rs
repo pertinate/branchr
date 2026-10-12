@@ -130,7 +130,7 @@ pub async fn users(State(state): State<AppState>, Auth(user): Auth, Query(q): Qu
                 (SELECT count(*) FROM members m WHERE m.user_id = u.id) AS guilds,
                 b.user_id IS NOT NULL AS banned, b.reason
          FROM users u LEFT JOIN instance_bans b ON b.user_id = u.id
-         WHERE (lower(u.username) LIKE lower($1) ESCAPE '\\' OR lower(u.display_name) LIKE lower($1) ESCAPE '\\') AND (NOT $2 OR b.user_id IS NOT NULL)
+         WHERE (lower(u.username) LIKE lower($1) ESCAPE '\\' OR lower(u.display_name) LIKE lower($1) ESCAPE '\\') AND (NOT $2 OR b.user_id IS NOT NULL) AND NOT u.bot
          ORDER BY u.id DESC LIMIT $3 OFFSET $4",
     )
     .bind(&pattern)
@@ -148,7 +148,7 @@ pub async fn users(State(state): State<AppState>, Auth(user): Auth, Query(q): Qu
                 } else {
                     staff.iter().find(|(u, _)| *u == r.id).and_then(|(_, role)| HostRole::parse(role))
                 },
-                user: proto::models::User { id: Id(r.id), username: r.username, display_name: r.display_name, avatar_url: r.avatar_url, global_id: r.global_id.clone() },
+                user: proto::models::User { id: Id(r.id), username: r.username, display_name: r.display_name, avatar_url: r.avatar_url, global_id: r.global_id.clone(), bot: false },
                 created_at: r.created_at,
                 linked: r.global_id.is_some(),
                 guilds: r.guilds as u32,

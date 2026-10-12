@@ -65,7 +65,7 @@ function msgTime(m: UiMessage) {
 }
 
 export function shouldGroup(prev: UiMessage | undefined, m: UiMessage) {
-  return !!prev && prev.kind === "default" && m.kind === "default" && prev.author.id === m.author.id && !m.replyTo && msgTime(m) - msgTime(prev) < 7 * 60_000;
+  return !!prev && prev.kind === "default" && m.kind === "default" && prev.author.id === m.author.id && prev.author.displayName === m.author.displayName && prev.author.avatarUrl === m.author.avatarUrl && !m.replyTo && msgTime(m) - msgTime(prev) < 7 * 60_000;
 }
 
 /** Friendly ways to say someone arrived (picked by message id, so it's stable). */
@@ -282,25 +282,40 @@ export const MessageItem = memo(function MessageItem({
           {grouped ? (
             <span className="hidden pt-1 text-[10px] text-muted-foreground group-hover:block">{timeFmt.format(new Date(msgTime(m)))}</span>
           ) : (
-            <Menu items={<UserMenuItems guildId={guildId} userId={m.author.id} />}>
-              <UserCardPopover guildId={guildId} user={m.author}>
-                <button type="button" aria-label={`${nick ?? m.author.displayName}'s profile`} className="block cursor-pointer">
-                  <UserAvatar user={m.author} size={40} className="mt-0.5" />
-                </button>
-              </UserCardPopover>
-            </Menu>
+            m.author.bot ? (
+              <UserAvatar user={m.author} size={40} className="mt-0.5" />
+            ) : (
+              <Menu items={<UserMenuItems guildId={guildId} userId={m.author.id} />}>
+                <UserCardPopover guildId={guildId} user={m.author}>
+                  <button type="button" aria-label={`${nick ?? m.author.displayName}'s profile`} className="block cursor-pointer">
+                    <UserAvatar user={m.author} size={40} className="mt-0.5" />
+                  </button>
+                </UserCardPopover>
+              </Menu>
+            )
           )}
         </div>
         <div className="min-w-0 flex-1">
           {!grouped && (
             <div className="flex items-baseline gap-2">
-              <Menu items={<UserMenuItems guildId={guildId} userId={m.author.id} />}>
-                <UserCardPopover guildId={guildId} user={m.author}>
-                  <span className="cursor-pointer font-medium hover:underline" style={{ color: tint ?? userColor(m.author.id) }}>
-                    {nick ?? m.author.displayName}
-                  </span>
-                </UserCardPopover>
-              </Menu>
+              {m.author.bot ? (
+                <span className="font-medium" style={{ color: userColor(m.author.id) }}>
+                  {m.author.displayName}
+                </span>
+              ) : (
+                <Menu items={<UserMenuItems guildId={guildId} userId={m.author.id} />}>
+                  <UserCardPopover guildId={guildId} user={m.author}>
+                    <span className="cursor-pointer font-medium hover:underline" style={{ color: tint ?? userColor(m.author.id) }}>
+                      {nick ?? m.author.displayName}
+                    </span>
+                  </UserCardPopover>
+                </Menu>
+              )}
+              {m.author.bot && (
+                <span data-testid="bot-tag" className="rounded bg-primary px-1 py-px text-[10px] leading-none font-semibold text-white uppercase" title="Posted by a webhook">
+                  Bot
+                </span>
+              )}
               <span className="text-xs text-muted-foreground">{formatTime(msgTime(m))}</span>
             </div>
           )}

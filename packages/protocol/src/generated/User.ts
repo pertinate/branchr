@@ -5,4 +5,8 @@ export type User = { id: Id, username: string, displayName: string, avatarUrl: s
 /**
  * Their branchr account, when they signed in with one (to befriend or message them).
  */
-globalId: string | null, };
+globalId: string | null, 
+/**
+ * A webhook, not a person.
+ */
+bot: boolean, };

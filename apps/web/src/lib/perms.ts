@@ -52,7 +52,7 @@ export function useOutranks(guildId: string, userId: string): boolean {
 }
 
 /** Settings tabs that need a permission: any of these opens Server Settings. */
-export const SETTINGS_PERMS = P.MANAGE_GUILD | P.MANAGE_ROLES | P.BAN_MEMBERS | P.VIEW_AUDIT_LOG;
+export const SETTINGS_PERMS = P.MANAGE_GUILD | P.MANAGE_ROLES | P.BAN_MEMBERS | P.VIEW_AUDIT_LOG | P.MANAGE_WEBHOOKS;
 
 export function roleColor(r: Pick<Role, "color">): string | undefined {
   return r.color == null ? undefined : `#${r.color.toString(16).padStart(6, "0")}`;
