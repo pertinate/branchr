@@ -1,4 +1,4 @@
-import type { Attachment, Emote, User } from "@app/protocol";
+import type { Attachment, Emote, Role, User } from "@app/protocol";
 import { FileIcon, Paperclip, Smile, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -14,14 +14,17 @@ import { formatBytes, uploadAttachment } from "@/lib/upload";
 import { cn } from "@/lib/utils";
 import { emoteToken } from "@/lib/emotes";
 import { canMentionEveryone } from "@/lib/mentions";
-import { P, useChannelCan } from "@/lib/perms";
+import { P, roleColor, useChannelCan } from "@/lib/perms";
 import { useApp } from "@/stores/app";
 import { useEmoteGroups } from "@/stores/emotes";
 import { type UiMessage, useMessages } from "@/stores/messages";
 
 const TYPING_INTERVAL = 6000;
 
-type Mentionable = { kind: "user"; user: User; name: string } | { kind: "everyone"; name: "everyone" | "here"; hint: string };
+type Mentionable =
+  | { kind: "user"; user: User; name: string }
+  | { kind: "role"; role: Role; name: string }
+  | { kind: "everyone"; name: "everyone" | "here"; hint: string };
 const EVERYONE: Mentionable[] = [
   { kind: "everyone", name: "here", hint: "Notifies everyone online" },
   { kind: "everyone", name: "everyone", hint: "Notifies everyone in this server" },
@@ -47,6 +50,7 @@ export function Composer({ channelId, guildId, replyTo, clearReply }: { channelI
   const canAttach = useChannelCan(channelId, P.ATTACH_FILES);
   const groups = useEmoteGroups(guildId);
   const members = useApp((s) => s.members[guildId]);
+  const roles = useApp((s) => s.roles[guildId]);
   const guildNames = useMemo(() => new Map(groups.map((g) => [g.guild.id, g.guild.name])), [groups]);
   const [value, setValue] = useState(() => drafts.get(channelId) ?? "");
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -144,7 +148,12 @@ export function Composer({ channelId, guildId, replyTo, clearReply }: { channelI
         if (names.some((n) => n.toLowerCase().startsWith(q))) return 0;
         return names.some((n) => n.toLowerCase().includes(q)) ? 1 : -1;
       };
-      const matches = [...people.sort((a, b) => a.name.localeCompare(b.name)), ...(canMentionEveryone(guildId) ? EVERYONE : [])]
+      // Roles that would ping: mentionable ones, or all with Mention @everyone.
+      const all = canMentionEveryone(guildId);
+      const pingable: Mentionable[] = (roles ?? [])
+        .filter((r) => r.id !== guildId && (r.mentionable || all))
+        .map((r) => ({ kind: "role", role: r, name: r.name }));
+      const matches = [...people.sort((a, b) => a.name.localeCompare(b.name)), ...pingable, ...(all ? EVERYONE : [])]
         .map((x) => [x, score(x)] as const)
         .filter(([, s]) => s >= 0)
         .sort((a, b) => a[1] - b[1])
@@ -163,7 +172,7 @@ export function Composer({ channelId, guildId, replyTo, clearReply }: { channelI
       .sort((a, b) => rank(a) - rank(b) || a.name.length - b.name.length)
       .slice(0, 8);
     return matches.length ? { kind: "emote", start: caret - m[1].length - 1, end: caret, matches } : null;
-  }, [value, groups, guildId, members]);
+  }, [value, groups, guildId, members, roles]);
 
   useEffect(() => setSel(0), [suggestion?.matches.length]);
 
@@ -250,7 +259,7 @@ export function Composer({ channelId, guildId, replyTo, clearReply }: { channelI
           <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase">Members</div>
           {suggestion.matches.map((x, i) => (
             <button
-              key={x.kind === "user" ? x.user.id : x.name}
+              key={x.kind === "user" ? x.user.id : x.kind === "role" ? x.role.id : x.name}
               onMouseDown={(ev) => {
                 ev.preventDefault();
                 pick(suggestion, i);
@@ -262,6 +271,14 @@ export function Composer({ channelId, guildId, replyTo, clearReply }: { channelI
                   <UserAvatar user={x.user} size={24} />
                   <span>{x.name}</span>
                   <span className="ml-auto truncate text-xs text-muted-foreground">{x.user.username}</span>
+                </>
+              ) : x.kind === "role" ? (
+                <>
+                  <span className="grid size-6 place-items-center font-semibold" style={{ color: roleColor(x.role) }}>
+                    @
+                  </span>
+                  <span style={{ color: roleColor(x.role) }}>@{x.name}</span>
+                  <span className="ml-auto truncate text-xs text-muted-foreground">Notifies members with this role</span>
                 </>
               ) : (
                 <>

@@ -2,8 +2,9 @@
 //!
 //! `@username` of a guild member is rewritten to `<@id>`, so mentions survive renames
 //! and every client resolves them the same way; `<@id>` is accepted as-is. `@everyone`
-//! and `@here` ping the whole guild. `<@&id>` (roles) is left for clients to render
-//! until roles exist. Nothing inside `code` or ```code blocks``` counts.
+//! and `@here` ping the whole guild. `<@&id>` names a role (clients turn `@Role Name`
+//! into it); whether it pings is up to the caller. Nothing inside `code` or
+//! ```code blocks``` counts.
 
 use std::ops::Range;
 
@@ -23,6 +24,8 @@ pub struct Mentions {
     pub everyone: bool,
     /// `@here`: members who are online.
     pub here: bool,
+    /// Roles of this guild named with `<@&id>`.
+    pub roles: Vec<Id>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -31,6 +34,8 @@ enum Token<'a> {
     Name(Range<usize>, &'a str),
     /// `<@id>`.
     Id(i64),
+    /// `<@&id>`.
+    Role(i64),
     Everyone,
     Here,
 }
@@ -84,11 +89,15 @@ fn tokens(s: &str) -> Vec<Token<'_>> {
         let prev = s[..at].chars().next_back();
         let rest = &s[at + 1..];
         if prev == Some('<') {
-            // <@123> (not <@&role>)
+            // <@123> or <@&123>
+            let (role, rest) = match rest.strip_prefix('&') {
+                Some(r) => (true, r),
+                None => (false, rest),
+            };
             let digits = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
             if (1..=20).contains(&digits) && rest[digits..].starts_with('>') {
                 if let Ok(id) = rest[..digits].parse() {
-                    out.push(Token::Id(id));
+                    out.push(if role { Token::Role(id) } else { Token::Id(id) });
                 }
             }
             continue;
@@ -137,8 +146,9 @@ async fn members(pool: &Db, guild: Id, ids: &[i64], names: &[&str]) -> sqlx::Res
 }
 
 /// Resolves mentions in `content` for a message in `guild`. `also` (e.g. the author of
-/// the message being replied to) is mentioned without appearing in the text.
-pub async fn resolve(pool: &Db, guild: Id, content: &str, also: Option<Id>) -> sqlx::Result<Mentions> {
+/// the message being replied to) is mentioned without appearing in the text. `roles` are
+/// the guild's role ids.
+pub async fn resolve(pool: &Db, guild: Id, content: &str, also: Option<Id>, roles: &[Id]) -> sqlx::Result<Mentions> {
     let toks = tokens(content);
     let mut ids: Vec<i64> = toks.iter().filter_map(|t| if let Token::Id(id) = t { Some(*id) } else { None }).collect();
     ids.extend(also.map(|a| a.0));
@@ -173,14 +183,17 @@ pub async fn resolve(pool: &Db, guild: Id, content: &str, also: Option<Id>) -> s
                     mention(u);
                 }
             }
-            Token::Everyone | Token::Here => {}
+            Token::Everyone | Token::Here | Token::Role(_) => {}
         }
     }
     text.push_str(&content[last..]);
     if let Some(u) = also.and_then(|a| found.iter().find(|u| u.id == a)) {
         mention(u);
     }
-    Ok(Mentions { content: text, users, everyone: toks.contains(&Token::Everyone), here: toks.contains(&Token::Here) })
+    let mut named: Vec<Id> = toks.iter().filter_map(|t| if let Token::Role(r) = t { Some(Id(*r)) } else { None }).filter(|r| roles.contains(r) && *r != guild).collect();
+    named.sort_unstable();
+    named.dedup();
+    Ok(Mentions { content: text, users, everyone: toks.contains(&Token::Everyone), here: toks.contains(&Token::Here), roles: named })
 }
 
 #[cfg(test)]
@@ -194,7 +207,7 @@ mod tests {
             t,
             vec![Token::Name(3..9, "alice"), Token::Id(42), Token::Everyone, Token::Name(76..81, "dave")]
         );
-        assert_eq!(tokens("@here <@&7>"), vec![Token::Here]);
+        assert_eq!(tokens("@here <@&7> <@&x>"), vec![Token::Here, Token::Role(7)]);
         assert_eq!(tokens("`unclosed @eve"), vec![Token::Name(10..14, "eve")]);
     }
 }

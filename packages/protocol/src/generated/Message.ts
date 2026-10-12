@@ -24,6 +24,11 @@ mentions: Array<User>,
  */
 mentionEveryone: boolean, 
 /**
+ * Roles the message pinged (`<@&id>` of a mentionable role, or from someone allowed to
+ * mention everyone).
+ */
+mentionRoles: Array<Id>, 
+/**
  * Client-generated id echoed back so optimistic sends can be reconciled.
  */
 nonce?: string | null, };

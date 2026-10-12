@@ -15,7 +15,7 @@ import { copy, copyImage, saveFile } from "@/lib/actions";
 import { api } from "@/lib/api";
 import { emotePage, providerNames } from "@/lib/emotes";
 import { snowflakeTime } from "@/lib/ids";
-import { editableMentions, mentionsMe, plainText } from "@/lib/mentions";
+import { editableMentions, mentionsMe, plainText, withRoleMentions } from "@/lib/mentions";
 import { cn } from "@/lib/utils";
 import { useRoleColor } from "@/lib/perms";
 import { useApp } from "@/stores/app";
@@ -103,7 +103,7 @@ export const MessageItem = memo(function MessageItem({
   const [target, setTarget] = useState<MenuTarget>({});
   // "Add Reaction" from the menu opens the picker once the menu is gone (see onCloseAutoFocus).
   const pickerAfterMenu = useRef(false);
-  const pinged = useApp((s) => mentionsMe(m, s.me?.id));
+  const pinged = useApp((s) => mentionsMe(m, s));
 
   const toggleReaction = async (emoji: string, me: boolean) => {
     try {
@@ -357,14 +357,15 @@ export const MessageItem = memo(function MessageItem({
 });
 
 function EditBox({ message, onDone }: { message: UiMessage; onDone: () => void }) {
-  // Mentions are edited as they're typed (@username); the server resolves them again.
-  const [initial] = useState(() => editableMentions(message.content, message.mentions));
+  const guildId = useApp((s) => s.channels[message.channelId]?.guildId);
+  // Mentions are edited as they're typed (@username, @Role); the server resolves them again.
+  const [initial] = useState(() => editableMentions(message.content, message.mentions, guildId));
   const [value, setValue] = useState(initial);
   const save = async () => {
     const content = value.trim();
     if (!content || content === initial) return onDone();
     try {
-      await api("PATCH", `/channels/${message.channelId}/messages/${message.id}`, { content });
+      await api("PATCH", `/channels/${message.channelId}/messages/${message.id}`, { content: withRoleMentions(content, guildId) });
       onDone();
     } catch (e) {
       toast.error((e as Error).message);

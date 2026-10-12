@@ -62,6 +62,18 @@ test("roles: a moderator role can delete others' messages and is listed separate
   await memberList(bob).getByText("role_a").click({ button: "right" });
   await expect(item(bob, "Copy Username")).toBeVisible();
   await expect(menu(bob).getByRole("menuitem", { name: /^Kick / })).toHaveCount(0);
+  await bob.keyboard.press("Escape");
+
+  // @Mods (picked from the suggestions) pings everyone with the role.
+  const box = alice.getByPlaceholder("Message #general");
+  await box.fill("@Mo");
+  await alice.getByRole("button", { name: /@Mods/ }).click();
+  await box.pressSequentially("meeting in 5");
+  await box.press("Enter");
+  const pinged = bob.locator("[data-pinged]").filter({ hasText: "meeting in 5" });
+  await expect(pinged).toBeVisible();
+  await expect(pinged.locator("[data-role-mention]")).toHaveText("@Mods");
+  await expect(pinged.locator("[data-role-mention]")).toHaveCSS("color", "rgb(231, 76, 60)");
 });
 
 test("channel permissions: hide a channel from everyone, open it to one person, take their voice", async ({ browser }) => {

@@ -136,14 +136,15 @@ pub async fn create(
     }
     let (content, emotes) = resolve_emotes(&state, user, content, &[]).await?;
     let replied = replied_author(&state, cid, body.reply_to, user).await?;
-    let mut mentions = mentions::resolve(&state.db, guild, &content, replied).await?;
-    restrict_everyone(&gp, user, &mut mentions);
+    let roles: Vec<Id> = gp.roles.keys().copied().collect();
+    let mut mentions = mentions::resolve(&state.db, guild, &content, replied, &roles).await?;
+    restrict_pings(&gp, user, &mut mentions);
     let content = std::mem::take(&mut mentions.content);
     let id = state.ids.next();
     let mut tx = state.db.begin().await?;
     sqlx::query(
-        "INSERT INTO messages (id, channel_id, author_id, content, reply_to, emotes, mentions, mention_everyone)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        "INSERT INTO messages (id, channel_id, author_id, content, reply_to, emotes, mentions, mention_everyone, mention_roles)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
     )
     .bind(id.0)
     .bind(cid.0)
@@ -153,6 +154,7 @@ pub async fn create(
     .bind(snapshot_json(&emotes))
     .bind(snapshot_json(&mentions.users))
     .bind(mentions.everyone || mentions.here)
+    .bind(snapshot_json(&mentions.roles))
     .execute(&mut *tx)
     .await?;
     sqlx::query("UPDATE channels SET last_message_id = $1 WHERE id = $2").bind(id.0).bind(cid.0).execute(&mut *tx).await?;
@@ -183,6 +185,7 @@ pub async fn create(
         attachments: db::attachments_for(&state.db, std::iter::once(id.0)).await?.remove(&id.0).unwrap_or_default(),
         emotes,
         mention_everyone: mentions.everyone || mentions.here,
+        mention_roles: mentions.roles.clone(),
         mentions: mentions.users,
         nonce: body.nonce,
     };
@@ -212,11 +215,12 @@ pub async fn edit(
     }
     let (content, emotes) = resolve_emotes(&state, user, content, &prev.emotes).await?;
     let replied = replied_author(&state, cid, prev.reply_to, user).await?;
-    let mut mentions = mentions::resolve(&state.db, guild, &content, replied).await?;
-    restrict_everyone(&gp, user, &mut mentions);
+    let roles: Vec<Id> = gp.roles.keys().copied().collect();
+    let mut mentions = mentions::resolve(&state.db, guild, &content, replied, &roles).await?;
+    restrict_pings(&gp, user, &mut mentions);
     let content = mentions.content;
     let r = sqlx::query(
-        "UPDATE messages SET content = $1, emotes = $2, mentions = $3, mention_everyone = $4, edited_at = $5
+        "UPDATE messages SET content = $1, emotes = $2, mentions = $3, mention_everyone = $4, mention_roles = $9, edited_at = $5
          WHERE id = $6 AND channel_id = $7 AND author_id = $8",
     )
     .bind(&content)
@@ -227,6 +231,7 @@ pub async fn edit(
     .bind(mid.0)
     .bind(cid.0)
     .bind(user.0)
+    .bind(snapshot_json(&mentions.roles))
     .execute(&state.db)
     .await?;
     if r.rows_affected() == 0 {
@@ -262,12 +267,14 @@ fn snapshot_json<T: serde::Serialize>(items: &[T]) -> Option<String> {
     (!items.is_empty()).then(|| serde_json::to_string(items).expect("snapshot serializes"))
 }
 
-/// @everyone / @here only ping from people with MENTION_EVERYONE; otherwise they stay as
-/// plain text.
-fn restrict_everyone(gp: &GuildPerms, user: Id, m: &mut mentions::Mentions) {
-    if (m.everyone || m.here) && !gp.has(user, perms::MENTION_EVERYONE) {
+/// @everyone / @here only ping from people with MENTION_EVERYONE, and roles only when
+/// they're mentionable or the author has it. The rest stay as plain text or a quiet pill.
+fn restrict_pings(gp: &GuildPerms, user: Id, m: &mut mentions::Mentions) {
+    let everyone = gp.has(user, perms::MENTION_EVERYONE);
+    if !everyone {
         m.everyone = false;
         m.here = false;
+        m.roles.retain(|r| gp.roles.get(r).is_some_and(|r| r.mentionable));
     }
 }
 
@@ -281,6 +288,8 @@ async fn bump_mentions(state: &AppState, gp: &GuildPerms, channel: Id, author: I
         db::bump_mentions(&state.db, guild, channel, None, author).await
     } else {
         let mut users: Vec<Id> = m.users.iter().map(|u| u.id).collect();
+        // Members with a pinged role.
+        users.extend(gp.member_roles.iter().filter(|(_, roles)| roles.iter().any(|r| m.roles.contains(r))).map(|(u, _)| *u));
         if m.everyone || m.here {
             let members: Vec<i64> = sqlx::query_scalar("SELECT user_id FROM members WHERE guild_id = $1")
                 .bind(guild.0)
@@ -289,9 +298,9 @@ async fn bump_mentions(state: &AppState, gp: &GuildPerms, channel: Id, author: I
                 .unwrap_or_default();
             // @here: just the people online.
             users.extend(members.into_iter().map(Id).filter(|u| m.everyone || state.hub.status(*u) != Status::Offline));
-            users.sort_unstable_by_key(|u| u.0);
-            users.dedup();
         }
+        users.sort_unstable_by_key(|u| u.0);
+        users.dedup();
         if !public {
             users.retain(|u| gp.can_in(*u, channel, perms::VIEW_CHANNEL));
         }

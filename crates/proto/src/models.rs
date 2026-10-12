@@ -104,6 +104,9 @@ wire! {
         /// `@everyone` or `@here`.
         #[serde(default)]
         pub mention_everyone: bool,
+        /// Roles the message pinged (`<@&id>` of a mentionable role, or from someone allowed to
+        /// mention everyone).
+        pub mention_roles: Vec<Id>,
         /// Client-generated id echoed back so optimistic sends can be reconciled.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub nonce: Option<String>,

@@ -244,6 +244,7 @@ struct MessageRow {
     emotes: Option<String>,
     mentions: Option<String>,
     mention_everyone: DbBool,
+    mention_roles: Option<String>,
     #[sqlx(flatten)]
     author: UserRow,
 }
@@ -461,7 +462,7 @@ pub async fn messages(
     viewer: Id,
 ) -> sqlx::Result<Vec<Message>> {
     let rows = sqlx::query_as::<_, MessageRow>(AssertSqlSafe(format!(
-        "SELECT m.id AS mid, m.channel_id, m.content, m.edited_at, m.reply_to, m.emotes, m.mentions, m.mention_everyone, {USER_COLS}
+        "SELECT m.id AS mid, m.channel_id, m.content, m.edited_at, m.reply_to, m.emotes, m.mentions, m.mention_everyone, m.mention_roles, {USER_COLS}
          FROM messages m JOIN users u ON u.id = m.author_id
          WHERE m.channel_id = $1 AND m.id < $2 AND m.id > $3
          ORDER BY m.id {} LIMIT $4",
@@ -490,6 +491,7 @@ pub async fn messages(
             emotes: snapshot(r.emotes.as_deref()),
             mentions: snapshot(r.mentions.as_deref()),
             mention_everyone: r.mention_everyone.0,
+            mention_roles: snapshot(r.mention_roles.as_deref()),
             nonce: None,
         })
         .collect();
@@ -501,7 +503,7 @@ pub async fn messages(
 
 pub async fn message(db: &Db, id: Id, viewer: Id) -> sqlx::Result<Message> {
     let r = sqlx::query_as::<_, MessageRow>(AssertSqlSafe(format!(
-        "SELECT m.id AS mid, m.channel_id, m.content, m.edited_at, m.reply_to, m.emotes, m.mentions, m.mention_everyone, {USER_COLS}
+        "SELECT m.id AS mid, m.channel_id, m.content, m.edited_at, m.reply_to, m.emotes, m.mentions, m.mention_everyone, m.mention_roles, {USER_COLS}
          FROM messages m JOIN users u ON u.id = m.author_id WHERE m.id = $1"
     )))
     .bind(id.0)
@@ -519,8 +521,9 @@ pub async fn message(db: &Db, id: Id, viewer: Id) -> sqlx::Result<Message> {
         reactions: reactions.remove(&r.id).unwrap_or_default(),
         attachments: attachments.remove(&r.id).unwrap_or_default(),
         emotes: snapshot(r.emotes.as_deref()),
-            mentions: snapshot(r.mentions.as_deref()),
-            mention_everyone: r.mention_everyone.0,
+        mentions: snapshot(r.mentions.as_deref()),
+        mention_everyone: r.mention_everyone.0,
+        mention_roles: snapshot(r.mention_roles.as_deref()),
         nonce: None,
     })
 }

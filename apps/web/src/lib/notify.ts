@@ -76,7 +76,7 @@ export function startNotifications(): () => void {
     for (const inst of instances()) {
       if (attached.has(inst.id)) continue;
       const offGateway = inst.gateway.on((ev) => {
-        if (ev.t === "MESSAGE_CREATE" && mentionsMe(ev.d, inst.app.getState().me?.id)) notifyMention(inst, ev.d);
+        if (ev.t === "MESSAGE_CREATE" && mentionsMe(ev.d, inst.app.getState())) notifyMention(inst, ev.d);
       });
       const offStore = inst.app.subscribe((s, prev) => s.pings !== prev.pings && badge());
       attached.set(inst.id, () => {

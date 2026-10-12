@@ -4,6 +4,7 @@ import { Fragment, type ReactNode, memo, useMemo } from "react";
 import { EMOTE_TOKEN, emoteSource, emoteSrcSet, emoteUrl } from "@/lib/emotes";
 import { Menu, UserMenuItems } from "@/components/menus";
 import { EVERYONE_MENTION, ROLE_MENTION, USER_MENTION } from "@/lib/mentions";
+import { roleColor } from "@/lib/perms";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/stores/app";
 import { useEmoteCard } from "@/stores/emotes";
@@ -45,6 +46,21 @@ function Mention({ id, ctx }: { id: string; ctx: Ctx }) {
   return ctx.guildId ? <Menu items={<UserMenuItems guildId={ctx.guildId} userId={id} />}>{pill}</Menu> : pill;
 }
 
+/** `@Role`, in the role's colour (a deleted role shows as such). */
+function RoleMention({ id, ctx }: { id: string; ctx: Ctx }) {
+  const role = useApp((s) => (ctx.guildId ? s.roles[ctx.guildId]?.find((r) => r.id === id) : undefined));
+  const color = role ? roleColor(role) : undefined;
+  return (
+    <span
+      data-role-mention={id}
+      className={cn(PILL, "cursor-default")}
+      style={color ? { color, background: `color-mix(in oklab, ${color} 18%, transparent)` } : undefined}
+    >
+      @{role?.name ?? "deleted-role"}
+    </span>
+  );
+}
+
 export function EmoteImage({ emote, size, className, interactive }: { emote: Emote; size: number; className?: string; interactive?: boolean }) {
   const width = Math.round((emote.width / emote.height) * size);
   return (
@@ -79,7 +95,7 @@ const INLINE: Inline[] = [
     },
   },
   { re: USER_MENTION, render: (m, c, k) => <Mention key={k} id={m[1]} ctx={c} /> },
-  { re: ROLE_MENTION, render: (_m, _c, k) => <span key={k} className={PILL}>@unknown-role</span> },
+  { re: ROLE_MENTION, render: (m, c, k) => <RoleMention key={k} id={m[1]} ctx={c} /> },
   {
     re: EVERYONE_MENTION,
     render: (m, c, k) =>

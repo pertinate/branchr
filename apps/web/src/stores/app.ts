@@ -288,7 +288,7 @@ export function createAppStore(inst: Instance) {
           const seen =
             (s.lastRead[m.channelId] && compareIds(m.id, s.lastRead[m.channelId]) <= 0) ||
             (s.viewing === m.channelId && document.visibilityState === "visible");
-          if (mentionsMe(m, s.me?.id) && !seen) patch.pings = { ...s.pings, [m.channelId]: (s.pings[m.channelId] ?? 0) + 1 };
+          if (mentionsMe(m, s) && !seen) patch.pings = { ...s.pings, [m.channelId]: (s.pings[m.channelId] ?? 0) + 1 };
           return patch;
         });
         return;

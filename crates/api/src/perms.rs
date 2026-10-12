@@ -9,13 +9,14 @@ use dashmap::DashMap;
 use proto::Id;
 use proto::perms::{self, Permissions};
 
-use crate::db::{self, Db};
+use crate::db::{self, Db, DbBool};
 use proto::models::OverwriteKind;
 use crate::error::{AppError, AppResult};
 
 pub struct RoleInfo {
     pub position: i32,
     pub permissions: Permissions,
+    pub mentionable: bool,
 }
 
 pub struct GuildPerms {
@@ -99,7 +100,7 @@ impl Perms {
         let generation = self.generation.get(&guild).map_or(0, |g| *g);
         let owner: Option<(i64,)> = sqlx::query_as("SELECT owner_id FROM guilds WHERE id = $1").bind(guild.0).fetch_optional(db).await?;
         let Some((owner,)) = owner else { return Err(AppError::NotFound) };
-        let roles: Vec<(i64, i32, i64)> = sqlx::query_as("SELECT id, position, permissions FROM roles WHERE guild_id = $1")
+        let roles: Vec<(i64, i32, i64, DbBool)> = sqlx::query_as("SELECT id, position, permissions, mentionable FROM roles WHERE guild_id = $1")
             .bind(guild.0)
             .fetch_all(db)
             .await?;
@@ -131,7 +132,7 @@ impl Perms {
             owner: Id(owner),
             roles: roles
                 .into_iter()
-                .map(|(id, position, permissions)| (Id(id), RoleInfo { position, permissions: permissions as Permissions }))
+                .map(|(id, position, permissions, mentionable)| (Id(id), RoleInfo { position, permissions: permissions as Permissions, mentionable: mentionable.0 }))
                 .collect(),
             member_roles,
             overwrites,

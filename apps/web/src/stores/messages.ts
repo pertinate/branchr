@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { create } from "zustand";
 
 import { EMOTE_TOKEN } from "@/lib/emotes";
-import { localMentions } from "@/lib/mentions";
+import { localMentions, withRoleMentions } from "@/lib/mentions";
 import { compareIds, nonce } from "@/lib/ids";
 import { type Instance, instanceStore } from "@/lib/instances";
 
@@ -128,7 +128,9 @@ export function createMessagesStore(inst: Instance) {
       const me = inst.auth.getState().user;
       if (!me) return;
       const n = nonce();
-      const local = localMentions(content, inst.app.getState().channels[channelId]?.guildId);
+      const guildId = inst.app.getState().channels[channelId]?.guildId;
+      content = withRoleMentions(content, guildId, inst.app.getState());
+      const local = localMentions(content, guildId);
       const optimistic: UiMessage = {
         id: `pending-${n}`,
         channelId,
@@ -136,6 +138,7 @@ export function createMessagesStore(inst: Instance) {
         content: local.content,
         mentions: local.mentions,
         mentionEveryone: local.mentionEveryone,
+        mentionRoles: local.mentionRoles,
         editedAt: null,
         replyTo,
         reactions: [],
