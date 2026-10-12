@@ -2,6 +2,7 @@
  * Guild permission bits, mirroring crates/proto/src/perms.rs (a Rust test checks they match).
  * All below bit 31, so plain `&` / `|` work.
  */
+import type { Channel } from "./generated/Channel";
 import type { Guild } from "./generated/Guild";
 import type { Member } from "./generated/Member";
 import type { Role } from "./generated/Role";
@@ -107,4 +108,28 @@ export function memberColor(roles: Role[], member: Pick<Member, "roles"> | undef
   let best: Role | undefined;
   for (const r of roles) if (r.color != null && member.roles.includes(r.id) && (!best || r.position > best.position)) best = r;
   return best ? `#${best.color!.toString(16).padStart(6, "0")}` : undefined;
+}
+
+/**
+ * Permissions in one channel: `base` adjusted by its overwrites — @everyone, then the member's
+ * roles combined, then the member — each denying first, then allowing. Mirrors perms::in_channel.
+ */
+export function channelPerms(base: number, guild: Guild, member: Pick<Member, "user" | "roles"> | undefined, channel: Pick<Channel, "overwrites">): number {
+  if (!member) return 0;
+  if (base & P.ADMINISTRATOR) return ALL_PERMS;
+  let p = base;
+  const everyone = channel.overwrites.find((o) => o.kind === "role" && o.id === guild.id);
+  if (everyone) p = (p & ~everyone.deny) | everyone.allow;
+  let allow = 0;
+  let deny = 0;
+  for (const o of channel.overwrites) {
+    if (o.kind === "role" && o.id !== guild.id && member.roles.includes(o.id)) {
+      allow |= o.allow;
+      deny |= o.deny;
+    }
+  }
+  p = (p & ~deny) | allow;
+  const mine = channel.overwrites.find((o) => o.kind === "member" && o.id === member.user.id);
+  if (mine) p = (p & ~mine.deny) | mine.allow;
+  return p;
 }

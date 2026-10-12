@@ -63,3 +63,53 @@ test("roles: a moderator role can delete others' messages and is listed separate
   await expect(item(bob, "Copy Username")).toBeVisible();
   await expect(menu(bob).getByRole("menuitem", { name: /^Kick / })).toHaveCount(0);
 });
+
+test("channel permissions: hide a channel from everyone, open it to one person, take their voice", async ({ browser }) => {
+  const alice = await register(browser, "chp_a");
+  const code = await createServer(alice, "Private");
+  const bob = await register(browser, "chp_b");
+  await joinServer(bob, code);
+  const bobName = (await bob.evaluate(() => JSON.parse(localStorage.getItem("sessions") ?? "{}").state.sessions[0].user.username)) as string;
+
+  await alice.getByRole("button", { name: "Private" }).click();
+  await alice.getByRole("menuitem", { name: "Create Channel" }).click();
+  await alice.getByPlaceholder("new-channel").fill("staff");
+  await alice.getByRole("button", { name: "Create Channel" }).click();
+  const staff = (p: Page) => p.getByRole("link", { name: /^staff\b/ });
+  await expect(staff(bob)).toBeVisible();
+
+  // @everyone can't see it: it disappears for Bob.
+  const openPerms = async () => {
+    await staff(alice).click({ button: "right" });
+    await item(alice, "Edit Channel").click();
+    await alice.getByRole("tab", { name: "Permissions" }).click();
+  };
+  await openPerms();
+  await alice.getByRole("radio", { name: "View Channels: deny" }).click();
+  await alice.getByRole("button", { name: "Save Changes" }).click();
+  await expect(staff(bob)).toHaveCount(0);
+  await alice.keyboard.press("Escape");
+  await expect(staff(alice)).toBeVisible();
+
+  await staff(alice).click();
+  await alice.getByPlaceholder("Message #staff").fill("secret plans");
+  await alice.keyboard.press("Enter");
+  await expect(alice.getByText("secret plans")).toBeVisible();
+  await expect(bob.getByText("secret plans")).toHaveCount(0);
+
+  // Bob alone gets it back, and can read what was said.
+  await openPerms();
+  await alice.getByRole("combobox", { name: "Add a role or member" }).click();
+  await alice.getByRole("option", { name: `@${bobName}` }).click();
+  await expect(alice.getByTestId("overwrite-editor").getByText("chp_b")).toBeVisible();
+  await alice.getByRole("radio", { name: "View Channels: allow" }).click();
+  await alice.getByRole("button", { name: "Save Changes" }).click();
+  await expect(staff(bob)).toBeVisible();
+  await staff(bob).click();
+  await expect(bob.getByText("secret plans")).toBeVisible();
+
+  // ...but can't post there.
+  await alice.getByRole("radio", { name: "Send Messages: deny" }).click();
+  await alice.getByRole("button", { name: "Save Changes" }).click();
+  await expect(bob.getByTestId("composer-locked")).toBeVisible();
+});

@@ -32,7 +32,8 @@ async fn send(ws: &mut WebSocket, ev: &ServerEvent) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn ready_guild(state: &AppState, guild: Id) -> anyhow::Result<ReadyGuild> {
+/// A guild as `viewer` sees it: only the channels they can view.
+pub async fn ready_guild(state: &AppState, guild: Id, viewer: Id) -> anyhow::Result<ReadyGuild> {
     let (g, channels, roles, members, emotes) = tokio::try_join!(
         db::guild(&state.db, guild),
         db::channels(&state.db, guild),
@@ -43,6 +44,8 @@ pub async fn ready_guild(state: &AppState, guild: Id) -> anyhow::Result<ReadyGui
     for c in &channels {
         state.channel_guild.insert(c.id, guild);
     }
+    let gp = state.perms.guild(&state.db, guild).await.map_err(|e| anyhow::anyhow!("{e:?}"))?;
+    let channels = channels.into_iter().filter(|c| gp.can_in(viewer, c.id, proto::perms::VIEW_CHANNEL)).collect();
     let presences = state.hub.presences(members.iter().map(|m| m.user.id));
     Ok(ReadyGuild { guild: g, channels, roles, members, emotes, voice_states: state.hub.voice_states(guild), presences })
 }
@@ -74,7 +77,7 @@ async fn run(mut ws: WebSocket, state: AppState) -> anyhow::Result<()> {
 
     let me = db::user(&state.db, user).await?;
     let (guilds, read_states) = tokio::try_join!(
-        try_join_all(guild_ids.iter().map(|g| ready_guild(&state, *g))),
+        try_join_all(guild_ids.iter().map(|g| ready_guild(&state, *g, user))),
         async { Ok(db::read_states(&state.db, user).await?) },
     )?;
     let ready = Ready { user: me, session_id: key.to_string(), guilds, max_upload_bytes: state.config.max_upload_bytes, read_states };
@@ -156,9 +159,8 @@ pub fn evict_user(state: &AppState, user: Id) {
 async fn handle_op(state: &AppState, key: SessionKey, user: Id, op: ClientOp) {
     match op {
         ClientOp::Typing { channel_id } => {
-            let Ok(guild) = state.guild_of_channel(channel_id).await else { return };
-            if db::is_member(&state.db, guild, user).await.unwrap_or(false) {
-                state.hub.to_guild(guild, &ServerEvent::TypingStart(TypingStart { channel_id, user_id: user }));
+            if let Ok((guild, _)) = crate::routes::channel_perm(state, channel_id, user, proto::perms::SEND_MESSAGES).await {
+                state.to_channel(guild, channel_id, &ServerEvent::TypingStart(TypingStart { channel_id, user_id: user })).await;
             }
         }
         ClientOp::SetStatus { status } => {
@@ -200,7 +202,7 @@ async fn voice_state_update(state: &AppState, key: SessionKey, user: Id, u: Voic
         return;
     }
     match state.perms.guild(&state.db, u.guild_id).await {
-        Ok(g) if g.has(user, proto::perms::CONNECT) => {}
+        Ok(g) if g.can_in(user, channel_id, proto::perms::VIEW_CHANNEL | proto::perms::CONNECT) => {}
         _ => return,
     }
 

@@ -160,6 +160,33 @@ impl Hub {
         }
     }
 
+    /// Like `to_guild`, but only to sessions whose user passes `allow` (e.g. can see a channel).
+    pub fn to_guild_where(&self, guild: Id, ev: &ServerEvent, allow: impl Fn(Id) -> bool) {
+        let keys: Vec<_> = match self.guild_sessions.get(&guild) {
+            Some(s) => s.iter().copied().collect(),
+            None => return,
+        };
+        let mut msg = None;
+        for k in keys {
+            let Some(user) = self.sessions.get(&k).map(|s| s.user) else { continue };
+            if allow(user) {
+                self.send_raw(k, msg.get_or_insert_with(|| encode(ev)).clone());
+            }
+        }
+    }
+
+    /// Users with a session in `guild`.
+    pub fn guild_users(&self, guild: Id) -> Vec<Id> {
+        let keys: Vec<_> = match self.guild_sessions.get(&guild) {
+            Some(s) => s.iter().copied().collect(),
+            None => return Vec::new(),
+        };
+        let mut users: Vec<Id> = keys.iter().filter_map(|k| self.sessions.get(k).map(|s| s.user)).collect();
+        users.sort_unstable();
+        users.dedup();
+        users
+    }
+
     pub fn status(&self, user: Id) -> Status {
         self.status.get(&user).map(|s| *s).unwrap_or(Status::Offline)
     }

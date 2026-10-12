@@ -132,6 +132,9 @@ pub async fn update(
         .execute(&state.db)
         .await?;
     let after = broadcast(&state, gid, &before).await?;
+    if permissions != role.permissions {
+        state.resync_visibility(gid, &gp).await?;
+    }
     after.into_iter().find(|r| r.id == rid).map(Json).ok_or(AppError::NotFound)
 }
 
@@ -147,6 +150,7 @@ pub async fn delete(State(state): State<AppState>, Auth(user): Auth, Path((gid, 
     }
     let mut tx = state.db.begin().await?;
     sqlx::query("DELETE FROM roles WHERE id = $1").bind(rid.0).execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM channel_overwrites WHERE target_kind = 'role' AND target_id = $1").bind(rid.0).execute(&mut *tx).await?;
     sqlx::query("UPDATE roles SET position = position - 1 WHERE guild_id = $1 AND position > $2")
         .bind(gid.0)
         .bind(role.position)
@@ -154,6 +158,7 @@ pub async fn delete(State(state): State<AppState>, Auth(user): Auth, Path((gid, 
         .await?;
     tx.commit().await?;
     broadcast(&state, gid, &before).await?;
+    state.resync_visibility(gid, &gp).await?;
     Ok(())
 }
 
@@ -213,7 +218,7 @@ async fn set_member_role(state: &AppState, actor: Id, gid: Id, target: Id, rid: 
     .await?;
     let member = db::member(&state.db, gid, target).await?;
     if r.rows_affected() > 0 {
-        state.perms.invalidate(gid);
+        state.resync_visibility(gid, &gp).await?;
         state.hub.to_guild(gid, &proto::gateway::ServerEvent::MemberUpdate(member.clone()));
     }
     Ok(Json(member))

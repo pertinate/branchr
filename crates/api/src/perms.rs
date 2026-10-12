@@ -9,7 +9,8 @@ use dashmap::DashMap;
 use proto::Id;
 use proto::perms::{self, Permissions};
 
-use crate::db::Db;
+use crate::db::{self, Db};
+use proto::models::OverwriteKind;
 use crate::error::{AppError, AppResult};
 
 pub struct RoleInfo {
@@ -23,6 +24,8 @@ pub struct GuildPerms {
     pub roles: HashMap<Id, RoleInfo>,
     /// Members with at least one role (besides @everyone).
     pub member_roles: HashMap<Id, Vec<Id>>,
+    /// Channel id -> its overwrites (channels without any are absent).
+    pub overwrites: HashMap<Id, Vec<perms::Overwrite>>,
 }
 
 impl GuildPerms {
@@ -39,6 +42,27 @@ impl GuildPerms {
 
     pub fn has(&self, user: Id, p: Permissions) -> bool {
         self.base(user) & p == p
+    }
+
+    /// Permissions in one channel, after its overwrites.
+    pub fn in_channel(&self, user: Id, channel: Id) -> Permissions {
+        let base = self.base(user);
+        match self.overwrites.get(&channel) {
+            Some(o) => perms::in_channel(base, self.guild, user, self.roles_of(user), o),
+            None => base,
+        }
+    }
+
+    pub fn can_in(&self, user: Id, channel: Id, p: Permissions) -> bool {
+        self.in_channel(user, channel) & p == p
+    }
+
+    /// Whether every member can see `channel`, so its events can go to the whole guild.
+    pub fn is_public(&self, channel: Id) -> bool {
+        let everyone = self.roles.get(&self.guild).map_or(0, |r| r.permissions);
+        let ows = self.overwrites.get(&channel).map(Vec::as_slice).unwrap_or_default();
+        let opened = ows.iter().any(|o| o.target == perms::Target::Role(self.guild) && o.allow & perms::VIEW_CHANNEL != 0);
+        (everyone & (perms::VIEW_CHANNEL | perms::ADMINISTRATOR) != 0 || opened) && !ows.iter().any(|o| o.deny & perms::VIEW_CHANNEL != 0)
     }
 
     /// The member's highest role position; the owner outranks every role.
@@ -84,6 +108,24 @@ impl Perms {
         for (user, role) in assigned {
             member_roles.entry(Id(user)).or_default().push(Id(role));
         }
+        let overwrites = db::guild_overwrites(db, guild)
+            .await?
+            .into_iter()
+            .map(|(cid, list)| {
+                let list = list
+                    .into_iter()
+                    .map(|o| perms::Overwrite {
+                        target: match o.kind {
+                            OverwriteKind::Role => perms::Target::Role(o.id),
+                            OverwriteKind::Member => perms::Target::Member(o.id),
+                        },
+                        allow: o.allow,
+                        deny: o.deny,
+                    })
+                    .collect();
+                (Id(cid), list)
+            })
+            .collect();
         let g = Arc::new(GuildPerms {
             guild,
             owner: Id(owner),
@@ -92,6 +134,7 @@ impl Perms {
                 .map(|(id, position, permissions)| (Id(id), RoleInfo { position, permissions: permissions as Permissions }))
                 .collect(),
             member_roles,
+            overwrites,
         });
         // Holding the generation's shard lock keeps `invalidate` out until we've cached.
         let current = self.generation.get(&guild);

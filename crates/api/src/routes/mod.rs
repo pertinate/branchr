@@ -10,7 +10,7 @@ pub mod users;
 use std::sync::Arc;
 
 use proto::Id;
-use proto::perms::Permissions;
+use proto::perms::{self, Permissions};
 
 use crate::db;
 use crate::error::{AppError, AppResult};
@@ -29,15 +29,18 @@ pub async fn require_perm(state: &AppState, guild: Id, user: Id, p: Permissions)
     if g.has(user, p) { Ok(g) } else { Err(AppError::Forbidden) }
 }
 
-/// Resolves a channel's guild and checks membership.
-pub async fn channel_access(state: &AppState, channel: Id, user: Id) -> AppResult<Id> {
-    let guild = state.guild_of_channel(channel).await?;
-    require_member(state, guild, user).await?;
-    Ok(guild)
-}
-
-/// `channel_access` plus the permission `p` in that channel.
+/// Membership, seeing the channel, and the permission `p` in it (after its overwrites).
+/// A channel you can't see answers as missing.
 pub async fn channel_perm(state: &AppState, channel: Id, user: Id, p: Permissions) -> AppResult<(Id, Arc<GuildPerms>)> {
     let guild = state.guild_of_channel(channel).await?;
-    Ok((guild, require_perm(state, guild, user, p).await?))
+    require_member(state, guild, user).await?;
+    let g = state.perms.guild(&state.db, guild).await?;
+    let have = g.in_channel(user, channel);
+    if have & perms::VIEW_CHANNEL == 0 {
+        return Err(AppError::NotFound);
+    }
+    if have & p != p {
+        return Err(AppError::Forbidden);
+    }
+    Ok((guild, g))
 }

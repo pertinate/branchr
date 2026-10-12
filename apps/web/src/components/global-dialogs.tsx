@@ -3,6 +3,7 @@ import { Copy } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { ChannelPermissions } from "@/components/guild/channel-permissions";
 import { CreateChannelDialog } from "@/components/guild/create-channel-dialog";
 import { GuildSettingsDialog } from "@/components/guild/guild-settings-dialog";
 import { HostAdminDialog } from "@/components/host-admin-dialog";
@@ -10,8 +11,10 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { copy } from "@/lib/actions";
 import { InstanceProvider, instance, useInstance } from "@/lib/instances";
+import { P, useChannelCan } from "@/lib/perms";
 import { useApp } from "@/stores/app";
 import { type DialogState, useDialogs } from "@/stores/ui";
 
@@ -121,6 +124,7 @@ function EditChannelDialog({ channelId, onClose }: { channelId: string; onClose:
   const channel = useApp((s) => s.channels[channelId]);
   const [name, setName] = useState(channel?.name ?? "");
   const [topic, setTopic] = useState(channel?.topic ?? "");
+  const canPerms = useChannelCan(channelId, P.MANAGE_ROLES);
   if (!channel) return null;
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -135,29 +139,47 @@ function EditChannelDialog({ channelId, onClose }: { channelId: string; onClose:
       toast.error((err as Error).message);
     }
   };
+  const form = (
+    <form onSubmit={save} className="space-y-3">
+      <div className="space-y-1">
+        <Label htmlFor="channel-name">Name</Label>
+        <Input id="channel-name" autoFocus value={name} onChange={(e) => setName(e.target.value)} maxLength={100} required />
+      </div>
+      {channel.kind === "text" && (
+        <div className="space-y-1">
+          <Label htmlFor="channel-topic">Topic</Label>
+          <Input id="channel-topic" value={topic} onChange={(e) => setTopic(e.target.value)} maxLength={1024} placeholder="What's this channel about?" />
+        </div>
+      )}
+      <div className="flex justify-end">
+        <Button type="submit" disabled={!name.trim()}>
+          Save
+        </Button>
+      </div>
+    </form>
+  );
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className={canPerms ? "flex h-[80vh] flex-col sm:max-w-3xl" : "sm:max-w-md"}>
         <DialogHeader>
           <DialogTitle>Edit {channel.kind === "category" ? "Category" : "Channel"}</DialogTitle>
         </DialogHeader>
-        <form onSubmit={save} className="space-y-3">
-          <div className="space-y-1">
-            <Label htmlFor="channel-name">Name</Label>
-            <Input id="channel-name" autoFocus value={name} onChange={(e) => setName(e.target.value)} maxLength={100} required />
-          </div>
-          {channel.kind === "text" && (
-            <div className="space-y-1">
-              <Label htmlFor="channel-topic">Topic</Label>
-              <Input id="channel-topic" value={topic} onChange={(e) => setTopic(e.target.value)} maxLength={1024} placeholder="What's this channel about?" />
-            </div>
-          )}
-          <div className="flex justify-end">
-            <Button type="submit" disabled={!name.trim()}>
-              Save
-            </Button>
-          </div>
-        </form>
+        {canPerms ? (
+          <Tabs defaultValue="overview" className="flex min-h-0 flex-1 flex-col">
+            <TabsList>
+              <TabsTrigger value="overview">Overview</TabsTrigger>
+              <TabsTrigger value="permissions">Permissions</TabsTrigger>
+            </TabsList>
+            <TabsContent value="overview" className="max-w-md pt-3">
+              {form}
+            </TabsContent>
+            <TabsContent value="permissions" className="min-h-0 flex-1">
+              <ChannelPermissions channel={channel} />
+            </TabsContent>
+          </Tabs>
+        ) : (
+          form
+        )}
       </DialogContent>
     </Dialog>
   );

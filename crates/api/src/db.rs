@@ -185,6 +185,7 @@ impl From<ChannelRow> for Channel {
             position: r.position,
             topic: r.topic,
             last_message_id: r.last_message_id.map(Id),
+            overwrites: Vec::new(),
         }
     }
 }
@@ -295,17 +296,65 @@ pub async fn channels(db: &Db, guild: Id) -> sqlx::Result<Vec<Channel>> {
     .bind(guild.0)
     .fetch_all(db)
     .await?;
-    Ok(rows.into_iter().map(Into::into).collect())
+    let mut overwrites = guild_overwrites(db, guild).await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| {
+            let overwrites = overwrites.remove(&r.id).unwrap_or_default();
+            Channel { overwrites, ..r.into() }
+        })
+        .collect())
 }
 
 pub async fn channel(db: &Db, id: Id) -> sqlx::Result<Channel> {
-    sqlx::query_as::<_, ChannelRow>(
+    let c: Channel = sqlx::query_as::<_, ChannelRow>(
         "SELECT id, guild_id, name, kind, parent_id, position, topic, last_message_id FROM channels WHERE id = $1",
     )
     .bind(id.0)
     .fetch_one(db)
-    .await
-    .map(Into::into)
+    .await?
+    .into();
+    let rows: Vec<OverwriteRow> = sqlx::query_as("SELECT channel_id, target_kind, target_id, allow, deny FROM channel_overwrites WHERE channel_id = $1 ORDER BY target_id")
+        .bind(id.0)
+        .fetch_all(db)
+        .await?;
+    Ok(Channel { overwrites: rows.into_iter().filter_map(OverwriteRow::into_wire).map(|(_, o)| o).collect(), ..c })
+}
+
+#[derive(FromRow)]
+struct OverwriteRow {
+    channel_id: i64,
+    target_kind: String,
+    target_id: i64,
+    allow: i64,
+    deny: i64,
+}
+
+impl OverwriteRow {
+    fn into_wire(self) -> Option<(i64, PermissionOverwrite)> {
+        let kind = match self.target_kind.as_str() {
+            "role" => OverwriteKind::Role,
+            "member" => OverwriteKind::Member,
+            _ => return None,
+        };
+        Some((self.channel_id, PermissionOverwrite { id: Id(self.target_id), kind, allow: self.allow as u64, deny: self.deny as u64 }))
+    }
+}
+
+/// Every overwrite in a guild, by channel id.
+pub async fn guild_overwrites(db: &Db, guild: Id) -> sqlx::Result<HashMap<i64, Vec<PermissionOverwrite>>> {
+    let rows: Vec<OverwriteRow> = sqlx::query_as(
+        "SELECT o.channel_id, o.target_kind, o.target_id, o.allow, o.deny FROM channel_overwrites o
+         JOIN channels c ON c.id = o.channel_id WHERE c.guild_id = $1 ORDER BY o.target_id",
+    )
+    .bind(guild.0)
+    .fetch_all(db)
+    .await?;
+    let mut map: HashMap<i64, Vec<PermissionOverwrite>> = HashMap::new();
+    for (cid, o) in rows.into_iter().filter_map(OverwriteRow::into_wire) {
+        map.entry(cid).or_default().push(o);
+    }
+    Ok(map)
 }
 
 pub async fn members(db: &Db, guild: Id) -> sqlx::Result<Vec<Member>> {

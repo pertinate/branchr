@@ -57,6 +57,19 @@ wire! {
         pub topic: Option<String>,
         /// Last message id, used for unread indicators.
         pub last_message_id: Option<Id>,
+        /// Per-channel permission changes for roles and members.
+        pub overwrites: Vec<PermissionOverwrite>,
+    }
+
+    /// Adjusts a role's or member's permissions in one channel: `deny` bits are taken
+    /// away, then `allow` bits added. `id` is the role (the guild's id for @everyone) or user.
+    pub struct PermissionOverwrite {
+        pub id: Id,
+        pub kind: OverwriteKind,
+        #[cfg_attr(feature = "ts", ts(type = "number"))]
+        pub allow: u64,
+        #[cfg_attr(feature = "ts", ts(type = "number"))]
+        pub deny: u64,
     }
 
     pub struct Member {
@@ -236,6 +249,23 @@ wire! {
 
     pub struct ApiError {
         pub error: String,
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub enum OverwriteKind {
+    Role,
+    Member,
+}
+
+impl OverwriteKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            OverwriteKind::Role => "role",
+            OverwriteKind::Member => "member",
+        }
     }
 }
 

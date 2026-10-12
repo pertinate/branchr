@@ -134,6 +134,7 @@ function BranchrAccount() {
       const name = await claimServer(code.trim());
       setCode("");
       void qc.invalidateQueries({ queryKey: ["owned-hosts"] });
+      void qc.invalidateQueries({ queryKey: ["host-overview"] });
       toast.success(`You now own ${name}`);
     } catch (e) {
       toast.error("Couldn't claim the server", { description: (e as Error).message });

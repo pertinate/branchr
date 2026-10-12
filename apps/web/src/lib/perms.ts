@@ -1,5 +1,5 @@
 /** What we (or anyone) may do in a guild, from its roles. The server enforces the same rules. */
-import { type Role, P, basePerms, memberColor, topPosition } from "@app/protocol";
+import { type Role, P, basePerms, channelPerms, memberColor, topPosition } from "@app/protocol";
 
 import { type AppState, useApp } from "@/stores/app";
 
@@ -12,6 +12,19 @@ export function permsOf(s: AppState, guildId: string | undefined, userId = s.me?
 }
 
 export const has = (perms: number, p: number) => (perms & p) === p;
+
+/** Our permissions in one channel, after its overwrites. */
+export function channelPermsOf(s: AppState, channelId: string | undefined, userId = s.me?.id): number {
+  const c = channelId ? s.channels[channelId] : undefined;
+  const g = c ? s.guilds[c.guildId] : undefined;
+  if (!c || !g || !userId) return 0;
+  const member = s.members[g.id]?.[userId];
+  return channelPerms(basePerms(g, s.roles[g.id] ?? [], member), g, member, c);
+}
+
+export function useChannelCan(channelId: string | undefined, p: number): boolean {
+  return useApp((s) => has(channelPermsOf(s, channelId), p));
+}
 
 /** Whether we have every bit in `p` in `guildId`. */
 export function useCan(guildId: string | undefined, p: number): boolean {

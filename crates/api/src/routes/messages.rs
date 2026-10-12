@@ -5,7 +5,7 @@ use proto::gateway::{MessageRef, ReactionEvent, ServerEvent};
 use proto::models::*;
 use serde::Deserialize;
 
-use super::{channel_access, channel_perm};
+use super::channel_perm;
 use proto::perms;
 use crate::auth::Auth;
 use crate::db;
@@ -98,7 +98,7 @@ pub async fn list(
     Path(cid): Path<Id>,
     Query(q): Query<ListQuery>,
 ) -> AppResult<Json<Vec<Message>>> {
-    channel_access(&state, cid, user).await?;
+    channel_perm(&state, cid, user, 0).await?;
     let limit = q.limit.unwrap_or(50).clamp(1, 100);
     Ok(Json(db::messages(&state.db, cid, q.before, q.after, limit, user).await?))
 }
@@ -170,7 +170,7 @@ pub async fn create(
         }
     }
     tx.commit().await?;
-    bump_mentions(&state, guild, cid, user, &mentions).await;
+    bump_mentions(&state, &gp, cid, user, &mentions).await;
 
     let msg = Message {
         id,
@@ -186,7 +186,7 @@ pub async fn create(
         mentions: mentions.users,
         nonce: body.nonce,
     };
-    state.hub.to_guild(guild, &ServerEvent::MessageCreate(msg.clone()));
+    state.to_channel(guild, cid, &ServerEvent::MessageCreate(msg.clone())).await;
     Ok(Json(msg))
 }
 
@@ -233,7 +233,7 @@ pub async fn edit(
         return Err(AppError::NotFound);
     }
     let msg = db::message(&state.db, mid, user).await?;
-    state.hub.to_guild(guild, &ServerEvent::MessageUpdate(msg.clone()));
+    state.to_channel(guild, cid, &ServerEvent::MessageUpdate(msg.clone())).await;
     Ok(Json(msg))
 }
 
@@ -254,7 +254,7 @@ pub async fn delete(
     if r.rows_affected() == 0 {
         return Err(AppError::NotFound);
     }
-    state.hub.to_guild(guild, &ServerEvent::MessageDelete(MessageRef { id: mid, channel_id: cid }));
+    state.to_channel(guild, cid, &ServerEvent::MessageDelete(MessageRef { id: mid, channel_id: cid })).await;
     Ok(())
 }
 
@@ -272,21 +272,28 @@ fn restrict_everyone(gp: &GuildPerms, user: Id, m: &mut mentions::Mentions) {
 }
 
 /// Counts the mentions toward each pinged member's unread badge, which is what makes a
-/// mention sent while someone was offline show up when they return.
-async fn bump_mentions(state: &AppState, guild: Id, channel: Id, author: Id, m: &mentions::Mentions) {
-    let r = if m.everyone {
+/// mention sent while someone was offline show up when they return. Only people who can
+/// see the channel count.
+async fn bump_mentions(state: &AppState, gp: &GuildPerms, channel: Id, author: Id, m: &mentions::Mentions) {
+    let guild = gp.guild;
+    let public = gp.is_public(channel);
+    let r = if m.everyone && public {
         db::bump_mentions(&state.db, guild, channel, None, author).await
     } else {
         let mut users: Vec<Id> = m.users.iter().map(|u| u.id).collect();
-        if m.here {
+        if m.everyone || m.here {
             let members: Vec<i64> = sqlx::query_scalar("SELECT user_id FROM members WHERE guild_id = $1")
                 .bind(guild.0)
                 .fetch_all(&state.db)
                 .await
                 .unwrap_or_default();
-            users.extend(members.into_iter().map(Id).filter(|u| state.hub.status(*u) != Status::Offline));
+            // @here: just the people online.
+            users.extend(members.into_iter().map(Id).filter(|u| m.everyone || state.hub.status(*u) != Status::Offline));
             users.sort_unstable_by_key(|u| u.0);
             users.dedup();
+        }
+        if !public {
+            users.retain(|u| gp.can_in(*u, channel, perms::VIEW_CHANNEL));
         }
         db::bump_mentions(&state.db, guild, channel, Some(&users), author).await
     };
@@ -351,7 +358,7 @@ pub async fn react(
     .await?;
     if r.rows_affected() > 0 {
         let ev = ReactionEvent { channel_id: cid, message_id: mid, user_id: user, emoji };
-        state.hub.to_guild(guild, &ServerEvent::ReactionAdd(ev));
+        state.to_channel(guild, cid, &ServerEvent::ReactionAdd(ev)).await;
     }
     Ok(())
 }
@@ -361,7 +368,7 @@ pub async fn unreact(
     Auth(user): Auth,
     Path((cid, mid, emoji)): Path<(Id, Id, String)>,
 ) -> AppResult<()> {
-    let guild = channel_access(&state, cid, user).await?;
+    let (guild, _) = channel_perm(&state, cid, user, 0).await?;
     let r = sqlx::query("DELETE FROM reactions WHERE message_id = $1 AND emoji = $2 AND user_id = $3")
         .bind(mid.0)
         .bind(&emoji)
@@ -370,7 +377,7 @@ pub async fn unreact(
         .await?;
     if r.rows_affected() > 0 {
         let ev = ReactionEvent { channel_id: cid, message_id: mid, user_id: user, emoji };
-        state.hub.to_guild(guild, &ServerEvent::ReactionRemove(ev));
+        state.to_channel(guild, cid, &ServerEvent::ReactionRemove(ev)).await;
     }
     Ok(())
 }

@@ -5,11 +5,12 @@ use proto::gateway::{ChannelRef, ServerEvent};
 use proto::models::*;
 use serde::Deserialize;
 
-use super::require_perm;
-use proto::perms;
+use super::{channel_perm, require_perm};
+use proto::perms::{self, Permissions};
 use crate::auth::Auth;
 use crate::db;
-use crate::error::{AppResult, bad};
+use crate::error::{AppError, AppResult, bad};
+use crate::perms::GuildPerms;
 use crate::state::AppState;
 
 #[derive(Deserialize)]
@@ -64,7 +65,7 @@ pub async fn create(
     .await?;
     let c = db::channel(&state.db, id).await?;
     state.channel_guild.insert(id, gid);
-    state.hub.to_guild(gid, &ServerEvent::ChannelCreate(c.clone()));
+    state.to_channel(gid, id, &ServerEvent::ChannelCreate(c.clone())).await;
     Ok(Json(c))
 }
 
@@ -98,7 +99,7 @@ pub async fn patch(
         sqlx::query("UPDATE channels SET position = $1 WHERE id = $2").bind(pos).bind(cid.0).execute(&state.db).await?;
     }
     let c = db::channel(&state.db, cid).await?;
-    state.hub.to_guild(c.guild_id, &ServerEvent::ChannelUpdate(c.clone()));
+    state.to_channel(c.guild_id, cid, &ServerEvent::ChannelUpdate(c.clone())).await;
     Ok(Json(c))
 }
 
@@ -111,11 +112,93 @@ pub async fn delete(State(state): State<AppState>, Auth(user): Auth, Path(cid): 
     sqlx::query("DELETE FROM channels WHERE id = $1").bind(cid.0).execute(&mut *tx).await?;
     tx.commit().await?;
     if c.kind == ChannelKind::Category {
-        for ch in db::channels(&state.db, c.guild_id).await? {
-            state.hub.to_guild(c.guild_id, &ServerEvent::ChannelUpdate(ch));
+        for ch in db::channels(&state.db, c.guild_id).await?.into_iter().filter(|ch| ch.parent_id.is_none()) {
+            state.to_channel(c.guild_id, ch.id, &ServerEvent::ChannelUpdate(ch)).await;
         }
     }
+    // Told to whoever could see it, by the permissions cached from before the delete.
+    state.to_channel(c.guild_id, cid, &ServerEvent::ChannelDelete(ChannelRef { id: cid, guild_id: c.guild_id })).await;
     state.channel_guild.remove(&cid);
-    state.hub.to_guild(c.guild_id, &ServerEvent::ChannelDelete(ChannelRef { id: cid, guild_id: c.guild_id }));
+    state.perms.invalidate(c.guild_id);
     Ok(())
+}
+
+#[derive(Deserialize)]
+pub struct PutOverwrite {
+    kind: OverwriteKind,
+    #[serde(default)]
+    allow: Permissions,
+    #[serde(default)]
+    deny: Permissions,
+}
+
+/// Sets a role's or member's permissions in one channel. Needs MANAGE_ROLES there, and only
+/// bits you have yourself in the channel can be allowed or denied.
+pub async fn put_overwrite(
+    State(state): State<AppState>,
+    Auth(user): Auth,
+    Path((cid, target)): Path<(Id, Id)>,
+    Json(body): Json<PutOverwrite>,
+) -> AppResult<Json<Channel>> {
+    let (gid, before) = channel_perm(&state, cid, user, perms::MANAGE_ROLES).await?;
+    // Administrator only means something on roles.
+    let (allow, deny) = (body.allow & perms::ALL & !perms::ADMINISTRATOR, body.deny & perms::ALL & !perms::ADMINISTRATOR);
+    if allow & deny != 0 {
+        return Err(bad("a permission can't be both allowed and denied"));
+    }
+    let mine = before.in_channel(user, cid);
+    let old = db::channel(&state.db, cid).await?.overwrites.into_iter().find(|o| o.id == target && o.kind == body.kind);
+    let changed = (allow ^ old.as_ref().map_or(0, |o| o.allow)) | (deny ^ old.as_ref().map_or(0, |o| o.deny));
+    if changed & !mine != 0 {
+        return Err(bad("you can only change permissions you have in this channel"));
+    }
+    let known = match body.kind {
+        OverwriteKind::Role => before.roles.contains_key(&target),
+        OverwriteKind::Member => db::is_member(&state.db, gid, target).await?,
+    };
+    if !known {
+        return Err(AppError::NotFound);
+    }
+    sqlx::query(
+        "INSERT INTO channel_overwrites (channel_id, target_kind, target_id, allow, deny) VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (channel_id, target_kind, target_id) DO UPDATE SET allow = excluded.allow, deny = excluded.deny",
+    )
+    .bind(cid.0)
+    .bind(body.kind.as_str())
+    .bind(target.0)
+    .bind(allow as i64)
+    .bind(deny as i64)
+    .execute(&state.db)
+    .await?;
+    overwrites_changed(&state, gid, cid, &before).await
+}
+
+pub async fn delete_overwrite(
+    State(state): State<AppState>,
+    Auth(user): Auth,
+    Path((cid, kind, target)): Path<(Id, OverwriteKind, Id)>,
+) -> AppResult<Json<Channel>> {
+    let (gid, before) = channel_perm(&state, cid, user, perms::MANAGE_ROLES).await?;
+    let old = db::channel(&state.db, cid).await?.overwrites.into_iter().find(|o| o.id == target && o.kind == kind).ok_or(AppError::NotFound)?;
+    if (old.allow | old.deny) & !before.in_channel(user, cid) != 0 {
+        return Err(bad("you can only change permissions you have in this channel"));
+    }
+    sqlx::query("DELETE FROM channel_overwrites WHERE channel_id = $1 AND target_kind = $2 AND target_id = $3")
+        .bind(cid.0)
+        .bind(kind.as_str())
+        .bind(target.0)
+        .execute(&state.db)
+        .await?;
+    overwrites_changed(&state, gid, cid, &before).await
+}
+
+async fn overwrites_changed(state: &AppState, gid: Id, cid: Id, before: &GuildPerms) -> AppResult<Json<Channel>> {
+    state.resync_visibility(gid, before).await?;
+    let c = db::channel(&state.db, cid).await?;
+    // Those who could see it before and still can get the new overwrites.
+    let after = state.perms.guild(&state.db, gid).await?;
+    state.hub.to_guild_where(gid, &ServerEvent::ChannelUpdate(c.clone()), |u| {
+        before.can_in(u, cid, perms::VIEW_CHANNEL) && after.can_in(u, cid, perms::VIEW_CHANNEL)
+    });
+    Ok(Json(c))
 }

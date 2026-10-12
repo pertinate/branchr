@@ -217,7 +217,14 @@ export function createAppStore(inst: Instance) {
           const members = Object.fromEntries(
             Object.entries(s.members[gid] ?? {}).map(([uid, m]) => [uid, m.roles.includes(ev.d.id) ? { ...m, roles: m.roles.filter((r) => r !== ev.d.id) } : m]),
           );
-          return { roles: { ...s.roles, [gid]: (s.roles[gid] ?? []).filter((r) => r.id !== ev.d.id) }, members: { ...s.members, [gid]: members } };
+          // Its channel overwrites went with it.
+          const channels = { ...s.channels };
+          for (const c of Object.values(s.channels)) {
+            if (c.guildId === gid && c.overwrites.some((o) => o.kind === "role" && o.id === ev.d.id)) {
+              channels[c.id] = { ...c, overwrites: c.overwrites.filter((o) => !(o.kind === "role" && o.id === ev.d.id)) };
+            }
+          }
+          return { roles: { ...s.roles, [gid]: (s.roles[gid] ?? []).filter((r) => r.id !== ev.d.id) }, members: { ...s.members, [gid]: members }, channels };
         });
         return;
       case "MEMBER_ADD":

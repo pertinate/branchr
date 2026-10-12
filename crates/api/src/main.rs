@@ -109,6 +109,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/guilds/{gid}/emotes/{eid}", patch(emotes::rename).delete(emotes::remove))
         .route("/invites/{code}", get(guilds::get_invite).post(guilds::accept_invite))
         .route("/channels/{cid}", patch(channels::patch).delete(channels::delete))
+        .route("/channels/{cid}/permissions/{target}", put(channels::put_overwrite))
+        .route("/channels/{cid}/permissions/{kind}/{target}", delete(channels::delete_overwrite))
         .route("/channels/{cid}/messages", get(messages::list).post(messages::create))
         .route("/channels/{cid}/messages/{mid}", patch(messages::edit).delete(messages::delete))
         .route("/channels/{cid}/messages/{mid}/reactions/{emoji}", put(messages::react).delete(messages::unreact))

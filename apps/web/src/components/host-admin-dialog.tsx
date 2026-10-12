@@ -20,7 +20,8 @@ export function useHostOwner(inst: Instance) {
   const q = useQuery({
     queryKey: ["host-overview", inst.id],
     queryFn: () => inst.api<HostOverview>("GET", "/admin/overview").catch(() => null),
-    staleTime: 60_000,
+    // "Not ours" is rechecked soon: a claim reaches the host a moment after it's made.
+    staleTime: (q) => (q.state.data ? 60_000 : 5_000),
   });
   return !!q.data;
 }
@@ -68,7 +69,8 @@ function Stat({ label, value }: { label: string; value: string | number }) {
 function Overview() {
   const inst = useInstance();
   const qc = useQueryClient();
-  const q = useQuery({ queryKey: ["host-overview", inst.id], queryFn: () => inst.api<HostOverview>("GET", "/admin/overview") });
+  // Always fresh on open: the rail may have cached "not ours" from before a claim.
+  const q = useQuery({ queryKey: ["host-overview", inst.id], queryFn: () => inst.api<HostOverview>("GET", "/admin/overview"), refetchOnMount: "always" });
   if (!q.data) return <p className="pt-4 text-sm text-muted-foreground">{q.isError ? (q.error as Error).message : "Loading…"}</p>;
   const o = q.data;
   const setOpen = async (openRegistration: boolean) => {

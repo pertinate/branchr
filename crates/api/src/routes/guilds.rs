@@ -78,7 +78,7 @@ pub async fn create(
     }
     tx.commit().await?;
 
-    let rg = ready_guild(&state, gid).await?;
+    let rg = ready_guild(&state, gid, user).await?;
     state.hub.join_guild(user, gid);
     state.hub.to_user(user, &ServerEvent::GuildCreate(rg.clone()));
     Ok(Json(rg))
@@ -249,7 +249,7 @@ pub async fn accept_invite(
             state.hub.to_guild(gid, &ServerEvent::PresenceUpdate(Presence { user_id: user, status }));
         }
     }
-    let rg = ready_guild(&state, gid).await?;
+    let rg = ready_guild(&state, gid, user).await?;
     if inserted {
         state.hub.join_guild(user, gid);
         state.hub.to_user(user, &ServerEvent::GuildCreate(rg.clone()));

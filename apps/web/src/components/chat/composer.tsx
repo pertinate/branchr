@@ -14,6 +14,7 @@ import { formatBytes, uploadAttachment } from "@/lib/upload";
 import { cn } from "@/lib/utils";
 import { emoteToken } from "@/lib/emotes";
 import { canMentionEveryone } from "@/lib/mentions";
+import { P, useChannelCan } from "@/lib/perms";
 import { useApp } from "@/stores/app";
 import { useEmoteGroups } from "@/stores/emotes";
 import { type UiMessage, useMessages } from "@/stores/messages";
@@ -42,6 +43,8 @@ const drafts = new Map<string, string>();
 
 export function Composer({ channelId, guildId, replyTo, clearReply }: { channelId: string; guildId: string; replyTo: UiMessage | null; clearReply: () => void }) {
   const channelName = useApp((s) => s.channels[channelId]?.name);
+  const canSend = useChannelCan(channelId, P.SEND_MESSAGES);
+  const canAttach = useChannelCan(channelId, P.ATTACH_FILES);
   const groups = useEmoteGroups(guildId);
   const members = useApp((s) => s.members[guildId]);
   const guildNames = useMemo(() => new Map(groups.map((g) => [g.guild.id, g.guild.name])), [groups]);
@@ -52,6 +55,10 @@ export function Composer({ channelId, guildId, replyTo, clearReply }: { channelI
   const fileInput = useRef<HTMLInputElement>(null);
 
   const addFiles = (files: FileList | File[]) => {
+    if (!canAttach) {
+      toast.error("You can't upload files in this channel");
+      return;
+    }
     const added: Upload[] = [...files].slice(0, 10 - uploads.length).map((file) => ({
       key: `${file.name}-${file.size}-${Math.random()}`,
       file,
@@ -226,6 +233,16 @@ export function Composer({ channelId, guildId, replyTo, clearReply }: { channelI
     }
   };
 
+  if (!canSend) {
+    return (
+      <div className="px-4">
+        <div className="rounded-lg bg-[oklch(0.335_0.009_264)] px-4 py-3 text-muted-foreground" data-testid="composer-locked">
+          You don't have permission to send messages in this channel.
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="relative px-4">
       {suggestion?.kind === "mention" && (
@@ -321,9 +338,11 @@ export function Composer({ channelId, guildId, replyTo, clearReply }: { channelI
         </div>
       )}
       <div className={cn("flex items-end gap-2 bg-[oklch(0.335_0.009_264)] px-4", replyTo || uploads.length ? "rounded-b-lg" : "rounded-lg")}>
-        <button className="py-3 text-muted-foreground hover:text-foreground" onClick={() => fileInput.current?.click()} aria-label="Upload a file">
-          <Paperclip className="size-6" />
-        </button>
+        {canAttach && (
+          <button className="py-3 text-muted-foreground hover:text-foreground" onClick={() => fileInput.current?.click()} aria-label="Upload a file">
+            <Paperclip className="size-6" />
+          </button>
+        )}
         <input
           ref={fileInput}
           type="file"
