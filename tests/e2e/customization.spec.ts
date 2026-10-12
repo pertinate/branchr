@@ -1,6 +1,6 @@
 import { type Page, expect, test } from "@playwright/test";
 
-import { createServer, joinServer, register } from "./helpers";
+import { createServer, joinServer, register, openUserSettings } from "./helpers";
 
 /** A PNG drawn in the page. */
 async function png(page: Page, w: number, h: number, color: string): Promise<Buffer> {
@@ -41,8 +41,7 @@ test("customization: server icon, banner and description, and an avatar, seen by
   await expect.poll(() => banner.evaluate((i: HTMLImageElement) => [i.naturalWidth, i.naturalHeight])).toEqual([960, 540]);
 
   // An avatar shows up next to Alice for Bob.
-  await alice.getByRole("button", { name: "Your account" }).hover();
-  await alice.getByRole("button", { name: "User Settings" }).click();
+  await openUserSettings(alice);
   await alice.getByTestId("avatar-file").setInputFiles({ name: "me.png", mimeType: "image/png", buffer: await png(alice, 300, 300, "#27ae60") });
   await expect(alice.getByRole("button", { name: "Remove" })).toBeVisible();
   await alice.keyboard.press("Escape");

@@ -1,6 +1,6 @@
 import { type Page, expect, test } from "@playwright/test";
 
-import { createServer, joinServer, register, session } from "./helpers";
+import { createServer, joinServer, register, session, openUserSettings } from "./helpers";
 
 // 1x1 PNG
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
@@ -107,8 +107,7 @@ test("context menus: messages, people, channels, servers", async ({ browser }) =
   await alice.locator("aside").last().getByText("ctx_b").click({ button: "right" });
   await expect(item(alice, "Copy User ID")).toHaveCount(0);
   await alice.keyboard.press("Escape");
-  await alice.getByRole("button", { name: "Your account" }).hover();
-  await alice.getByRole("button", { name: "User Settings" }).click();
+  await openUserSettings(alice);
   await alice.getByRole("tab", { name: "Advanced" }).click();
   await alice.getByLabel("Developer Mode").click();
   await alice.keyboard.press("Escape");

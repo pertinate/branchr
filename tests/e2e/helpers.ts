@@ -100,3 +100,18 @@ export async function session(page: Page): Promise<StoredSession> {
 export function forgetSessions(page: Page) {
   return page.evaluate(() => localStorage.setItem("sessions", JSON.stringify({ state: { sessions: [] }, version: 0 })));
 }
+
+/**
+ * Opens User Settings from the account dock. Clicking pins the dock open (hovering is racy
+ * on slow machines); it retries until the dialog is up.
+ */
+export async function openUserSettings(page: Page) {
+  const button = page.getByRole("button", { name: "User Settings" });
+  await expect(async () => {
+    if (!(await page.getByRole("dialog").isVisible())) {
+      if (!(await button.isVisible())) await page.getByRole("button", { name: "Your account" }).click();
+      await button.click({ timeout: 2000 });
+    }
+    await expect(page.getByRole("dialog")).toBeVisible({ timeout: 2000 });
+  }).toPass({ timeout: 20_000 });
+}
