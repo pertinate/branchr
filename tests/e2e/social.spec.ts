@@ -62,6 +62,23 @@ test("friends and DMs: request, accept, chat live, edit, block", async ({ browse
   await alice.getByLabel("Edit message").press("Enter");
   await expect(bob.getByTestId("dm-message").filter({ hasText: "hi bob!" })).toContainText("(edited)");
 
+  // A group: naming the conversation makes one, and Bob gets it straight away.
+  await alice.getByRole("button", { name: "Create DM" }).click();
+  await alice.getByLabel(`Pick ${bobName}`).check();
+  await alice.getByLabel("Group name").fill("Plans");
+  await alice.getByRole("button", { name: "Create Group DM" }).click();
+  await expect(alice.getByTestId("group-members")).toContainText(bobName);
+  await alice.getByPlaceholder("Message Plans").fill("group hello");
+  await alice.keyboard.press("Enter");
+  await bob.getByRole("link", { name: "Message Plans" }).click();
+  await expect(bob.getByTestId("dm-message").filter({ hasText: "group hello" })).toBeVisible();
+  // Bob leaves; it's gone from his list, and from Nelly's member list.
+  bob.on("dialog", (d) => void d.accept());
+  await bob.getByRole("button", { name: "Leave Group" }).click();
+  await expect(bob.getByRole("link", { name: "Message Plans" })).toHaveCount(0);
+  await expect(alice.getByTestId("group-members")).not.toContainText(bobName);
+  await alice.getByRole("link", { name: `Message ${bobName}` }).click();
+
   // Bob blocks her: she can't message him any more.
   await bob.getByRole("link", { name: "Friends" }).click();
   await bob.getByRole("tab", { name: "All" }).click();

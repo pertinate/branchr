@@ -93,6 +93,9 @@ function apply(ev: SocialEvent) {
     case "DM_CHANNEL_CREATE":
       set((s) => ({ channels: { ...s.channels, [ev.d.id]: ev.d } }));
       return;
+    case "DM_CHANNEL_DELETE":
+      set((s) => ({ channels: without(s.channels, ev.d.id), threads: without(s.threads, ev.d.id) }));
+      return;
     case "DM_MESSAGE_CREATE": {
       const m = ev.d;
       set((s) => {
@@ -273,6 +276,22 @@ export async function sendDm(cid: string, content: string) {
     patchThread(cid, (t) => ({ ...t, items: t.items.map((x) => (x.nonce === n ? { ...x, pending: false, failed: true } : x)) }));
     throw e;
   }
+}
+
+export async function createGroup(recipients: string[], name?: string): Promise<DmChannel> {
+  const c = await call<DmChannel>("POST", "/dms/groups", { recipients, name });
+  set((s) => ({ channels: { ...s.channels, [c.id]: c } }));
+  return c;
+}
+export const renameGroup = (cid: string, name: string) => call<DmChannel>("PATCH", `/dms/${cid}`, { name });
+export const addToGroup = (cid: string, id: string) => call<DmChannel>("PUT", `/dms/${cid}/recipients/${id}`);
+/** Leave (your own id) or, as the owner, remove someone. */
+export const removeFromGroup = (cid: string, id: string) => call<void>("DELETE", `/dms/${cid}/recipients/${id}`);
+
+/** What to call a conversation: the other person, or a group's name or members. */
+export function dmTitle(c: DmChannel): string {
+  if (!c.group) return c.recipients[0]?.displayName ?? "Unknown";
+  return c.name ?? (c.recipients.map((r) => r.displayName).join(", ") || "Just you");
 }
 
 export const editDm = (cid: string, mid: string, content: string) => call<DmMessage>("PATCH", `/dms/${cid}/messages/${mid}`, { content });

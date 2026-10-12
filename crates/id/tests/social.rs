@@ -130,3 +130,42 @@ async fn friends_blocks_and_direct_messages() {
 
     h.finish().await;
 }
+
+#[tokio::test]
+async fn group_dms() {
+    let Some(h) = Harness::new().await else { return };
+    let nelly = Client { h: &h, token: h.token_for("good").await };
+    let bob = Client { h: &h, token: h.token_for("bob").await };
+    let me: Person = nelly.get("/people/@me").await;
+    let bob_me: Person = bob.get("/people/@me").await;
+
+    // Groups are with friends only.
+    let make = |body| nelly.call(reqwest::Method::POST, "/dms/groups", Some(body));
+    assert_eq!(make(json!({ "recipients": [bob_me.id] })).await.status(), 403);
+    nelly.call(reqwest::Method::POST, "/relationships", Some(json!({ "handle": "bob" }))).await;
+    bob.call(reqwest::Method::PUT, &format!("/relationships/{}", me.id), Some(json!({ "kind": "friend" }))).await;
+
+    let mut bob_ws = gateway(&h, &bob.token).await;
+    next(&mut bob_ws, |e| if let SocialEvent::Ready(_) = e { Some(()) } else { None }).await;
+    let g: DmChannel = make(json!({ "recipients": [bob_me.id], "name": "  " })).await.json().await.unwrap();
+    assert!(g.group && g.name.is_none() && g.owner_id.as_deref() == Some(me.id.as_str()));
+    // Bob hears about it at once (not on the first message, as with one-to-one).
+    let seen = next(&mut bob_ws, |e| if let SocialEvent::DmChannelCreate(c) = e { Some(c) } else { None }).await;
+    assert_eq!(seen.id, g.id);
+
+    // Anyone renames; only the owner removes others; anyone leaves.
+    let r = bob.call(reqwest::Method::PATCH, &format!("/dms/{}", g.id), Some(json!({ "name": "plans" }))).await;
+    assert!(r.status().is_success());
+    let renamed = next(&mut bob_ws, |e| if let SocialEvent::DmChannelCreate(c) = e { Some(c) } else { None }).await;
+    assert_eq!(renamed.name.as_deref(), Some("plans"));
+    assert_eq!(bob.call(reqwest::Method::DELETE, &format!("/dms/{}/recipients/{}", g.id, me.id), None).await.status(), 403);
+    assert!(bob.call(reqwest::Method::DELETE, &format!("/dms/{}/recipients/{}", g.id, bob_me.id), None).await.status().is_success());
+    let left = next(&mut bob_ws, |e| if let SocialEvent::DmChannelDelete(c) = e { Some(c) } else { None }).await;
+    assert_eq!(left.id, g.id);
+    let mine: Vec<DmChannel> = nelly.get("/dms").await;
+    assert!(mine.iter().any(|c| c.id == g.id && c.recipients.is_empty()));
+    let his: Vec<DmChannel> = bob.get("/dms").await;
+    assert!(!his.iter().any(|c| c.id == g.id));
+
+    h.finish().await;
+}

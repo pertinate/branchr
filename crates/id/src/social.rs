@@ -208,8 +208,9 @@ async fn member_of(s: &AppState, me: Uuid, channel: Id) -> Result<Vec<Uuid>> {
 }
 
 pub async fn channels_of(s: &AppState, me: Uuid) -> Result<Vec<DmChannel>> {
-    let rows: Vec<(i64, Option<i64>, Option<i64>)> = sqlx::query_as(
-        "SELECT c.id, c.last_message_id, m.last_read_id FROM dm_channels c JOIN dm_members m ON m.channel_id = c.id
+    #[allow(clippy::type_complexity)]
+    let rows: Vec<(i64, Option<i64>, Option<i64>, String, Option<String>, Option<Uuid>)> = sqlx::query_as(
+        "SELECT c.id, c.last_message_id, m.last_read_id, c.kind, c.name, c.owner_id FROM dm_channels c JOIN dm_members m ON m.channel_id = c.id
          WHERE m.account_id = $1 ORDER BY coalesce(c.last_message_id, c.id) DESC",
     )
     .bind(me)
@@ -224,8 +225,11 @@ pub async fn channels_of(s: &AppState, me: Uuid) -> Result<Vec<DmChannel>> {
     let ppl = people(s, &all.iter().map(|(_, a)| *a).collect::<Vec<_>>()).await?;
     Ok(rows
         .into_iter()
-        .map(|(id, last, read)| DmChannel {
+        .map(|(id, last, read, kind, name, owner)| DmChannel {
             id: Id(id),
+            group: kind == "group",
+            name,
+            owner_id: owner.map(|o| o.to_string()),
             recipients: all.iter().filter(|(c, _)| *c == id).filter_map(|(_, a)| ppl.get(a).cloned()).collect(),
             last_message_id: last.map(Id),
             last_read_id: read.map(Id),
@@ -359,8 +363,9 @@ pub async fn send(State(s): State<AppState>, headers: HeaderMap, Path(cid): Path
     if body.nonce.as_ref().is_some_and(|n| n.len() > 64) {
         return Err(bad("invalid_request", "nonce too long"));
     }
-    // Nobody in a block, either way, can message the other.
-    for &other in members.iter().filter(|m| **m != me) {
+    // One-to-one, nobody in a block (either way) can message the other; groups carry on.
+    let (channel_kind,): (String,) = sqlx::query_as("SELECT kind FROM dm_channels WHERE id = $1").bind(cid.0).fetch_one(&s.db).await?;
+    for &other in members.iter().filter(|m| **m != me && channel_kind == "dm") {
         if kind(&s, me, other).await? == Some(RelationshipKind::Blocked) || kind(&s, other, me).await? == Some(RelationshipKind::Blocked) {
             return Err(Error::Forbidden("you can't message them".into()));
         }
@@ -455,4 +460,128 @@ pub async fn typing(s: &AppState, me: Uuid, channel: Id) -> Result<()> {
 pub async fn friends(s: &AppState, me: Uuid) -> Result<Vec<Uuid>> {
     let rows: Vec<(Uuid,)> = sqlx::query_as("SELECT other_id FROM relationships WHERE account_id = $1 AND kind = 'friend'").bind(me).fetch_all(&s.db).await?;
     Ok(rows.into_iter().map(|(o,)| o).collect())
+}
+
+// ---- Group DMs ----
+
+/// Most people in one group, you included.
+pub const MAX_GROUP: usize = 10;
+
+/// Tells every member about the group as it now is.
+async fn announce_group(s: &AppState, cid: i64) -> Result<()> {
+    for m in members(s, cid).await? {
+        s.hub.send(m, &SocialEvent::DmChannelCreate(channel_for(s, m, cid).await?));
+    }
+    Ok(())
+}
+
+async fn require_friends(s: &AppState, me: Uuid, people: &[Uuid]) -> Result<()> {
+    for &p in people {
+        if kind(s, me, p).await? != Some(RelationshipKind::Friend) {
+            return Err(Error::Forbidden("you can add friends to groups".into()));
+        }
+    }
+    Ok(())
+}
+
+fn group_name(name: Option<String>) -> Result<Option<String>> {
+    let name = name.map(|n| n.trim().to_owned()).filter(|n| !n.is_empty());
+    if name.as_ref().is_some_and(|n| n.chars().count() > 100) {
+        return Err(bad("invalid_request", "group names are up to 100 characters"));
+    }
+    Ok(name)
+}
+
+#[derive(Deserialize)]
+pub struct NewGroup {
+    recipients: Vec<String>,
+    name: Option<String>,
+}
+
+/// Starts a group with some of your friends.
+pub async fn create_group(State(s): State<AppState>, headers: HeaderMap, Json(body): Json<NewGroup>) -> Result<Json<DmChannel>> {
+    let me = authed(&s, &headers).await?;
+    let mut others: Vec<Uuid> = body.recipients.iter().map(|r| parse_id(r)).collect::<Result<_>>()?;
+    others.sort_unstable();
+    others.dedup();
+    others.retain(|o| *o != me);
+    if others.is_empty() || others.len() + 1 > MAX_GROUP {
+        return Err(bad("invalid_request", format!("groups have 2-{MAX_GROUP} people")));
+    }
+    require_friends(&s, me, &others).await?;
+    let name = group_name(body.name)?;
+    let id = s.ids.next().0;
+    let mut tx = s.db.begin().await?;
+    sqlx::query("INSERT INTO dm_channels (id, kind, name, owner_id) VALUES ($1, 'group', $2, $3)").bind(id).bind(&name).bind(me).execute(&mut *tx).await?;
+    for m in std::iter::once(me).chain(others) {
+        sqlx::query("INSERT INTO dm_members (channel_id, account_id) VALUES ($1, $2)").bind(id).bind(m).execute(&mut *tx).await?;
+    }
+    tx.commit().await?;
+    announce_group(&s, id).await?;
+    Ok(Json(channel_for(&s, me, id).await?))
+}
+
+async fn group_of(s: &AppState, me: Uuid, cid: Id) -> Result<(Vec<Uuid>, Option<Uuid>)> {
+    let members = member_of(s, me, cid).await?;
+    let (kind, owner): (String, Option<Uuid>) = sqlx::query_as("SELECT kind, owner_id FROM dm_channels WHERE id = $1").bind(cid.0).fetch_one(&s.db).await?;
+    if kind != "group" {
+        return Err(bad("invalid_request", "that's not a group"));
+    }
+    Ok((members, owner))
+}
+
+#[derive(Deserialize)]
+pub struct PatchGroup {
+    name: Option<String>,
+}
+
+/// Renames a group (any member may).
+pub async fn patch_group(State(s): State<AppState>, headers: HeaderMap, Path(cid): Path<Id>, Json(body): Json<PatchGroup>) -> Result<Json<DmChannel>> {
+    let me = authed(&s, &headers).await?;
+    group_of(&s, me, cid).await?;
+    sqlx::query("UPDATE dm_channels SET name = $1 WHERE id = $2").bind(group_name(body.name)?).bind(cid.0).execute(&s.db).await?;
+    announce_group(&s, cid.0).await?;
+    Ok(Json(channel_for(&s, me, cid.0).await?))
+}
+
+/// Adds one of your friends to a group you're in.
+pub async fn add_member(State(s): State<AppState>, headers: HeaderMap, Path((cid, id)): Path<(Id, String)>) -> Result<Json<DmChannel>> {
+    let me = authed(&s, &headers).await?;
+    let (members, _) = group_of(&s, me, cid).await?;
+    let other = parse_id(&id)?;
+    if members.contains(&other) {
+        return Ok(Json(channel_for(&s, me, cid.0).await?));
+    }
+    if members.len() >= MAX_GROUP {
+        return Err(bad("invalid_request", format!("groups have up to {MAX_GROUP} people")));
+    }
+    require_friends(&s, me, &[other]).await?;
+    sqlx::query("INSERT INTO dm_members (channel_id, account_id) VALUES ($1, $2) ON CONFLICT DO NOTHING").bind(cid.0).bind(other).execute(&s.db).await?;
+    announce_group(&s, cid.0).await?;
+    Ok(Json(channel_for(&s, me, cid.0).await?))
+}
+
+/// Leave a group (yourself), or remove someone from one you own.
+pub async fn remove_member(State(s): State<AppState>, headers: HeaderMap, Path((cid, id)): Path<(Id, String)>) -> Result<()> {
+    let me = authed(&s, &headers).await?;
+    let (members, owner) = group_of(&s, me, cid).await?;
+    let other = parse_id(&id)?;
+    if other != me && owner != Some(me) {
+        return Err(Error::Forbidden("only the group's owner can remove people".into()));
+    }
+    if !members.contains(&other) {
+        return Err(Error::NotFound);
+    }
+    sqlx::query("DELETE FROM dm_members WHERE channel_id = $1 AND account_id = $2").bind(cid.0).bind(other).execute(&s.db).await?;
+    s.hub.send(other, &SocialEvent::DmChannelDelete(DmChannelRef { id: cid }));
+    let rest: Vec<Uuid> = members.into_iter().filter(|m| *m != other).collect();
+    if rest.is_empty() {
+        sqlx::query("DELETE FROM dm_channels WHERE id = $1").bind(cid.0).execute(&s.db).await?;
+        return Ok(());
+    }
+    // An owner who leaves hands the group on.
+    if owner == Some(other) {
+        sqlx::query("UPDATE dm_channels SET owner_id = $1 WHERE id = $2").bind(rest[0]).bind(cid.0).execute(&s.db).await?;
+    }
+    announce_group(&s, cid.0).await
 }

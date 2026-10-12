@@ -4,6 +4,18 @@ import type { Person } from "./Person";
 
 export type DmChannel = { id: Id, 
 /**
+ * One-to-one, or a group.
+ */
+group: boolean, 
+/**
+ * A group's name, if it has one (otherwise show the members' names).
+ */
+name: string | null, 
+/**
+ * Who can add and remove people in a group.
+ */
+ownerId: string | null, 
+/**
  * Everyone in it but you.
  */
 recipients: Array<Person>, lastMessageId: Id | null, 

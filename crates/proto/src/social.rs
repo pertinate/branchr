@@ -35,6 +35,12 @@ wire! {
 
     pub struct DmChannel {
         pub id: Id,
+        /// One-to-one, or a group.
+        pub group: bool,
+        /// A group's name, if it has one (otherwise show the members' names).
+        pub name: Option<String>,
+        /// Who can add and remove people in a group.
+        pub owner_id: Option<String>,
         /// Everyone in it but you.
         pub recipients: Vec<Person>,
         pub last_message_id: Option<Id>,
@@ -65,6 +71,10 @@ wire! {
 
     pub struct PersonRef {
         pub id: String,
+    }
+
+    pub struct DmChannelRef {
+        pub id: Id,
     }
 
     pub struct DmMessageRef {
@@ -129,7 +139,10 @@ pub enum SocialEvent {
     PresenceUpdate(SocialPresence),
     /// A person's name or avatar changed.
     PersonUpdate(Person),
+    /// A conversation appeared or changed (members, name, read position).
     DmChannelCreate(DmChannel),
+    /// You left (or were removed from) a group.
+    DmChannelDelete(DmChannelRef),
     DmMessageCreate(DmMessage),
     DmMessageUpdate(DmMessage),
     DmMessageDelete(DmMessageRef),
