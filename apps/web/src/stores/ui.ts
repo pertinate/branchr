@@ -8,6 +8,7 @@ export type DialogState = { instanceId: string } & (
   | { kind: "ban"; guildId: string; userId: string }
   | { kind: "nickname"; guildId: string }
   | { kind: "create-channel"; guildId: string; parentId: string | null }
+  | { kind: "create-thread"; channelId: string; messageId?: string; suggested: string }
   | { kind: "edit-channel"; channelId: string }
   | { kind: "host-admin" }
 );

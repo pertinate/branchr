@@ -1,6 +1,6 @@
 import type { Channel } from "@app/protocol";
 import { Link, useParams } from "@tanstack/react-router";
-import { ChevronDown, Hash, MicOff, Plus, Video, Volume2, HeadphoneOff } from "lucide-react";
+import { ChevronDown, CornerDownRight, Hash, MicOff, Plus, Video, Volume2, HeadphoneOff } from "lucide-react";
 import { memo, useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 
@@ -27,10 +27,17 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
   const groups = useMemo(() => {
     const sorted = [...channels].sort((a, b) => a.position - b.position || compareIds(a.id, b.id));
     const cats = sorted.filter((c) => c.kind === "category");
-    const children = (parent: string | null) => sorted.filter((c) => c.kind !== "category" && c.parentId === parent)
+    const children = (parent: string | null) => sorted.filter((c) => c.kind !== "category" && c.kind !== "thread" && c.parentId === parent)
       // Text above voice inside a category, like Discord.
       .sort((a, b) => (a.kind === b.kind ? 0 : a.kind === "text" ? -1 : 1));
-    return [{ cat: null as Channel | null, items: children(null) }, ...cats.map((cat) => ({ cat, items: children(cat.id) }))];
+    // Each channel's threads, most recently active first.
+    const threads = new Map<string, Channel[]>();
+    for (const t of sorted.filter((c) => c.kind === "thread" && c.parentId)) threads.set(t.parentId!, [...(threads.get(t.parentId!) ?? []), t]);
+    for (const list of threads.values()) list.sort((a, b) => compareIds(b.lastMessageId ?? b.id, a.lastMessageId ?? a.id));
+    return {
+      threads,
+      list: [{ cat: null as Channel | null, items: children(null) }, ...cats.map((cat) => ({ cat, items: children(cat.id) }))],
+    };
   }, [channels]);
 
   return (
@@ -38,7 +45,7 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
       <GuildMenu guildId={guildId} />
       <GuildBanner guildId={guildId} />
       <div className="flex-1 space-y-0.5 overflow-y-auto px-2 pb-2">
-        {groups.map(({ cat, items }) => (
+        {groups.list.map(({ cat, items }) => (
           <div key={cat?.id ?? "root"} className={cat ? "pt-4" : "pt-2"}>
             {cat && (
               <Menu items={<ChannelMenuItems channelId={cat.id} />}>
@@ -66,7 +73,10 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
               c.kind === "voice" ? (
                 <VoiceChannelRow key={c.id} channel={c} hidden={!!(cat && collapsed[cat.id])} />
               ) : cat && collapsed[cat.id] ? null : (
-                <TextChannelRow key={c.id} channel={c} />
+                <div key={c.id}>
+                  <TextChannelRow channel={c} />
+                  {groups.threads.get(c.id)?.slice(0, MAX_THREADS).map((t) => <TextChannelRow key={t.id} channel={t} thread />)}
+                </div>
               ),
             )}
           </div>
@@ -76,7 +86,10 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
   );
 }
 
-const TextChannelRow = memo(function TextChannelRow({ channel }: { channel: Channel }) {
+/** Threads shown under a channel (the most recently active). */
+const MAX_THREADS = 10;
+
+const TextChannelRow = memo(function TextChannelRow({ channel, thread }: { channel: Channel; thread?: boolean }) {
   const params = useParams({ strict: false }) as { channelId?: string };
   const active = params.channelId === channel.id;
   const unread = useApp(
@@ -89,13 +102,15 @@ const TextChannelRow = memo(function TextChannelRow({ channel }: { channel: Chan
     <Link
       to="/$instance/$guildId/$channelId"
       params={{ instance, guildId: channel.guildId, channelId: channel.id }}
+      data-thread={thread || undefined}
       className={cn(
         "relative flex items-center gap-1.5 rounded px-2 py-1.5 text-[15px] font-medium",
+        thread && "ml-5 py-1 text-sm",
         active ? "bg-sidebar-accent text-sidebar-accent-foreground" : unread ? "text-foreground hover:bg-sidebar-accent/60" : "text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
       )}
     >
       {unread && !active && <span className="absolute -left-2 h-2 w-1 rounded-r-full bg-foreground" />}
-      <Hash className="size-5 shrink-0 opacity-70" />
+      {thread ? <CornerDownRight className="size-4 shrink-0 opacity-60" /> : <Hash className="size-5 shrink-0 opacity-70" />}
       <span className="truncate">{channel.name}</span>
       {pings > 0 && !active && <MentionBadge count={pings} className="ml-auto" />}
     </Link>

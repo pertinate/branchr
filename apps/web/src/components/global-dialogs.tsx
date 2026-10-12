@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { ChannelPermissions } from "@/components/guild/channel-permissions";
+import { CreateThreadDialog } from "@/components/chat/create-thread-dialog";
 import { CreateChannelDialog } from "@/components/guild/create-channel-dialog";
 import { GuildSettingsDialog } from "@/components/guild/guild-settings-dialog";
 import { HostAdminDialog } from "@/components/host-admin-dialog";
@@ -64,6 +65,8 @@ function DialogFor({ dialog, close }: { dialog: DialogState; close: () => void }
       return <CreateChannelDialog guildId={dialog.guildId} parentId={dialog.parentId} open onOpenChange={(o) => !o && close()} />;
     case "edit-channel":
       return <EditChannelDialog channelId={dialog.channelId} onClose={close} />;
+    case "create-thread":
+      return <CreateThreadDialog channelId={dialog.channelId} messageId={dialog.messageId} suggested={dialog.suggested} onClose={close} />;
     case "host-admin":
       return <HostAdminDialog onClose={close} />;
   }

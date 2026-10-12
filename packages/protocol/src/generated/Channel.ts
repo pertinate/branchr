@@ -20,4 +20,12 @@ overwrites: Array<PermissionOverwrite>,
  * Slow mode: seconds each member waits between messages (0 = off). People who can
  * manage messages or the channel aren't held to it.
  */
-slowmodeSecs: number, };
+slowmodeSecs: number, 
+/**
+ * A thread's first message, in its parent channel (when started from one).
+ */
+starterMessageId: Id | null, 
+/**
+ * Who started a thread.
+ */
+ownerId: Id | null, };

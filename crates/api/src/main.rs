@@ -116,6 +116,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/guilds/{gid}/webhooks", get(webhooks::list))
         .route("/messages/search", get(search::search_everywhere))
         .route("/channels/{cid}/webhooks", post(webhooks::create))
+        .route("/channels/{cid}/threads", post(channels::create_thread))
         .route("/webhooks/{wid}", patch(webhooks::patch).delete(webhooks::delete))
         .route("/webhooks/{wid}/{token}", post(webhooks::execute))
         .route("/auth/link", get(auth::link_status).post(auth::link))

@@ -48,7 +48,7 @@ pub async fn search(State(state): State<AppState>, Auth(user): Auth, Path(gid): 
     let visible: Vec<i64> = db::channels(&state.db, gid)
         .await?
         .into_iter()
-        .filter(|c| c.kind == ChannelKind::Text && gp.can_in(user, c.id, perms::VIEW_CHANNEL))
+        .filter(|c| matches!(c.kind, ChannelKind::Text | ChannelKind::Thread) && gp.can_in(user, c.id, perms::VIEW_CHANNEL))
         .filter(|c| q.channel.is_none_or(|only| only == c.id))
         .map(|c| c.id.0)
         .collect();
@@ -77,7 +77,7 @@ pub async fn search_everywhere(State(state): State<AppState>, Auth(user): Auth, 
             db::channels(&state.db, Id(gid))
                 .await?
                 .into_iter()
-                .filter(|c| c.kind == ChannelKind::Text && gp.can_in(user, c.id, perms::VIEW_CHANNEL))
+                .filter(|c| matches!(c.kind, ChannelKind::Text | ChannelKind::Thread) && gp.can_in(user, c.id, perms::VIEW_CHANNEL))
                 .map(|c| c.id.0),
         );
     }

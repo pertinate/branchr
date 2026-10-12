@@ -118,7 +118,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo build -p api -p sfu -p id
       - run: pnpm --filter e2e exec playwright install --with-deps chromium
-      - run: pnpm --filter e2e test app.spec attachments.spec noise.spec mentions.spec branchr-id.spec context-menus.spec multi-instance.spec user-panel.spec emotes.spec roles.spec bans.spec customization.spec social.spec explore.spec search.spec rail.spec embeds.spec slowmode.spec webhooks.spec
+      - run: pnpm --filter e2e test app.spec attachments.spec noise.spec mentions.spec branchr-id.spec context-menus.spec multi-instance.spec user-panel.spec emotes.spec roles.spec bans.spec customization.spec social.spec explore.spec search.spec rail.spec embeds.spec slowmode.spec webhooks.spec threads.spec threads.spec
       - if: failure()
         uses: actions/upload-artifact@v4
         with:

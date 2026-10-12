@@ -44,6 +44,9 @@ pub async fn create(
     Json(body): Json<CreateChannel>,
 ) -> AppResult<Json<Channel>> {
     require_perm(&state, gid, user, perms::MANAGE_CHANNELS).await?;
+    if body.kind == ChannelKind::Thread {
+        return Err(bad("start threads from a channel"));
+    }
     let name = normalize(&body.name, body.kind)?;
     if let Some(p) = body.parent_id {
         let parent = db::channel(&state.db, p).await?;
@@ -127,10 +130,15 @@ pub async fn patch(
 
 pub async fn delete(State(state): State<AppState>, Auth(user): Auth, Path(cid): Path<Id>) -> AppResult<()> {
     let c = db::channel(&state.db, cid).await?;
-    require_perm(&state, c.guild_id, user, perms::MANAGE_CHANNELS).await?;
+    // Whoever started a thread can delete it too.
+    if !(c.kind == ChannelKind::Thread && c.owner_id == Some(user)) {
+        require_perm(&state, c.guild_id, user, perms::MANAGE_CHANNELS).await?;
+    }
+    let threads: Vec<(i64,)> = sqlx::query_as("SELECT id FROM channels WHERE parent_id = $1 AND kind = 'thread'").bind(cid.0).fetch_all(&state.db).await?;
     let was_system = db::guild(&state.db, c.guild_id).await?.system_channel_id == Some(cid);
     let mut tx = state.db.begin().await?;
-    // Children of a deleted category become top level.
+    // A channel's threads go with it; a category's channels become top level.
+    sqlx::query("DELETE FROM channels WHERE parent_id = $1 AND kind = 'thread'").bind(cid.0).execute(&mut *tx).await?;
     sqlx::query("UPDATE channels SET parent_id = NULL WHERE parent_id = $1").bind(cid.0).execute(&mut *tx).await?;
     sqlx::query("UPDATE guilds SET system_channel_id = NULL WHERE system_channel_id = $1").bind(cid.0).execute(&mut *tx).await?;
     sqlx::query("DELETE FROM channels WHERE id = $1").bind(cid.0).execute(&mut *tx).await?;
@@ -141,6 +149,10 @@ pub async fn delete(State(state): State<AppState>, Auth(user): Auth, Path(cid): 
         }
     }
     // Told to whoever could see it, by the permissions cached from before the delete.
+    for (t,) in threads {
+        state.to_channel(c.guild_id, Id(t), &ServerEvent::ChannelDelete(ChannelRef { id: Id(t), guild_id: c.guild_id })).await;
+        state.channel_guild.remove(&Id(t));
+    }
     state.to_channel(c.guild_id, cid, &ServerEvent::ChannelDelete(ChannelRef { id: cid, guild_id: c.guild_id })).await;
     state.channel_guild.remove(&cid);
     state.perms.invalidate(c.guild_id);
@@ -171,6 +183,9 @@ pub async fn put_overwrite(
     Json(body): Json<PutOverwrite>,
 ) -> AppResult<Json<Channel>> {
     let (gid, before) = channel_perm(&state, cid, user, perms::MANAGE_ROLES).await?;
+    if db::channel(&state.db, cid).await?.kind == ChannelKind::Thread {
+        return Err(bad("threads follow their channel's permissions"));
+    }
     // Administrator only means something on roles.
     let (allow, deny) = (body.allow & perms::ALL & !perms::ADMINISTRATOR, body.deny & perms::ALL & !perms::ADMINISTRATOR);
     if allow & deny != 0 {
@@ -238,5 +253,54 @@ async fn overwrites_changed(state: &AppState, gid: Id, cid: Id, before: &GuildPe
     state.hub.to_guild_where(gid, &ServerEvent::ChannelUpdate(c.clone()), |u| {
         before.can_in(u, cid, perms::VIEW_CHANNEL) && after.can_in(u, cid, perms::VIEW_CHANNEL)
     });
+    Ok(Json(c))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateThread {
+    name: Option<String>,
+    /// Start it from this message in the channel.
+    message_id: Option<Id>,
+}
+
+/// Starts a thread under a text channel; anyone who can post there can.
+pub async fn create_thread(State(state): State<AppState>, Auth(user): Auth, Path(cid): Path<Id>, Json(body): Json<CreateThread>) -> AppResult<Json<Channel>> {
+    let (gid, _) = super::channel_perm(&state, cid, user, perms::SEND_MESSAGES).await?;
+    let parent = db::channel(&state.db, cid).await?;
+    if parent.kind != ChannelKind::Text {
+        return Err(bad("threads start in text channels"));
+    }
+    let starter = match body.message_id {
+        Some(mid) => {
+            let m = db::message(&state.db, mid, user).await?;
+            if m.channel_id != cid {
+                return Err(AppError::NotFound);
+            }
+            Some(m)
+        }
+        None => None,
+    };
+    // Unnamed: after the message it starts from.
+    let fallback = starter.as_ref().map(|m| m.content.chars().take(40).collect::<String>()).filter(|s| !s.trim().is_empty());
+    let name = body.name.filter(|n| !n.trim().is_empty()).or(fallback).unwrap_or_else(|| "thread".into());
+    let name = name.trim().chars().take(100).collect::<String>();
+    let id = state.ids.next();
+    sqlx::query("INSERT INTO channels (id, guild_id, name, kind, parent_id, position, starter_message_id, owner_id) VALUES ($1, $2, $3, 'thread', $4, 0, $5, $6)")
+        .bind(id.0)
+        .bind(gid.0)
+        .bind(&name)
+        .bind(cid.0)
+        .bind(body.message_id.map(|m| m.0))
+        .bind(user.0)
+        .execute(&state.db)
+        .await
+        .map_err(|e| match e.as_database_error() {
+            Some(d) if d.is_unique_violation() => AppError::Conflict("that message already has a thread".into()),
+            _ => e.into(),
+        })?;
+    state.perms.invalidate(gid);
+    let c = db::channel(&state.db, id).await?;
+    state.to_channel(gid, id, &ServerEvent::ChannelCreate(c.clone())).await;
     Ok(Json(c))
 }

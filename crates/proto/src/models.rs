@@ -80,6 +80,12 @@ wire! {
         /// manage messages or the channel aren't held to it.
         #[serde(default)]
         pub slowmode_secs: u32,
+        /// A thread's first message, in its parent channel (when started from one).
+        #[serde(default)]
+        pub starter_message_id: Option<Id>,
+        /// Who started a thread.
+        #[serde(default)]
+        pub owner_id: Option<Id>,
     }
 
     /// Adjusts a role's or member's permissions in one channel: `deny` bits are taken
@@ -499,6 +505,8 @@ pub enum ChannelKind {
     Text,
     Voice,
     Category,
+    /// A side conversation under a text channel (its `parent_id`).
+    Thread,
 }
 
 impl ChannelKind {
@@ -507,6 +515,7 @@ impl ChannelKind {
             Self::Text => "text",
             Self::Voice => "voice",
             Self::Category => "category",
+            Self::Thread => "thread",
         }
     }
     pub fn parse(s: &str) -> Option<Self> {
@@ -514,6 +523,7 @@ impl ChannelKind {
             "text" => Self::Text,
             "voice" => Self::Voice,
             "category" => Self::Category,
+            "thread" => Self::Thread,
             _ => return None,
         })
     }

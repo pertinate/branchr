@@ -27,6 +27,8 @@ pub struct GuildPerms {
     pub member_roles: HashMap<Id, Vec<Id>>,
     /// Channel id -> its overwrites (channels without any are absent).
     pub overwrites: HashMap<Id, Vec<perms::Overwrite>>,
+    /// Thread id -> its parent channel, whose permissions it has.
+    pub thread_parent: HashMap<Id, Id>,
 }
 
 impl GuildPerms {
@@ -47,6 +49,7 @@ impl GuildPerms {
 
     /// Permissions in one channel, after its overwrites.
     pub fn in_channel(&self, user: Id, channel: Id) -> Permissions {
+        let channel = self.thread_parent.get(&channel).copied().unwrap_or(channel);
         let base = self.base(user);
         match self.overwrites.get(&channel) {
             Some(o) => perms::in_channel(base, self.guild, user, self.roles_of(user), o),
@@ -60,6 +63,7 @@ impl GuildPerms {
 
     /// Whether every member can see `channel`, so its events can go to the whole guild.
     pub fn is_public(&self, channel: Id) -> bool {
+        let channel = self.thread_parent.get(&channel).copied().unwrap_or(channel);
         let everyone = self.roles.get(&self.guild).map_or(0, |r| r.permissions);
         let ows = self.overwrites.get(&channel).map(Vec::as_slice).unwrap_or_default();
         let opened = ows.iter().any(|o| o.target == perms::Target::Role(self.guild) && o.allow & perms::VIEW_CHANNEL != 0);
@@ -127,6 +131,10 @@ impl Perms {
                 (Id(cid), list)
             })
             .collect();
+        let threads: Vec<(i64, i64)> = sqlx::query_as("SELECT id, parent_id FROM channels WHERE guild_id = $1 AND kind = 'thread' AND parent_id IS NOT NULL")
+            .bind(guild.0)
+            .fetch_all(db)
+            .await?;
         let g = Arc::new(GuildPerms {
             guild,
             owner: Id(owner),
@@ -136,6 +144,7 @@ impl Perms {
                 .collect(),
             member_roles,
             overwrites,
+            thread_parent: threads.into_iter().map(|(t, p)| (Id(t), Id(p))).collect(),
         });
         // Holding the generation's shard lock keeps `invalidate` out until we've cached.
         let current = self.generation.get(&guild);

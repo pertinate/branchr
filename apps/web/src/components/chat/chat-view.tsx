@@ -1,4 +1,5 @@
-import { Hash, Search, Users } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { ChevronRight, CornerDownRight, Hash, Search, Users } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { Composer } from "@/components/chat/composer";
@@ -13,6 +14,8 @@ import type { UiMessage } from "@/stores/messages";
 
 export function ChatView({ guildId, channelId }: { guildId: string; channelId: string }) {
   const channel = useApp((s) => s.channels[channelId]);
+  // A thread's channel, to get back to.
+  const parent = useApp((s) => (channel?.kind === "thread" && channel.parentId ? s.channels[channel.parentId] : undefined));
   const [showMembers, setShowMembers] = useState(true);
   const [replyTo, setReplyTo] = useState<UiMessage | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -39,7 +42,16 @@ export function ChatView({ guildId, channelId }: { guildId: string; channelId: s
   return (
     <div className="flex min-w-0 flex-1 flex-col">
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-black/20 px-4 shadow-sm">
-        <Hash className="size-6 text-muted-foreground" />
+        {parent && (
+          <>
+            <Link to="/$instance/$guildId/$channelId" params={{ instance: inst.id, guildId, channelId: parent.id }} className="flex items-center gap-1 text-muted-foreground hover:text-foreground">
+              <Hash className="size-5" />
+              {parent.name}
+            </Link>
+            <ChevronRight className="size-4 text-muted-foreground" />
+          </>
+        )}
+        {channel?.kind === "thread" ? <CornerDownRight className="size-5 text-muted-foreground" /> : <Hash className="size-6 text-muted-foreground" />}
         <span className="font-semibold">{channel?.name}</span>
         {channel?.topic && <span className="truncate border-l border-border pl-3 text-sm text-muted-foreground">{channel.topic}</span>}
         <div className="flex-1" />

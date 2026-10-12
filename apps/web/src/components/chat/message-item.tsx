@@ -1,5 +1,6 @@
 import type { Emote } from "@app/protocol";
-import { Copy, CornerUpLeft, Download, ExternalLink, Image as ImageIcon, Link2, Pencil, RotateCw, SmilePlus, Sparkles, Trash2, ArrowRight, Pin } from "lucide-react";
+import { Copy, CornerDownRight, CornerUpLeft, MessagesSquare, Download, ExternalLink, Image as ImageIcon, Link2, Pencil, RotateCw, SmilePlus, Sparkles, Trash2, ArrowRight, Pin } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 import { memo, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -18,12 +19,14 @@ import { api } from "@/lib/api";
 import { emotePage, providerNames } from "@/lib/emotes";
 import { snowflakeTime } from "@/lib/ids";
 import { editableMentions, mentionsMe, plainText, withRoleMentions } from "@/lib/mentions";
+import { useInstance } from "@/lib/instances";
+import { threadsByStarter } from "@/lib/threads";
 import { cn } from "@/lib/utils";
 import { useRoleColor } from "@/lib/perms";
 import { useApp } from "@/stores/app";
 import { useEmote, useEmoteCard } from "@/stores/emotes";
 import { type UiMessage, useMessages } from "@/stores/messages";
-import { usePrefs } from "@/stores/ui";
+import { useDialogs, usePrefs } from "@/stores/ui";
 
 /** Quick reactions at the top of a message's menu. */
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "🔥"];
@@ -131,6 +134,10 @@ export const MessageItem = memo(function MessageItem({
   // "Add Reaction" from the menu opens the picker once the menu is gone (see onCloseAutoFocus).
   const pickerAfterMenu = useRef(false);
   const pinged = useApp((s) => mentionsMe(m, s));
+  const thread = useApp((s) => threadsByStarter(s.channels).get(m.id));
+  // Threads start from messages in text channels, not inside other threads.
+  const inText = useApp((s) => s.channels[m.channelId]?.kind === "text");
+  const instanceId = useInstance().id;
 
   const toggleReaction = async (emoji: string, me: boolean) => {
     try {
@@ -208,6 +215,15 @@ export const MessageItem = memo(function MessageItem({
           <ContextMenuItem onSelect={() => onReply(m)}>
             Reply <CornerUpLeft className="ml-auto" />
           </ContextMenuItem>
+          {inText && !thread && (
+            <ContextMenuItem
+              onSelect={() =>
+                useDialogs.getState().open({ instanceId, kind: "create-thread", channelId: m.channelId, messageId: m.id, suggested: plainText(m, guildId).slice(0, 40) })
+              }
+            >
+              Create Thread <MessagesSquare className="ml-auto" />
+            </ContextMenuItem>
+          )}
           {isMine && (
             <ContextMenuItem onSelect={() => setEditing(m.id)}>
               Edit Message <Pencil className="ml-auto" />
@@ -329,6 +345,18 @@ export const MessageItem = memo(function MessageItem({
           )}
           <Attachments items={m.attachments} />
           <Embeds items={m.embeds ?? []} />
+          {thread && (
+            <Link
+              to="/$instance/$guildId/$channelId"
+              params={{ instance: instanceId, guildId, channelId: thread.id }}
+              data-testid="thread-link"
+              className="mt-1 flex w-fit max-w-full items-center gap-1.5 rounded bg-sidebar px-2 py-1 text-sm hover:bg-sidebar-accent"
+            >
+              <CornerDownRight className="size-4 shrink-0 text-muted-foreground" />
+              <span className="truncate font-semibold">{thread.name}</span>
+              <span className="shrink-0 text-xs text-sky-400">View thread</span>
+            </Link>
+          )}
           {m.failed && (
             <button className="mt-1 flex items-center gap-1 text-xs text-destructive hover:underline" onClick={() => useMessages.getState().retry(m.channelId, m.nonce!)}>
               <RotateCw className="size-3" /> Failed to send. Retry

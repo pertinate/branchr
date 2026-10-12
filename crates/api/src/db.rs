@@ -195,6 +195,8 @@ struct ChannelRow {
     position: i32,
     topic: Option<String>,
     slowmode: i64,
+    starter_message_id: Option<i64>,
+    owner_id: Option<i64>,
     last_message_id: Option<i64>,
 }
 
@@ -211,6 +213,8 @@ impl From<ChannelRow> for Channel {
             last_message_id: r.last_message_id.map(Id),
             overwrites: Vec::new(),
             slowmode_secs: r.slowmode.clamp(0, u32::MAX as i64) as u32,
+            starter_message_id: r.starter_message_id.map(Id),
+            owner_id: r.owner_id.map(Id),
         }
     }
 }
@@ -321,7 +325,7 @@ pub async fn is_member(db: &Db, guild: Id, user: Id) -> sqlx::Result<bool> {
 
 pub async fn channels(db: &Db, guild: Id) -> sqlx::Result<Vec<Channel>> {
     let rows = sqlx::query_as::<_, ChannelRow>(
-        "SELECT id, guild_id, name, kind, parent_id, position, topic, slowmode, (SELECT max(m.id) FROM messages m WHERE m.channel_id = channels.id) AS last_message_id
+        "SELECT id, guild_id, name, kind, parent_id, position, topic, slowmode, starter_message_id, owner_id, (SELECT max(m.id) FROM messages m WHERE m.channel_id = channels.id) AS last_message_id
          FROM channels WHERE guild_id = $1 ORDER BY position, id",
     )
     .bind(guild.0)
@@ -339,7 +343,7 @@ pub async fn channels(db: &Db, guild: Id) -> sqlx::Result<Vec<Channel>> {
 
 pub async fn channel(db: &Db, id: Id) -> sqlx::Result<Channel> {
     let c: Channel = sqlx::query_as::<_, ChannelRow>(
-        "SELECT id, guild_id, name, kind, parent_id, position, topic, slowmode, (SELECT max(m.id) FROM messages m WHERE m.channel_id = channels.id) AS last_message_id
+        "SELECT id, guild_id, name, kind, parent_id, position, topic, slowmode, starter_message_id, owner_id, (SELECT max(m.id) FROM messages m WHERE m.channel_id = channels.id) AS last_message_id
          FROM channels WHERE id = $1",
     )
     .bind(id.0)
