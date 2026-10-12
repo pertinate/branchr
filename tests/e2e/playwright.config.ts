@@ -20,6 +20,12 @@ const s3 = process.env.E2E_S3_ENDPOINT;
 /** Fresh each run, so the federated server registers and gets claimed anew. Tests read it. */
 process.env.E2E_FEDERATED_DIR ??= `${SCRATCH}/federated-${Date.now().toString(36)}`;
 const fedDir = process.env.E2E_FEDERATED_DIR;
+/**
+ * E2E_WEB_PORT serves the web client for tests on another port, with its own Vite cache, so a
+ * test run can sit next to `pnpm dev` (5173) without disturbing it.
+ */
+const webPort = process.env.E2E_WEB_PORT ?? "5173";
+const web = `http://localhost:${webPort}`;
 
 export default defineConfig({
   testDir: ".",
@@ -30,7 +36,7 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: [["list"]],
   use: {
-    baseURL: remote ?? "http://localhost:5173",
+    baseURL: remote ?? web,
     launchOptions: {
       args: [
         "--use-fake-ui-for-media-stream",
@@ -130,7 +136,7 @@ export default defineConfig({
               DISCORD_CLIENT_SECRET: "e2e",
               DISCORD_API: "http://localhost:8071/api",
               DISCORD_AUTHORIZE: "http://localhost:8071/oauth2/authorize",
-              ALLOWED_REDIRECTS: "branchr://auth/callback,http://localhost:5173/",
+              ALLOWED_REDIRECTS: `branchr://auth/callback,${web}/`,
               ID_SFU_URL: "ws://127.0.0.1:8091/ws",
               ID_VOICE_SECRET: "e2e-id-voice",
             },
@@ -138,10 +144,11 @@ export default defineConfig({
         ]
       : []),
     {
-      command: "pnpm --filter web dev",
+      command: webPort === "5173" ? "pnpm --filter web dev" : `pnpm --filter web dev --port ${webPort}`,
       cwd: "../..",
-      url: "http://localhost:5173",
+      url: web,
       reuseExistingServer: true,
+      env: webPort === "5173" ? {} : { VITE_CACHE_DIR: "node_modules/.vite-e2e" },
     },
   ],
 });

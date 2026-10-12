@@ -34,5 +34,7 @@ export default defineConfig({
   plugins: [dataUrl(), tanstackRouter({ target: "react", autoCodeSplitting: true }), react(), tailwindcss()],
   resolve: { alias: { "@": path.resolve(import.meta.dirname, "src") } },
   server: { port: 5173, strictPort: true },
+  // A second dev server (e2e on another port) needs its own pre-bundled deps.
+  cacheDir: process.env.VITE_CACHE_DIR,
   build: { target: "es2023", sourcemap: false },
 });
