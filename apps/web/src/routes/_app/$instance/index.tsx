@@ -1,4 +1,4 @@
-import { Navigate, createFileRoute } from "@tanstack/react-router";
+import { Navigate, createFileRoute, useRouterState } from "@tanstack/react-router";
 
 import { useInstance } from "@/lib/instances";
 import { useApp } from "@/stores/app";
@@ -11,7 +11,10 @@ function InstanceHome() {
   const { instance } = Route.useParams();
   const first = useApp((s) => s.guildOrder[0]);
   const host = useInstance().url.replace(/^https?:\/\//, "");
-  if (first) return <Navigate to="/$instance/$guildId" params={{ instance, guildId: first }} replace />;
+  // Still where we're headed: while another page loads (after a click elsewhere), this one
+  // stays on screen and mustn't redirect over it.
+  const here = useRouterState({ select: (s) => s.location.pathname === `/${instance}` });
+  if (first && here) return <Navigate to="/$instance/$guildId" params={{ instance, guildId: first }} replace />;
   return (
     <div className="grid flex-1 place-items-center bg-background">
       <div className="max-w-sm text-center text-muted-foreground">

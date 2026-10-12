@@ -11,11 +11,12 @@ import { useApp } from "@/stores/app";
 const NO_EMOTES = new Map<string, Emote>();
 
 /** Messages from search or pins: who, where, when; click to go to the channel. */
-export function FoundMessages({ guildId, messages, onOpen }: { guildId: string; messages: Message[]; onOpen?: () => void }) {
+export function FoundMessages({ guildId, messages, onOpen, showServer }: { guildId: string; messages: Message[]; onOpen?: () => void; showServer?: boolean }) {
   const inst = useInstance();
   const navigate = useNavigate();
   const channels = useApp((s) => s.channels);
   const members = useApp((s) => s.members[guildId]);
+  const server = useApp((s) => s.guilds[guildId]?.name);
   return (
     <div className="space-y-1">
       {messages.map((m) => (
@@ -32,6 +33,7 @@ export function FoundMessages({ guildId, messages, onOpen }: { guildId: string; 
           <div className="min-w-0 flex-1">
             <div className="flex items-baseline gap-2 text-xs text-muted-foreground">
               <span className="text-sm font-medium text-foreground">{members?.[m.author.id]?.nick ?? m.author.displayName}</span>
+              {showServer && server && <span className="font-medium text-foreground/80">{server}</span>}
               <span className="flex items-center">
                 <Hash className="size-3" />
                 {channels[m.channelId]?.name ?? "unknown"}

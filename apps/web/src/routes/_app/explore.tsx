@@ -4,7 +4,7 @@ import { type ExploreTab, ExplorePage } from "@/components/explore-page";
 
 export const Route = createFileRoute("/_app/explore")({
   validateSearch: (s: Record<string, unknown>): { tab?: ExploreTab } => ({
-    tab: s.tab === "discover" || s.tab === "yours" ? s.tab : undefined,
+    tab: s.tab === "discover" || s.tab === "yours" || s.tab === "messages" ? s.tab : undefined,
   }),
   component: Explore,
 });

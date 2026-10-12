@@ -15,6 +15,8 @@ function GuildIndex() {
   // Every arrival here redirects, including a second one while this stays mounted (a join's
   // response can land after the gateway already opened the channel).
   const href = useRouterState({ select: (s) => s.location.href });
+  // Only while this is still where we're headed (see $instance/index).
+  const here = useRouterState({ select: (s) => s.location.pathname === `/${instance}/${guildId}` });
   const target = useApp((s) => {
     const remembered = lastChannel(instance, guildId);
     if (remembered && s.channels[remembered]?.kind === "text") return remembered;
@@ -23,8 +25,8 @@ function GuildIndex() {
       .sort((a, b) => a.position - b.position)[0]?.id;
   });
   useEffect(() => {
-    if (target) void navigate({ to: "/$instance/$guildId/$channelId", params: { instance, guildId, channelId: target }, replace: true });
-  }, [target, instance, guildId, href, navigate]);
+    if (target && here) void navigate({ to: "/$instance/$guildId/$channelId", params: { instance, guildId, channelId: target }, replace: true });
+  }, [target, here, instance, guildId, href, navigate]);
   if (!target) return <div className="grid flex-1 place-items-center text-muted-foreground">No text channels</div>;
   return null;
 }

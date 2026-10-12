@@ -114,6 +114,7 @@ async fn main() -> anyhow::Result<()> {
         .merge(invites)
         .route("/auth/logout", post(auth::logout))
         .route("/guilds/{gid}/webhooks", get(webhooks::list))
+        .route("/messages/search", get(search::search_everywhere))
         .route("/channels/{cid}/webhooks", post(webhooks::create))
         .route("/webhooks/{wid}", patch(webhooks::patch).delete(webhooks::delete))
         .route("/webhooks/{wid}/{token}", post(webhooks::execute))

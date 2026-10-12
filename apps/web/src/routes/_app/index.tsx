@@ -1,4 +1,4 @@
-import { Navigate, createFileRoute } from "@tanstack/react-router";
+import { Navigate, createFileRoute, useRouterState } from "@tanstack/react-router";
 
 import { useActive, useInstanceList } from "@/lib/instances";
 
@@ -11,6 +11,8 @@ function Home() {
   const ids = useInstanceList((s) => s.ids);
   const active = useActive((s) => s.id);
   const target = active && ids.includes(active) ? active : ids[0];
-  if (!target) return null;
+  // Only while this is still where we're headed (see $instance/index).
+  const here = useRouterState({ select: (s) => s.location.pathname === "/" });
+  if (!target || !here) return null;
   return <Navigate to="/$instance" params={{ instance: target }} replace />;
 }

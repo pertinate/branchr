@@ -6,6 +6,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { guildInitials } from "@/components/guild/guild-badge";
+import { SearchEverywhere } from "@/components/search-everywhere";
 import { YourServers } from "@/components/your-servers";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,7 +18,7 @@ import { cn } from "@/lib/utils";
 
 const TAGS = ["gaming", "music", "art", "tech", "anime", "study", "community"];
 
-export type ExploreTab = "yours" | "discover";
+export type ExploreTab = "yours" | "discover" | "messages";
 
 /**
  * Your servers (by host) and Discover (servers every host chose to list), under one search.
@@ -73,7 +74,7 @@ export function ExplorePage({ tab, onTab }: { tab: ExploreTab; onTab: (t: Explor
           <h1 className="flex items-center gap-2 text-2xl font-bold">
             <Compass /> Explore
           </h1>
-          <p className="mt-1 text-muted-foreground">Your servers on every host, and servers anyone can join.</p>
+          <p className="mt-1 text-muted-foreground">Your servers on every host, servers anyone can join, and messages everywhere you are.</p>
           <div className="relative mt-4 max-w-xl">
             <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search servers" aria-label="Search servers" className="h-10 bg-background pl-9" />
@@ -81,10 +82,14 @@ export function ExplorePage({ tab, onTab }: { tab: ExploreTab; onTab: (t: Explor
           <TabsList className="mt-4">
             <TabsTrigger value="yours">Your Servers</TabsTrigger>
             <TabsTrigger value="discover">Discover</TabsTrigger>
+            <TabsTrigger value="messages">Messages</TabsTrigger>
           </TabsList>
         </div>
         <TabsContent value="yours">
           <YourServers query={query.trim()} />
+        </TabsContent>
+        <TabsContent value="messages">
+          <SearchEverywhere query={query.trim()} />
         </TabsContent>
         <TabsContent value="discover">
           <div className="flex flex-wrap gap-1.5 px-8 pt-6">

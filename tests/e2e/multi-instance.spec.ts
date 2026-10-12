@@ -71,6 +71,18 @@ test("multiple instances: connect a second host, badges and voice across them, l
   await expect(alice.getByText("hello home")).toBeVisible();
   await expect(bob.getByText("hello home")).toHaveCount(0);
 
+  // Explore → Messages searches every server on every host.
+  await alice.getByRole("link", { name: "Explore" }).click();
+  await alice.getByRole("tab", { name: "Messages" }).click();
+  await alice.getByLabel("Search servers").fill("over");
+  await expect(alice.getByTestId("found-message").filter({ hasText: "over here" })).toContainText("Away B");
+  await alice.getByLabel("Search servers").fill("hello home");
+  const hit = alice.getByTestId("found-message").filter({ hasText: "hello home" });
+  await expect(hit).toContainText("Home A");
+  await hit.click();
+  await expect(alice.getByPlaceholder("Message #general")).toBeVisible();
+  expect(alice.url()).toContain("/localhost-18080/");
+
   // Voice on the first host stays up while reading the second.
   await alice.getByRole("link", { name: "General", exact: true }).click();
   await expect(alice.getByText("Voice Connected")).toBeVisible();

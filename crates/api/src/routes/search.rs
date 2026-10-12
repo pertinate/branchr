@@ -52,8 +52,42 @@ pub async fn search(State(state): State<AppState>, Auth(user): Auth, Path(gid): 
         .filter(|c| q.channel.is_none_or(|only| only == c.id))
         .map(|c| c.id.0)
         .collect();
+    find(&state, user, &visible, &words, q.author, q.offset).await.map(Json)
+}
+
+#[derive(Deserialize)]
+pub struct EverywhereQuery {
+    #[serde(default)]
+    q: String,
+    #[serde(default)]
+    offset: i64,
+}
+
+/// Messages matching `q` in every server you're in (channels you can see), newest first.
+pub async fn search_everywhere(State(state): State<AppState>, Auth(user): Auth, Query(q): Query<EverywhereQuery>) -> AppResult<Json<Vec<Message>>> {
+    let words = terms(&q.q);
+    if words.is_empty() {
+        return Err(bad("search for some words"));
+    }
+    let guilds: Vec<(i64,)> = sqlx::query_as("SELECT guild_id FROM members WHERE user_id = $1 LIMIT 500").bind(user.0).fetch_all(&state.db).await?;
+    let mut visible = Vec::new();
+    for (gid,) in guilds {
+        let gp = state.perms.guild(&state.db, Id(gid)).await?;
+        visible.extend(
+            db::channels(&state.db, Id(gid))
+                .await?
+                .into_iter()
+                .filter(|c| c.kind == ChannelKind::Text && gp.can_in(user, c.id, perms::VIEW_CHANNEL))
+                .map(|c| c.id.0),
+        );
+    }
+    find(&state, user, &visible, &words, None, q.offset).await.map(Json)
+}
+
+/// The search itself, over `visible` channels.
+async fn find(state: &AppState, user: Id, visible: &[i64], words: &[String], author: Option<Id>, offset: i64) -> AppResult<Vec<Message>> {
     if visible.is_empty() {
-        return Ok(Json(Vec::new()));
+        return Ok(Vec::new());
     }
     // Channel ids are integers we produced, so inlining them is safe; the words are bound.
     let channels = visible.iter().map(i64::to_string).collect::<Vec<_>>().join(",");
@@ -76,16 +110,16 @@ pub async fn search(State(state): State<AppState>, Auth(user): Auth, Path(gid): 
     );
     let ids: Vec<(i64,)> = sqlx::query_as(AssertSqlSafe(sql))
         .bind(&query)
-        .bind(q.author.map_or(0, |a| a.0))
+        .bind(author.map_or(0, |a| a.0))
         .bind(PAGE)
-        .bind(q.offset.max(0))
+        .bind(offset.max(0))
         .fetch_all(&state.db)
         .await?;
     let mut out = Vec::with_capacity(ids.len());
     for (id,) in ids {
         out.push(db::message(&state.db, Id(id), user).await?);
     }
-    Ok(Json(out))
+    Ok(out)
 }
 
 pub async fn pins(State(state): State<AppState>, Auth(user): Auth, Path(cid): Path<Id>) -> AppResult<Json<Vec<Message>>> {
