@@ -5,6 +5,7 @@ import { useShallow } from "zustand/react/shallow";
 
 import { MessageItem, shouldGroup } from "@/components/chat/message-item";
 import { emoteMap } from "@/lib/emotes";
+import { P, useCan } from "@/lib/perms";
 import { useApp } from "@/stores/app";
 import { useAllEmotesById } from "@/stores/emotes";
 import { type UiMessage, useMessages } from "@/stores/messages";
@@ -20,7 +21,7 @@ export function MessageList({ channelId, guildId, onReply }: { channelId: string
   // Reactions can use emotes from any of the user's servers.
   const emoteById = useAllEmotesById();
   const meId = useApp((s) => s.me?.id);
-  const canManage = useApp((s) => s.guilds[guildId]?.ownerId === s.me?.id);
+  const canManage = useCan(guildId, P.MANAGE_MESSAGES);
   const [editing, setEditing] = useState<string | null>(null);
 
   const ref = useRef<VListHandle>(null);

@@ -4,6 +4,7 @@ import type { Emote } from "./Emote";
 import type { Guild } from "./Guild";
 import type { Member } from "./Member";
 import type { Presence } from "./Presence";
+import type { Role } from "./Role";
 import type { VoiceState } from "./VoiceState";
 
-export type ReadyGuild = { guild: Guild, channels: Array<Channel>, members: Array<Member>, emotes: Array<Emote>, voiceStates: Array<VoiceState>, presences: Array<Presence>, };
+export type ReadyGuild = { guild: Guild, channels: Array<Channel>, roles: Array<Role>, members: Array<Member>, emotes: Array<Emote>, voiceStates: Array<VoiceState>, presences: Array<Presence>, };

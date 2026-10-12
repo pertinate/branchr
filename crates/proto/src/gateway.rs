@@ -58,6 +58,10 @@ pub enum ServerEvent {
     ChannelUpdate(Channel),
     ChannelDelete(ChannelRef),
 
+    RoleCreate(Role),
+    RoleUpdate(Role),
+    RoleDelete(RoleRef),
+
     MemberAdd(Member),
     MemberUpdate(Member),
     MemberRemove(MemberRef),
@@ -123,6 +127,7 @@ pub struct Ready {
 pub struct ReadyGuild {
     pub guild: Guild,
     pub channels: Vec<Channel>,
+    pub roles: Vec<Role>,
     pub members: Vec<Member>,
     pub emotes: Vec<Emote>,
     pub voice_states: Vec<VoiceState>,
@@ -146,6 +151,7 @@ refs! {
     MemberRef { guild_id, user_id }
     MessageRef { id, channel_id }
     EmoteRef { id, guild_id }
+    RoleRef { id, guild_id }
     VoiceStateRef { guild_id, user_id }
     TypingStart { channel_id, user_id }
 }

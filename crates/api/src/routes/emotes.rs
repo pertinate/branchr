@@ -5,7 +5,8 @@ use proto::gateway::{EmoteRef, ServerEvent};
 use proto::models::*;
 use serde::Deserialize;
 
-use super::{require_member, require_owner};
+use super::{require_member, require_perm};
+use proto::perms;
 use crate::auth::Auth;
 use crate::db;
 use crate::emote_providers::{Link, ProviderError, parse_link};
@@ -125,7 +126,7 @@ pub async fn import_set(
     Path(gid): Path<Id>,
     Json(body): Json<ImportSet>,
 ) -> AppResult<Json<EmoteImport>> {
-    require_owner(&state, gid, user).await?;
+    require_perm(&state, gid, user, perms::MANAGE_EMOTES).await?;
     let p = &state.emotes;
     let lists = match parse_link(&body.source) {
         Some(Link::SevenTvSet(id)) => vec![p.seventv_set(&id).await?],
@@ -177,7 +178,7 @@ pub async fn rename(
     Path((gid, eid)): Path<(Id, Id)>,
     Json(body): Json<RenameEmote>,
 ) -> AppResult<Json<Emote>> {
-    require_owner(&state, gid, user).await?;
+    require_perm(&state, gid, user, perms::MANAGE_EMOTES).await?;
     let name = body.name.trim();
     if !valid_name(name) {
         return Err(bad("emote names are 1-64 letters, numbers, _ - ! ?"));
@@ -205,7 +206,7 @@ pub async fn remove(
     Auth(user): Auth,
     Path((gid, eid)): Path<(Id, Id)>,
 ) -> AppResult<()> {
-    require_owner(&state, gid, user).await?;
+    require_perm(&state, gid, user, perms::MANAGE_EMOTES).await?;
     let r = sqlx::query("DELETE FROM emotes WHERE id = $1 AND guild_id = $2").bind(eid.0).bind(gid.0).execute(&state.db).await?;
     if r.rows_affected() == 0 {
         return Err(AppError::NotFound);

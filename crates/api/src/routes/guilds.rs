@@ -6,7 +6,8 @@ use proto::models::*;
 use rand::Rng;
 use serde::Deserialize;
 
-use super::{require_member, require_owner};
+use super::require_perm;
+use proto::perms;
 use crate::auth::Auth;
 use crate::db;
 use crate::error::{AppError, AppResult, bad};
@@ -42,6 +43,11 @@ pub async fn create(
         .bind(&name)
         .bind(&body.icon_url)
         .bind(user.0)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("INSERT INTO roles (id, guild_id, name, position, permissions) VALUES ($1, $1, '@everyone', 0, $2)")
+        .bind(gid.0)
+        .bind(perms::DEFAULT_EVERYONE as i64)
         .execute(&mut *tx)
         .await?;
     sqlx::query("INSERT INTO members (guild_id, user_id, joined_at) VALUES ($1, $2, $3)")
@@ -83,7 +89,6 @@ pub async fn create(
 pub struct PatchGuild {
     name: Option<String>,
     icon_url: Option<Option<String>>,
-    everyone_mentions: Option<bool>,
 }
 
 pub async fn patch(
@@ -92,7 +97,7 @@ pub async fn patch(
     Path(gid): Path<Id>,
     Json(body): Json<PatchGuild>,
 ) -> AppResult<Json<Guild>> {
-    require_owner(&state, gid, user).await?;
+    require_perm(&state, gid, user, perms::MANAGE_GUILD).await?;
     if let Some(name) = body.name {
         let name = check_name(&name)?;
         sqlx::query("UPDATE guilds SET name = $1 WHERE id = $2").bind(name).bind(gid.0).execute(&state.db).await?;
@@ -100,17 +105,17 @@ pub async fn patch(
     if let Some(icon) = body.icon_url {
         sqlx::query("UPDATE guilds SET icon_url = $1 WHERE id = $2").bind(icon).bind(gid.0).execute(&state.db).await?;
     }
-    if let Some(on) = body.everyone_mentions {
-        sqlx::query("UPDATE guilds SET everyone_mentions = $1 WHERE id = $2").bind(on).bind(gid.0).execute(&state.db).await?;
-    }
     let g = db::guild(&state.db, gid).await?;
     state.hub.to_guild(gid, &ServerEvent::GuildUpdate(g.clone()));
     Ok(Json(g))
 }
 
 pub async fn delete(State(state): State<AppState>, Auth(user): Auth, Path(gid): Path<Id>) -> AppResult<()> {
-    require_owner(&state, gid, user).await?;
+    if require_perm(&state, gid, user, 0).await?.owner != user {
+        return Err(AppError::Forbidden);
+    }
     sqlx::query("DELETE FROM guilds WHERE id = $1").bind(gid.0).execute(&state.db).await?;
+    state.perms.invalidate(gid);
     state.hub.to_guild(gid, &ServerEvent::GuildDelete(GuildRef { id: gid }));
     state.hub.drop_guild(gid);
     state.channel_guild.retain(|_, g| *g != gid);
@@ -130,9 +135,12 @@ pub async fn kick(
     Auth(user): Auth,
     Path((gid, target)): Path<(Id, Id)>,
 ) -> AppResult<()> {
-    require_owner(&state, gid, user).await?;
+    let g = require_perm(&state, gid, user, perms::KICK_MEMBERS).await?;
     if target == user {
         return Err(bad("cannot kick yourself"));
+    }
+    if !g.outranks(user, target) {
+        return Err(bad("you can only kick people whose highest role is below yours"));
     }
     remove_member(&state, gid, target).await
 }
@@ -146,6 +154,7 @@ async fn remove_member(state: &AppState, gid: Id, user: Id) -> AppResult<()> {
     if r.rows_affected() == 0 {
         return Err(AppError::NotFound);
     }
+    state.perms.invalidate(gid);
     if let Some(v) = state.hub.voice_state(gid, user)
         && let Some(r) = state.hub.clear_voice(v.user_id, None)
     {
@@ -168,6 +177,7 @@ pub async fn patch_me_member(
     Path(gid): Path<Id>,
     Json(body): Json<PatchMember>,
 ) -> AppResult<Json<Member>> {
+    require_perm(&state, gid, user, perms::CHANGE_NICKNAME).await?;
     let nick = body.nick.map(|n| n.trim().to_string()).filter(|n| !n.is_empty());
     if nick.as_ref().is_some_and(|n| n.chars().count() > 32) {
         return Err(bad("nickname must be at most 32 characters"));
@@ -184,7 +194,7 @@ pub async fn patch_me_member(
 }
 
 pub async fn create_invite(State(state): State<AppState>, Auth(user): Auth, Path(gid): Path<Id>) -> AppResult<Json<Invite>> {
-    require_member(&state, gid, user).await?;
+    require_perm(&state, gid, user, perms::CREATE_INVITE).await?;
     const ALPHABET: &[u8] = b"abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     let code: String = {
         let mut rng = rand::rng();

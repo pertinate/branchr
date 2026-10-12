@@ -4,6 +4,7 @@ import type {
   Guild,
   Member,
   ReadyGuild,
+  Role,
   ServerEvent,
   Status,
   User,
@@ -30,6 +31,8 @@ export interface AppState {
   /** guild id -> user id -> voice state */
   voice: Record<string, Record<string, VoiceState>>;
   emotes: Record<string, Emote[]>;
+  /** guild id -> roles, lowest first (@everyone at 0) */
+  roles: Record<string, Role[]>;
   /** channel id -> user id -> expiry timestamp */
   typing: Record<string, Record<string, number>>;
   /** Pending voice server handoff for our own join. */
@@ -85,9 +88,12 @@ function withGuild(s: AppState, rg: ReadyGuild): Partial<AppState> {
     members: { ...s.members, [gid]: members },
     voice: { ...s.voice, [gid]: voice },
     emotes: { ...s.emotes, [gid]: rg.emotes },
+    roles: { ...s.roles, [gid]: sortRoles(rg.roles) },
     presences,
   };
 }
+
+const sortRoles = (roles: Role[]) => [...roles].sort((a, b) => a.position - b.position || compareIds(a.id, b.id));
 
 function without<T>(rec: Record<string, T>, key: string): Record<string, T> {
   if (!(key in rec)) return rec;
@@ -119,6 +125,7 @@ export function createAppStore(inst: Instance) {
   presences: {},
   voice: {},
   emotes: {},
+  roles: {},
   typing: {},
   voiceServer: null,
   lastRead: load(LAST_READ_KEY),
@@ -152,6 +159,7 @@ export function createAppStore(inst: Instance) {
           members: {},
           voice: {},
           emotes: {},
+          roles: {},
           presences: {},
           typing: {},
         };
@@ -185,6 +193,7 @@ export function createAppStore(inst: Instance) {
             members: without(s.members, ev.d.id),
             voice: without(s.voice, ev.d.id),
             emotes: without(s.emotes, ev.d.id),
+            roles: without(s.roles, ev.d.id),
           };
         });
         return;
@@ -194,6 +203,22 @@ export function createAppStore(inst: Instance) {
         return;
       case "CHANNEL_DELETE":
         set((s) => ({ channels: without(s.channels, ev.d.id) }));
+        return;
+      case "ROLE_CREATE":
+      case "ROLE_UPDATE":
+        set((s) => {
+          const list = (s.roles[ev.d.guildId] ?? []).filter((r) => r.id !== ev.d.id);
+          return { roles: { ...s.roles, [ev.d.guildId]: sortRoles([...list, ev.d]) } };
+        });
+        return;
+      case "ROLE_DELETE":
+        set((s) => {
+          const gid = ev.d.guildId;
+          const members = Object.fromEntries(
+            Object.entries(s.members[gid] ?? {}).map(([uid, m]) => [uid, m.roles.includes(ev.d.id) ? { ...m, roles: m.roles.filter((r) => r !== ev.d.id) } : m]),
+          );
+          return { roles: { ...s.roles, [gid]: (s.roles[gid] ?? []).filter((r) => r.id !== ev.d.id) }, members: { ...s.members, [gid]: members } };
+        });
         return;
       case "MEMBER_ADD":
       case "MEMBER_UPDATE":

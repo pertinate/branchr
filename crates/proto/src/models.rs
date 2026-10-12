@@ -26,9 +26,24 @@ wire! {
         pub name: String,
         pub icon_url: Option<String>,
         pub owner_id: Id,
-        /// Whether every member may ping @everyone / @here; otherwise only the owner can.
-        /// (A placeholder for the role permission.)
-        pub everyone_mentions: bool,
+    }
+
+    /// A guild role. `@everyone` is the role whose id is the guild's, at position 0.
+    pub struct Role {
+        pub id: Id,
+        pub guild_id: Id,
+        pub name: String,
+        /// 0xRRGGBB, or none to leave names uncoloured.
+        pub color: Option<u32>,
+        /// Higher outranks lower.
+        pub position: i32,
+        /// Bits from `perms`.
+        #[cfg_attr(feature = "ts", ts(type = "number"))]
+        pub permissions: u64,
+        /// Listed separately in the member list.
+        pub hoist: bool,
+        /// Anyone can ping it with `<@&id>`.
+        pub mentionable: bool,
     }
 
     pub struct Channel {
@@ -50,6 +65,8 @@ wire! {
         pub nick: Option<String>,
         #[cfg_attr(feature = "ts", ts(type = "number"))]
         pub joined_at: i64,
+        /// Role ids, not including `@everyone`.
+        pub roles: Vec<Id>,
     }
 
     pub struct Message {

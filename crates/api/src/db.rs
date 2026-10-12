@@ -127,12 +127,38 @@ struct GuildRow {
     name: String,
     icon_url: Option<String>,
     owner_id: i64,
-    everyone_mentions: DbBool,
 }
 
 impl From<GuildRow> for Guild {
     fn from(r: GuildRow) -> Self {
-        Guild { id: Id(r.id), name: r.name, icon_url: r.icon_url, owner_id: Id(r.owner_id), everyone_mentions: r.everyone_mentions.0 }
+        Guild { id: Id(r.id), name: r.name, icon_url: r.icon_url, owner_id: Id(r.owner_id) }
+    }
+}
+
+#[derive(FromRow)]
+struct RoleRow {
+    id: i64,
+    guild_id: i64,
+    name: String,
+    color: Option<i64>,
+    position: i32,
+    permissions: i64,
+    hoist: DbBool,
+    mentionable: DbBool,
+}
+
+impl From<RoleRow> for Role {
+    fn from(r: RoleRow) -> Self {
+        Role {
+            id: Id(r.id),
+            guild_id: Id(r.guild_id),
+            name: r.name,
+            color: r.color.map(|c| c as u32),
+            position: r.position,
+            permissions: r.permissions as u64,
+            hoist: r.hoist.0,
+            mentionable: r.mentionable.0,
+        }
     }
 }
 
@@ -174,7 +200,7 @@ struct MemberRow {
 
 impl From<MemberRow> for Member {
     fn from(r: MemberRow) -> Self {
-        Member { guild_id: Id(r.guild_id), user: r.user.into(), nick: r.nick, joined_at: r.joined_at }
+        Member { guild_id: Id(r.guild_id), user: r.user.into(), nick: r.nick, joined_at: r.joined_at, roles: Vec::new() }
     }
 }
 
@@ -237,7 +263,7 @@ pub async fn user(db: &Db, id: Id) -> sqlx::Result<User> {
 }
 
 pub async fn guild(db: &Db, id: Id) -> sqlx::Result<Guild> {
-    sqlx::query_as::<_, GuildRow>("SELECT id, name, icon_url, owner_id, everyone_mentions FROM guilds WHERE id = $1")
+    sqlx::query_as::<_, GuildRow>("SELECT id, name, icon_url, owner_id FROM guilds WHERE id = $1")
         .bind(id.0)
         .fetch_one(db)
         .await
@@ -290,19 +316,46 @@ pub async fn members(db: &Db, guild: Id) -> sqlx::Result<Vec<Member>> {
     .bind(guild.0)
     .fetch_all(db)
     .await?;
-    Ok(rows.into_iter().map(Into::into).collect())
+    let assigned: Vec<(i64, i64)> = sqlx::query_as("SELECT user_id, role_id FROM member_roles WHERE guild_id = $1 ORDER BY role_id").bind(guild.0).fetch_all(db).await?;
+    let mut by_user: HashMap<i64, Vec<Id>> = HashMap::new();
+    for (user, role) in assigned {
+        by_user.entry(user).or_default().push(Id(role));
+    }
+    Ok(rows
+        .into_iter()
+        .map(|r| {
+            let roles = by_user.remove(&r.user.id).unwrap_or_default();
+            Member { roles, ..r.into() }
+        })
+        .collect())
 }
 
 pub async fn member(db: &Db, guild: Id, user: Id) -> sqlx::Result<Member> {
-    sqlx::query_as::<_, MemberRow>(AssertSqlSafe(format!(
+    let m: Member = sqlx::query_as::<_, MemberRow>(AssertSqlSafe(format!(
         "SELECT m.guild_id, m.nick, m.joined_at, {USER_COLS}
          FROM members m JOIN users u ON u.id = m.user_id WHERE m.guild_id = $1 AND m.user_id = $2"
     )))
     .bind(guild.0)
     .bind(user.0)
     .fetch_one(db)
-    .await
-    .map(Into::into)
+    .await?
+    .into();
+    let roles: Vec<(i64,)> = sqlx::query_as("SELECT role_id FROM member_roles WHERE guild_id = $1 AND user_id = $2 ORDER BY role_id")
+        .bind(guild.0)
+        .bind(user.0)
+        .fetch_all(db)
+        .await?;
+    Ok(Member { roles: roles.into_iter().map(|(r,)| Id(r)).collect(), ..m })
+}
+
+pub async fn roles(db: &Db, guild: Id) -> sqlx::Result<Vec<Role>> {
+    let rows = sqlx::query_as::<_, RoleRow>(
+        "SELECT id, guild_id, name, color, position, permissions, hoist, mentionable FROM roles WHERE guild_id = $1 ORDER BY position, id",
+    )
+    .bind(guild.0)
+    .fetch_all(db)
+    .await?;
+    Ok(rows.into_iter().map(Into::into).collect())
 }
 
 pub async fn emotes(db: &Db, guild: Id) -> sqlx::Result<Vec<Emote>> {

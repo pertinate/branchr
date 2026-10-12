@@ -5,7 +5,8 @@ use proto::gateway::{ChannelRef, ServerEvent};
 use proto::models::*;
 use serde::Deserialize;
 
-use super::require_owner;
+use super::require_perm;
+use proto::perms;
 use crate::auth::Auth;
 use crate::db;
 use crate::error::{AppResult, bad};
@@ -40,7 +41,7 @@ pub async fn create(
     Path(gid): Path<Id>,
     Json(body): Json<CreateChannel>,
 ) -> AppResult<Json<Channel>> {
-    require_owner(&state, gid, user).await?;
+    require_perm(&state, gid, user, perms::MANAGE_CHANNELS).await?;
     let name = normalize(&body.name, body.kind)?;
     if let Some(p) = body.parent_id {
         let parent = db::channel(&state.db, p).await?;
@@ -82,7 +83,7 @@ pub async fn patch(
     Json(body): Json<PatchChannel>,
 ) -> AppResult<Json<Channel>> {
     let c = db::channel(&state.db, cid).await?;
-    require_owner(&state, c.guild_id, user).await?;
+    require_perm(&state, c.guild_id, user, perms::MANAGE_CHANNELS).await?;
     if let Some(name) = body.name {
         let name = normalize(&name, c.kind)?;
         sqlx::query("UPDATE channels SET name = $1 WHERE id = $2").bind(name).bind(cid.0).execute(&state.db).await?;
@@ -103,7 +104,7 @@ pub async fn patch(
 
 pub async fn delete(State(state): State<AppState>, Auth(user): Auth, Path(cid): Path<Id>) -> AppResult<()> {
     let c = db::channel(&state.db, cid).await?;
-    require_owner(&state, c.guild_id, user).await?;
+    require_perm(&state, c.guild_id, user, perms::MANAGE_CHANNELS).await?;
     let mut tx = state.db.begin().await?;
     // Children of a deleted category become top level.
     sqlx::query("UPDATE channels SET parent_id = NULL WHERE parent_id = $1").bind(cid.0).execute(&mut *tx).await?;

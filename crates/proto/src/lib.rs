@@ -5,6 +5,7 @@
 pub mod gateway;
 pub mod id;
 pub mod models;
+pub mod perms;
 pub mod voice;
 
 pub use id::Id;

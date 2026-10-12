@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { leaveGuild } from "@/lib/actions";
 import { useInstance } from "@/lib/instances";
+import { P, SETTINGS_PERMS, useCan, useCanAny } from "@/lib/perms";
 import { useApp } from "@/stores/app";
 import { useDialogs } from "@/stores/ui";
 
@@ -18,6 +19,9 @@ export function GuildMenu({ guildId }: { guildId: string }) {
   const instanceId = inst.id;
   const guild = useApp((s) => s.guilds[guildId]);
   const isOwner = useApp((s) => s.guilds[guildId]?.ownerId === s.me?.id);
+  const canInvite = useCan(guildId, P.CREATE_INVITE);
+  const canSettings = useCanAny(guildId, SETTINGS_PERMS);
+  const canChannels = useCan(guildId, P.MANAGE_CHANNELS);
   const navigate = useNavigate();
   const open = useDialogs((s) => s.open);
 
@@ -31,10 +35,12 @@ export function GuildMenu({ guildId }: { guildId: string }) {
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-56">
-        <DropdownMenuItem onClick={() => open({ instanceId, kind: "invite", guildId })} className="text-primary">
-          Invite People <UserPlus className="ml-auto" />
-        </DropdownMenuItem>
-        {isOwner && (
+        {canInvite && (
+          <DropdownMenuItem onClick={() => open({ instanceId, kind: "invite", guildId })} className="text-primary">
+            Invite People <UserPlus className="ml-auto" />
+          </DropdownMenuItem>
+        )}
+        {canSettings && (
           <DropdownMenuItem onClick={() => open({ instanceId, kind: "guild-settings", guildId, tab: "overview" })}>
             Server Settings <Settings className="ml-auto" />
           </DropdownMenuItem>
@@ -42,7 +48,7 @@ export function GuildMenu({ guildId }: { guildId: string }) {
         <DropdownMenuItem onClick={() => open({ instanceId, kind: "guild-settings", guildId, tab: "emotes" })}>
           Emotes <Smile className="ml-auto" />
         </DropdownMenuItem>
-        {isOwner && (
+        {canChannels && (
           <DropdownMenuItem onClick={() => open({ instanceId, kind: "create-channel", guildId, parentId: null })}>
             Create Channel <PlusCircle className="ml-auto" />
           </DropdownMenuItem>

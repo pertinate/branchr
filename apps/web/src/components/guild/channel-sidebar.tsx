@@ -11,13 +11,14 @@ import { UserAvatar } from "@/components/user-avatar";
 import { compareIds } from "@/lib/ids";
 import { useInstance } from "@/lib/instances";
 import { cn } from "@/lib/utils";
+import { P, useCan } from "@/lib/perms";
 import { useApp } from "@/stores/app";
 import { useDialogs } from "@/stores/ui";
 import { useVoice } from "@/stores/voice";
 
 export function ChannelSidebar({ guildId }: { guildId: string }) {
   const channels = useApp(useShallow((s) => Object.values(s.channels).filter((c) => c.guildId === guildId)));
-  const isOwner = useApp((s) => s.guilds[guildId]?.ownerId === s.me?.id);
+  const isOwner = useCan(guildId, P.MANAGE_CHANNELS);
   const openDialog = useDialogs((s) => s.open);
   const instanceId = useInstance().id;
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});

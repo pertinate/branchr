@@ -9,34 +9,45 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useDebounced } from "@/hooks/use-debounced";
+import { RolesSettings } from "@/components/guild/roles-settings";
 import { useInstance } from "@/lib/instances";
+import { P, useCan } from "@/lib/perms";
 import { type EmoteSource, emoteSource, emoteSrcSet, emoteUrl, providerNames } from "@/lib/emotes";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/stores/app";
 
-export function GuildSettingsDialog({ guildId, tab, onClose }: { guildId: string; tab: "overview" | "emotes"; onClose: () => void }) {
-  const isOwner = useApp((s) => s.guilds[guildId]?.ownerId === s.me?.id);
+export function GuildSettingsDialog({ guildId, tab, onClose }: { guildId: string; tab: "overview" | "roles" | "emotes"; onClose: () => void }) {
+  const canGuild = useCan(guildId, P.MANAGE_GUILD);
+  const canRoles = useCan(guildId, P.MANAGE_ROLES);
+  const canEmotes = useCan(guildId, P.MANAGE_EMOTES);
+  const allowed = { overview: canGuild, roles: canRoles, emotes: true };
+  const first = allowed[tab] ? tab : canGuild ? "overview" : canRoles ? "roles" : "emotes";
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="flex h-[80vh] flex-col sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>Server Settings</DialogTitle>
         </DialogHeader>
-        <Tabs defaultValue={tab} className="flex min-h-0 flex-1 flex-col">
+        <Tabs defaultValue={first} className="flex min-h-0 flex-1 flex-col">
           <TabsList>
-            {isOwner && <TabsTrigger value="overview">Overview</TabsTrigger>}
+            {canGuild && <TabsTrigger value="overview">Overview</TabsTrigger>}
+            {canRoles && <TabsTrigger value="roles">Roles</TabsTrigger>}
             <TabsTrigger value="emotes">Emotes</TabsTrigger>
           </TabsList>
-          {isOwner && (
+          {canGuild && (
             <TabsContent value="overview">
               <Overview guildId={guildId} />
             </TabsContent>
           )}
+          {canRoles && (
+            <TabsContent value="roles" className="min-h-0 flex-1">
+              <RolesSettings guildId={guildId} />
+            </TabsContent>
+          )}
           <TabsContent value="emotes" className="min-h-0 flex-1">
-            <Emotes guildId={guildId} isOwner={isOwner} />
+            <Emotes guildId={guildId} canManage={canEmotes} />
           </TabsContent>
         </Tabs>
       </DialogContent>
@@ -50,14 +61,6 @@ function Overview({ guildId }: { guildId: string }) {
   const guild = useApp((s) => s.guilds[guildId]);
   const [name, setName] = useState(guild?.name ?? "");
   const [icon, setIcon] = useState(guild?.iconUrl ?? "");
-  const setEveryone = async (everyoneMentions: boolean) => {
-    try {
-      const g = await api<Guild>("PATCH", `/guilds/${guildId}`, { everyoneMentions });
-      inst.app.getState().apply({ t: "GUILD_UPDATE", d: g });
-    } catch (e) {
-      toast.error((e as Error).message);
-    }
-  };
   const save = async () => {
     try {
       const g = await api<Guild>("PATCH", `/guilds/${guildId}`, { name, iconUrl: icon.trim() || null });
@@ -78,13 +81,6 @@ function Overview({ guildId }: { guildId: string }) {
         <Input value={icon} onChange={(e) => setIcon(e.target.value)} placeholder="https://…" />
       </div>
       <Button onClick={save}>Save Changes</Button>
-      <div className="flex items-start justify-between gap-4 border-t border-border pt-4">
-        <div>
-          <Label htmlFor="everyone-mentions">Anyone can mention @everyone and @here</Label>
-          <p className="mt-1 text-xs text-muted-foreground">When off, only you (the owner) can ping the whole server. Others' @everyone shows as plain text.</p>
-        </div>
-        <Switch id="everyone-mentions" checked={guild?.everyoneMentions ?? true} onCheckedChange={setEveryone} />
-      </div>
     </div>
   );
 }
@@ -96,7 +92,7 @@ function EmoteImg({ source, name, size = 32 }: { source: EmoteSource; name: stri
 /** Providers with a public search API (BetterTTV's needs a logged-in site session). */
 const SEARCHABLE: EmoteProvider[] = ["7tv", "ffz"];
 
-function Emotes({ guildId, isOwner }: { guildId: string; isOwner: boolean }) {
+function Emotes({ guildId, canManage }: { guildId: string; canManage: boolean }) {
   const inst = useInstance();
   const api = inst.api;
   const emotes = useApp(useShallow((s) => s.emotes[guildId] ?? []));
@@ -174,87 +170,87 @@ function Emotes({ guildId, isOwner }: { guildId: string; isOwner: boolean }) {
   const toggleFrom = (p: EmoteProvider) => setFrom((f) => (f.includes(p) ? f.filter((x) => x !== p) : [...f, p]));
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-2 gap-4 pt-3">
-      <div className="flex min-h-0 flex-col gap-2">
-        <div className="flex items-center justify-between">
-          <div className="text-sm font-semibold">Search</div>
-          <div className="flex rounded-md bg-muted p-0.5 text-xs" role="tablist" aria-label="Emote provider">
-            {SEARCHABLE.map((p) => (
+    <div className={cn("grid h-full min-h-0 gap-4 pt-3", canManage ? "grid-cols-2" : "grid-cols-1")}>
+      {canManage && (
+        <div className="flex min-h-0 flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <div className="text-sm font-semibold">Search</div>
+            <div className="flex rounded-md bg-muted p-0.5 text-xs" role="tablist" aria-label="Emote provider">
+              {SEARCHABLE.map((p) => (
+                <button
+                  key={p}
+                  role="tab"
+                  aria-selected={provider === p}
+                  onClick={() => setProvider(p)}
+                  className={cn("rounded px-2 py-0.5", provider === p ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground")}
+                >
+                  {providerNames[p]}
+                </button>
+              ))}
+            </div>
+          </div>
+          <Input placeholder={`Search ${providerNames[provider]} emotes…`} value={query} onChange={(e) => setQuery(e.target.value)} />
+          <div className="grid min-h-0 flex-1 auto-rows-min grid-cols-4 gap-2 overflow-y-auto rounded-md bg-muted p-2" data-testid="emote-results">
+            {search.isFetching && <Loader2 className="col-span-4 mx-auto animate-spin" />}
+            {search.isError && <p className="col-span-4 p-4 text-center text-sm text-destructive">{(search.error as Error).message}</p>}
+            {search.data?.map((e) => (
               <button
-                key={p}
-                role="tab"
-                aria-selected={provider === p}
-                onClick={() => setProvider(p)}
-                className={cn("rounded px-2 py-0.5", provider === p ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground")}
+                key={e.id}
+                disabled={have.has(`${e.provider}:${e.id}`)}
+                onClick={() => add(e)}
+                className="group relative flex flex-col items-center gap-1 rounded p-2 hover:bg-accent disabled:opacity-40"
+                title={`${e.name}${e.owner ? ` by ${e.owner}` : ""}`}
               >
-                {providerNames[p]}
+                <EmoteImg source={e} name={e.name} />
+                <span className="w-full truncate text-center text-[11px] text-muted-foreground">{e.name}</span>
+                <Plus className="absolute top-1 right-1 size-3.5 opacity-0 group-hover:opacity-100" />
               </button>
             ))}
+            {search.data?.length === 0 && <p className="col-span-4 p-4 text-center text-sm text-muted-foreground">No results</p>}
+            {!q && (
+              <p className="col-span-4 p-4 text-center text-sm text-muted-foreground">
+                Search {providerNames[provider]}, or paste a link from 7TV, BetterTTV or FrankerFaceZ below.
+              </p>
+            )}
           </div>
-        </div>
-        <Input placeholder={`Search ${providerNames[provider]} emotes…`} value={query} onChange={(e) => setQuery(e.target.value)} />
-        <div className="grid min-h-0 flex-1 auto-rows-min grid-cols-4 gap-2 overflow-y-auto rounded-md bg-muted p-2" data-testid="emote-results">
-          {search.isFetching && <Loader2 className="col-span-4 mx-auto animate-spin" />}
-          {search.isError && <p className="col-span-4 p-4 text-center text-sm text-destructive">{(search.error as Error).message}</p>}
-          {search.data?.map((e) => (
-            <button
-              key={e.id}
-              disabled={have.has(`${e.provider}:${e.id}`)}
-              onClick={() => add(e)}
-              className="group relative flex flex-col items-center gap-1 rounded p-2 hover:bg-accent disabled:opacity-40"
-              title={`${e.name}${e.owner ? ` by ${e.owner}` : ""}`}
+          {clash && (
+            <form
+              className="flex items-center gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 p-2 text-xs"
+              onSubmit={(ev) => {
+                ev.preventDefault();
+                void add(clash.emote, clash.name.trim());
+              }}
             >
-              <EmoteImg source={e} name={e.name} />
-              <span className="w-full truncate text-center text-[11px] text-muted-foreground">{e.name}</span>
-              <Plus className="absolute top-1 right-1 size-3.5 opacity-0 group-hover:opacity-100" />
-            </button>
-          ))}
-          {search.data?.length === 0 && <p className="col-span-4 p-4 text-center text-sm text-muted-foreground">No results</p>}
-          {!q && (
-            <p className="col-span-4 p-4 text-center text-sm text-muted-foreground">
-              Search {providerNames[provider]}, or paste a link from 7TV, BetterTTV or FrankerFaceZ below.
-            </p>
+              <EmoteImg source={clash.emote} name={clash.emote.name} size={24} />
+              <span className="shrink-0">{clash.emote.name} is taken. Add as</span>
+              <Input
+                autoFocus
+                className="h-7 text-xs"
+                value={clash.name}
+                onChange={(ev) => setClash({ ...clash, name: ev.target.value })}
+                aria-label="New emote name"
+              />
+              <Button size="sm" type="submit" disabled={!clash.name.trim()}>
+                Add
+              </Button>
+              <Button size="sm" variant="ghost" type="button" onClick={() => setClash(null)}>
+                Cancel
+              </Button>
+            </form>
           )}
-        </div>
-        {clash && (
-          <form
-            className="flex items-center gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 p-2 text-xs"
-            onSubmit={(ev) => {
-              ev.preventDefault();
-              void add(clash.emote, clash.name.trim());
-            }}
-          >
-            <EmoteImg source={clash.emote} name={clash.emote.name} size={24} />
-            <span className="shrink-0">{clash.emote.name} is taken. Add as</span>
+          <div className="flex gap-2">
+            <Input placeholder="Emote link (7TV, BetterTTV, FFZ)" value={link} onChange={(e) => setLink(e.target.value)} aria-label="Emote link" />
             <Input
-              autoFocus
-              className="h-7 text-xs"
-              value={clash.name}
-              onChange={(ev) => setClash({ ...clash, name: ev.target.value })}
-              aria-label="New emote name"
+              className="w-32"
+              placeholder={isLinkBttv ? "Name (required)" : "Name (optional)"}
+              value={linkName}
+              onChange={(e) => setLinkName(e.target.value)}
+              aria-label="Emote name"
             />
-            <Button size="sm" type="submit" disabled={!clash.name.trim()}>
-              Add
+            <Button onClick={addLink} disabled={!link.trim() || (isLinkBttv && !linkName.trim()) || busy !== null}>
+              {busy === "link" ? <Loader2 className="animate-spin" /> : "Add"}
             </Button>
-            <Button size="sm" variant="ghost" type="button" onClick={() => setClash(null)}>
-              Cancel
-            </Button>
-          </form>
-        )}
-        <div className="flex gap-2">
-          <Input placeholder="Emote link (7TV, BetterTTV, FFZ)" value={link} onChange={(e) => setLink(e.target.value)} aria-label="Emote link" />
-          <Input
-            className="w-32"
-            placeholder={isLinkBttv ? "Name (required)" : "Name (optional)"}
-            value={linkName}
-            onChange={(e) => setLinkName(e.target.value)}
-            aria-label="Emote name"
-          />
-          <Button onClick={addLink} disabled={!link.trim() || (isLinkBttv && !linkName.trim()) || busy !== null}>
-            {busy === "link" ? <Loader2 className="animate-spin" /> : "Add"}
-          </Button>
-        </div>
-        {isOwner && (
+          </div>
           <div className="space-y-1.5 rounded-md border p-2">
             <div className="flex gap-2">
               <Input
@@ -277,8 +273,8 @@ function Emotes({ guildId, isOwner }: { guildId: string; isOwner: boolean }) {
               ))}
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
       <div className="flex min-h-0 flex-col gap-2">
         <div className="flex items-center justify-between gap-2">
           <div className="shrink-0 text-sm font-semibold">Server emotes ({emotes.length})</div>
@@ -288,9 +284,9 @@ function Emotes({ guildId, isOwner }: { guildId: string; isOwner: boolean }) {
           {shown.map((e) => (
             <div key={e.id} className="group relative flex flex-col items-center gap-1 rounded p-2 hover:bg-accent" title={`${e.name} · ${providerNames[e.provider]}`}>
               <EmoteImg source={emoteSource(e)} name={e.name} />
-              <EmoteName emote={e} guildId={guildId} canEdit={isOwner} />
+              <EmoteName emote={e} guildId={guildId} canEdit={canManage} />
               <span className="absolute top-1 left-1 text-[9px] font-semibold text-muted-foreground uppercase opacity-0 group-hover:opacity-100">{e.provider}</span>
-              {isOwner && (
+              {canManage && (
                 <button onClick={() => remove(e)} aria-label={`Remove ${e.name}`} className="absolute top-1 right-1 text-destructive opacity-0 group-hover:opacity-100">
                   <Trash2 className="size-3.5" />
                 </button>

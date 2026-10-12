@@ -15,6 +15,8 @@ import type { ReactionEvent } from "./ReactionEvent";
 import type { ReadState } from "./ReadState";
 import type { Ready } from "./Ready";
 import type { ReadyGuild } from "./ReadyGuild";
+import type { Role } from "./Role";
+import type { RoleRef } from "./RoleRef";
 import type { TypingStart } from "./TypingStart";
 import type { User } from "./User";
 import type { VoiceServer } from "./VoiceServer";
@@ -24,4 +26,4 @@ import type { VoiceStateRef } from "./VoiceStateRef";
 /**
  * Messages sent by the server.
  */
-export type ServerEvent = { "t": "HELLO", "d": Hello } | { "t": "READY", "d": Ready } | { "t": "HEARTBEAT_ACK" } | { "t": "INVALID_SESSION" } | { "t": "GUILD_CREATE", "d": ReadyGuild } | { "t": "GUILD_UPDATE", "d": Guild } | { "t": "GUILD_DELETE", "d": GuildRef } | { "t": "CHANNEL_CREATE", "d": Channel } | { "t": "CHANNEL_UPDATE", "d": Channel } | { "t": "CHANNEL_DELETE", "d": ChannelRef } | { "t": "MEMBER_ADD", "d": Member } | { "t": "MEMBER_UPDATE", "d": Member } | { "t": "MEMBER_REMOVE", "d": MemberRef } | { "t": "MESSAGE_CREATE", "d": Message } | { "t": "MESSAGE_UPDATE", "d": Message } | { "t": "MESSAGE_DELETE", "d": MessageRef } | { "t": "REACTION_ADD", "d": ReactionEvent } | { "t": "REACTION_REMOVE", "d": ReactionEvent } | { "t": "EMOTE_CREATE", "d": Emote } | { "t": "EMOTE_UPDATE", "d": Emote } | { "t": "EMOTE_DELETE", "d": EmoteRef } | { "t": "TYPING_START", "d": TypingStart } | { "t": "PRESENCE_UPDATE", "d": Presence } | { "t": "USER_UPDATE", "d": User } | { "t": "VOICE_STATE_UPDATE", "d": VoiceState } | { "t": "VOICE_STATE_REMOVE", "d": VoiceStateRef } | { "t": "VOICE_SERVER", "d": VoiceServer } | { "t": "READ_STATE_UPDATE", "d": ReadState };
+export type ServerEvent = { "t": "HELLO", "d": Hello } | { "t": "READY", "d": Ready } | { "t": "HEARTBEAT_ACK" } | { "t": "INVALID_SESSION" } | { "t": "GUILD_CREATE", "d": ReadyGuild } | { "t": "GUILD_UPDATE", "d": Guild } | { "t": "GUILD_DELETE", "d": GuildRef } | { "t": "CHANNEL_CREATE", "d": Channel } | { "t": "CHANNEL_UPDATE", "d": Channel } | { "t": "CHANNEL_DELETE", "d": ChannelRef } | { "t": "ROLE_CREATE", "d": Role } | { "t": "ROLE_UPDATE", "d": Role } | { "t": "ROLE_DELETE", "d": RoleRef } | { "t": "MEMBER_ADD", "d": Member } | { "t": "MEMBER_UPDATE", "d": Member } | { "t": "MEMBER_REMOVE", "d": MemberRef } | { "t": "MESSAGE_CREATE", "d": Message } | { "t": "MESSAGE_UPDATE", "d": Message } | { "t": "MESSAGE_DELETE", "d": MessageRef } | { "t": "REACTION_ADD", "d": ReactionEvent } | { "t": "REACTION_REMOVE", "d": ReactionEvent } | { "t": "EMOTE_CREATE", "d": Emote } | { "t": "EMOTE_UPDATE", "d": Emote } | { "t": "EMOTE_DELETE", "d": EmoteRef } | { "t": "TYPING_START", "d": TypingStart } | { "t": "PRESENCE_UPDATE", "d": Presence } | { "t": "USER_UPDATE", "d": User } | { "t": "VOICE_STATE_UPDATE", "d": VoiceState } | { "t": "VOICE_STATE_REMOVE", "d": VoiceStateRef } | { "t": "VOICE_SERVER", "d": VoiceServer } | { "t": "READ_STATE_UPDATE", "d": ReadState };

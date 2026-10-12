@@ -14,7 +14,8 @@ use proto::Id;
 use proto::models::Attachment;
 use rand::RngCore;
 
-use super::channel_access;
+use super::channel_perm;
+use proto::perms;
 use crate::auth::Auth;
 use crate::db;
 use crate::error::{AppError, AppResult, bad};
@@ -60,7 +61,7 @@ pub async fn upload(
     headers: HeaderMap,
     body: Body,
 ) -> AppResult<Json<Attachment>> {
-    channel_access(&state, cid, user).await?;
+    channel_perm(&state, cid, user, perms::ATTACH_FILES).await?;
     let filename = header_str(&headers, "x-filename")
         .map(|f| percent_decode(f))
         .filter(|f| !f.is_empty() && f.len() <= 255)

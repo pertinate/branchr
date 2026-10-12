@@ -194,7 +194,6 @@ struct HostGuildRow {
     name: String,
     icon_url: Option<String>,
     owner_id: i64,
-    everyone_mentions: DbBool,
     members: i64,
     channels: i64,
 }
@@ -203,7 +202,7 @@ pub async fn guilds(State(state): State<AppState>, Auth(user): Auth, Query(q): Q
     require_host_owner(&state, user).await?;
     let pattern = format!("%{}%", q.q.trim().replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_"));
     let rows: Vec<HostGuildRow> = sqlx::query_as(
-        "SELECT g.id AS gid, g.name, g.icon_url, g.owner_id, g.everyone_mentions,
+        "SELECT g.id AS gid, g.name, g.icon_url, g.owner_id,
                 (SELECT count(*) FROM members m WHERE m.guild_id = g.id) AS members,
                 (SELECT count(*) FROM channels c WHERE c.guild_id = g.id) AS channels
          FROM guilds g WHERE lower(g.name) LIKE lower($1) ESCAPE '\\' ORDER BY g.id DESC LIMIT $2 OFFSET $3",
@@ -222,7 +221,6 @@ pub async fn guilds(State(state): State<AppState>, Auth(user): Auth, Query(q): Q
                 name: r.name,
                 icon_url: r.icon_url,
                 owner_id: Id(r.owner_id),
-                everyone_mentions: r.everyone_mentions.0,
             },
             members: r.members as u32,
             channels: r.channels as u32,

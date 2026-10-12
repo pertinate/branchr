@@ -107,7 +107,7 @@ test("mentions: replies ping the author; edits keep mentions editable", async ({
   await expect(bob.locator("[data-pinged]").filter({ hasText: "again!" })).toBeVisible();
 });
 
-test("mentions: the owner can stop members from pinging @everyone", async ({ browser }) => {
+test("mentions: taking Mention @everyone from the @everyone role stops members pinging everyone", async ({ browser }) => {
   const alice = await register(browser, "evr_a");
   const code = await createServer(alice, "Quiet");
   const bob = await register(browser, "evr_b");
@@ -121,8 +121,12 @@ test("mentions: the owner can stop members from pinging @everyone", async ({ bro
 
   await alice.getByRole("button", { name: "Quiet" }).click();
   await alice.getByRole("menuitem", { name: "Server Settings" }).click();
-  await alice.getByLabel("Anyone can mention @everyone and @here").click();
-  await expect(alice.getByLabel("Anyone can mention @everyone and @here")).not.toBeChecked();
+  await alice.getByRole("tab", { name: "Roles" }).click();
+  // @everyone is selected first.
+  await alice.getByLabel("Mention @everyone and @here").click();
+  await expect(alice.getByLabel("Mention @everyone and @here")).not.toBeChecked();
+  await alice.getByRole("button", { name: "Save Changes" }).click();
+  await expect(alice.getByText("Saved")).toBeVisible();
   await alice.keyboard.press("Escape");
 
   // Off: Bob's @here is plain text, isn't suggested, and pings nobody.

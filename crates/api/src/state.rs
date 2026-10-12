@@ -16,6 +16,7 @@ pub struct State {
     pub db: Db,
     pub storage: crate::storage::Storage,
     pub hub: Hub,
+    pub perms: crate::perms::Perms,
     pub config: Config,
     pub ids: IdGen,
     pub emotes: EmoteProviders,

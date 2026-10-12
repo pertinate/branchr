@@ -33,9 +33,10 @@ async fn send(ws: &mut WebSocket, ev: &ServerEvent) -> anyhow::Result<()> {
 }
 
 pub async fn ready_guild(state: &AppState, guild: Id) -> anyhow::Result<ReadyGuild> {
-    let (g, channels, members, emotes) = tokio::try_join!(
+    let (g, channels, roles, members, emotes) = tokio::try_join!(
         db::guild(&state.db, guild),
         db::channels(&state.db, guild),
+        db::roles(&state.db, guild),
         db::members(&state.db, guild),
         db::emotes(&state.db, guild),
     )?;
@@ -43,7 +44,7 @@ pub async fn ready_guild(state: &AppState, guild: Id) -> anyhow::Result<ReadyGui
         state.channel_guild.insert(c.id, guild);
     }
     let presences = state.hub.presences(members.iter().map(|m| m.user.id));
-    Ok(ReadyGuild { guild: g, channels, members, emotes, voice_states: state.hub.voice_states(guild), presences })
+    Ok(ReadyGuild { guild: g, channels, roles, members, emotes, voice_states: state.hub.voice_states(guild), presences })
 }
 
 async fn run(mut ws: WebSocket, state: AppState) -> anyhow::Result<()> {
@@ -197,6 +198,10 @@ async fn voice_state_update(state: &AppState, key: SessionKey, user: Id, u: Voic
     }
     if !db::is_member(&state.db, u.guild_id, user).await.unwrap_or(false) {
         return;
+    }
+    match state.perms.guild(&state.db, u.guild_id).await {
+        Ok(g) if g.has(user, proto::perms::CONNECT) => {}
+        _ => return,
     }
 
     let prev = hub.voice_state(u.guild_id, user);

@@ -5,11 +5,13 @@ use proto::gateway::{MessageRef, ReactionEvent, ServerEvent};
 use proto::models::*;
 use serde::Deserialize;
 
-use super::channel_access;
+use super::{channel_access, channel_perm};
+use proto::perms;
 use crate::auth::Auth;
 use crate::db;
 use crate::error::{AppError, AppResult, bad};
 use crate::mentions;
+use crate::perms::GuildPerms;
 use crate::state::AppState;
 
 const MAX_LEN: usize = 4000;
@@ -121,7 +123,7 @@ pub async fn create(
     if !state.message_limiter.check(user) {
         return Err(AppError::TooManyRequests);
     }
-    let guild = channel_access(&state, cid, user).await?;
+    let (guild, gp) = channel_perm(&state, cid, user, perms::SEND_MESSAGES).await?;
     let content = body.content.trim();
     if (content.is_empty() && body.attachment_ids.is_empty()) || content.chars().count() > MAX_LEN {
         return Err(bad(format!("message must be 1-{MAX_LEN} characters")));
@@ -135,7 +137,7 @@ pub async fn create(
     let (content, emotes) = resolve_emotes(&state, user, content, &[]).await?;
     let replied = replied_author(&state, cid, body.reply_to, user).await?;
     let mut mentions = mentions::resolve(&state.db, guild, &content, replied).await?;
-    restrict_everyone(&state, guild, user, &mut mentions).await?;
+    restrict_everyone(&gp, user, &mut mentions);
     let content = std::mem::take(&mut mentions.content);
     let id = state.ids.next();
     let mut tx = state.db.begin().await?;
@@ -199,7 +201,7 @@ pub async fn edit(
     Path((cid, mid)): Path<(Id, Id)>,
     Json(body): Json<EditMessage>,
 ) -> AppResult<Json<Message>> {
-    let guild = channel_access(&state, cid, user).await?;
+    let (guild, gp) = channel_perm(&state, cid, user, 0).await?;
     let content = body.content.trim();
     if content.is_empty() || content.chars().count() > MAX_LEN {
         return Err(bad(format!("message must be 1-{MAX_LEN} characters")));
@@ -211,7 +213,7 @@ pub async fn edit(
     let (content, emotes) = resolve_emotes(&state, user, content, &prev.emotes).await?;
     let replied = replied_author(&state, cid, prev.reply_to, user).await?;
     let mut mentions = mentions::resolve(&state.db, guild, &content, replied).await?;
-    restrict_everyone(&state, guild, user, &mut mentions).await?;
+    restrict_everyone(&gp, user, &mut mentions);
     let content = mentions.content;
     let r = sqlx::query(
         "UPDATE messages SET content = $1, emotes = $2, mentions = $3, mention_everyone = $4, edited_at = $5
@@ -240,14 +242,13 @@ pub async fn delete(
     Auth(user): Auth,
     Path((cid, mid)): Path<(Id, Id)>,
 ) -> AppResult<()> {
-    let guild = channel_access(&state, cid, user).await?;
-    let owner = db::guild(&state.db, guild).await?.owner_id;
-    let r = sqlx::query("DELETE FROM messages WHERE id = $1 AND channel_id = $2 AND (author_id = $3 OR $4 = $5)")
+    let (guild, gp) = channel_perm(&state, cid, user, 0).await?;
+    let moderator = gp.has(user, perms::MANAGE_MESSAGES);
+    let r = sqlx::query("DELETE FROM messages WHERE id = $1 AND channel_id = $2 AND (author_id = $3 OR $4)")
         .bind(mid.0)
         .bind(cid.0)
         .bind(user.0)
-        .bind(owner.0)
-        .bind(user.0)
+        .bind(moderator)
         .execute(&state.db)
         .await?;
     if r.rows_affected() == 0 {
@@ -261,17 +262,13 @@ fn snapshot_json<T: serde::Serialize>(items: &[T]) -> Option<String> {
     (!items.is_empty()).then(|| serde_json::to_string(items).expect("snapshot serializes"))
 }
 
-/// @everyone / @here only ping when the guild lets everyone use them, or from the owner.
-/// Otherwise they stay as plain text.
-async fn restrict_everyone(state: &AppState, guild: Id, user: Id, m: &mut mentions::Mentions) -> AppResult<()> {
-    if m.everyone || m.here {
-        let g = db::guild(&state.db, guild).await?;
-        if !g.everyone_mentions && g.owner_id != user {
-            m.everyone = false;
-            m.here = false;
-        }
+/// @everyone / @here only ping from people with MENTION_EVERYONE; otherwise they stay as
+/// plain text.
+fn restrict_everyone(gp: &GuildPerms, user: Id, m: &mut mentions::Mentions) {
+    if (m.everyone || m.here) && !gp.has(user, perms::MENTION_EVERYONE) {
+        m.everyone = false;
+        m.here = false;
     }
-    Ok(())
 }
 
 /// Counts the mentions toward each pinged member's unread badge, which is what makes a
@@ -323,7 +320,7 @@ pub async fn react(
     Auth(user): Auth,
     Path((cid, mid, emoji)): Path<(Id, Id, String)>,
 ) -> AppResult<()> {
-    let guild = channel_access(&state, cid, user).await?;
+    let (guild, _) = channel_perm(&state, cid, user, perms::ADD_REACTIONS).await?;
     if !valid_emoji(&emoji) {
         return Err(bad("invalid emoji"));
     }

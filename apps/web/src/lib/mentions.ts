@@ -1,5 +1,6 @@
 import type { Message, User } from "@app/protocol";
 
+import { P, has, permsOf } from "@/lib/perms";
 import { type AppState, useApp } from "@/stores/app";
 
 /**
@@ -18,9 +19,7 @@ export function mentionName(guildId: string | undefined, id: string, snapshot?: 
 
 /** Whether we may ping @everyone / @here in `guildId`. */
 export function canMentionEveryone(guildId: string | undefined): boolean {
-  const s = useApp.getState();
-  const g = guildId ? s.guilds[guildId] : undefined;
-  return !g || g.everyoneMentions || g.ownerId === s.me?.id;
+  return !guildId || has(permsOf(useApp.getState(), guildId), P.MENTION_EVERYONE);
 }
 
 /** Whether `m` should ping `me`. Your own messages never do. */

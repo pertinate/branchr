@@ -2,4 +2,8 @@
 import type { Id } from "./Id";
 import type { User } from "./User";
 
-export type Member = { guildId: Id, user: User, nick: string | null, joinedAt: number, };
+export type Member = { guildId: Id, user: User, nick: string | null, joinedAt: number, 
+/**
+ * Role ids, not including `@everyone`.
+ */
+roles: Array<Id>, };

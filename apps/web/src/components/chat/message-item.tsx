@@ -17,6 +17,7 @@ import { emotePage, providerNames } from "@/lib/emotes";
 import { snowflakeTime } from "@/lib/ids";
 import { editableMentions, mentionsMe, plainText } from "@/lib/mentions";
 import { cn } from "@/lib/utils";
+import { useRoleColor } from "@/lib/perms";
 import { useApp } from "@/stores/app";
 import { useEmote, useEmoteCard } from "@/stores/emotes";
 import { type UiMessage, useMessages } from "@/stores/messages";
@@ -93,6 +94,7 @@ export const MessageItem = memo(function MessageItem({
   setEditing: (id: string | null) => void;
 }) {
   const nick = useApp((s) => s.members[guildId]?.[m.author.id]?.nick);
+  const tint = useRoleColor(guildId, m.author.id);
   const reply = useMessages((s) => (m.replyTo ? s.channels[m.channelId]?.items.find((x) => x.id === m.replyTo) : undefined));
   const replyNick = useApp((s) => (reply ? s.members[guildId]?.[reply.author.id]?.nick : undefined));
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -255,7 +257,7 @@ export const MessageItem = memo(function MessageItem({
           {!grouped && (
             <div className="flex items-baseline gap-2">
               <Menu items={<UserMenuItems guildId={guildId} userId={m.author.id} />}>
-                <span className="cursor-pointer font-medium hover:underline" style={{ color: userColor(m.author.id) }}>
+                <span className="cursor-pointer font-medium hover:underline" style={{ color: tint ?? userColor(m.author.id) }}>
                   {nick ?? m.author.displayName}
                 </span>
               </Menu>

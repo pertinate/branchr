@@ -3,12 +3,16 @@
  * message-item.tsx) because they need the message's local state.
  */
 import type { ReactNode } from "react";
-import type { Status } from "@app/protocol";
+import type { Member, Status } from "@app/protocol";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { AtSign, CheckCheck, Copy, LogOut, Pencil, PhoneOff, PlusCircle, Settings, Smile, Trash2, UserMinus, UserPlus, Volume2 } from "lucide-react";
+import { AtSign, CheckCheck, Copy, LogOut, Pencil, PhoneOff, PlusCircle, Settings, Shield, Smile, Trash2, UserMinus, UserPlus, Volume2 } from "lucide-react";
+
+import { toast } from "sonner";
+import { useShallow } from "zustand/react/shallow";
 
 import {
   ContextMenu,
+  ContextMenuCheckboxItem,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuLabel,
@@ -23,6 +27,7 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { copy, deleteChannel, insertIntoComposer, kick, leaveGuild, markGuildRead, setStatus } from "@/lib/actions";
 import { useInstance } from "@/lib/instances";
+import { P, SETTINGS_PERMS, roleColor, topOf, useCan, useCanAny, useOutranks } from "@/lib/perms";
 import { useApp } from "@/stores/app";
 import { useDialogs, usePrefs } from "@/stores/ui";
 import { useVoice, useVoiceSettings } from "@/stores/voice";
@@ -54,6 +59,9 @@ export function GuildMenuItems({ guildId }: { guildId: string }) {
   const inst = useInstance();
   const instanceId = inst.id;
   const isOwner = useApp((s) => s.guilds[guildId]?.ownerId === s.me?.id);
+  const canInvite = useCan(guildId, P.CREATE_INVITE);
+  const canSettings = useCanAny(guildId, SETTINGS_PERMS);
+  const canChannels = useCan(guildId, P.MANAGE_CHANNELS);
   const open = useDialogs((s) => s.open);
   const navigate = useNavigate();
   return (
@@ -62,10 +70,12 @@ export function GuildMenuItems({ guildId }: { guildId: string }) {
         Mark As Read <CheckCheck className="ml-auto" />
       </ContextMenuItem>
       <ContextMenuSeparator />
-      <ContextMenuItem className="text-primary" onSelect={() => open({ instanceId, kind: "invite", guildId })}>
-        Invite People <UserPlus className="ml-auto" />
-      </ContextMenuItem>
-      {isOwner && (
+      {canInvite && (
+        <ContextMenuItem className="text-primary" onSelect={() => open({ instanceId, kind: "invite", guildId })}>
+          Invite People <UserPlus className="ml-auto" />
+        </ContextMenuItem>
+      )}
+      {canSettings && (
         <ContextMenuItem onSelect={() => open({ instanceId, kind: "guild-settings", guildId, tab: "overview" })}>
           Server Settings <Settings className="ml-auto" />
         </ContextMenuItem>
@@ -73,7 +83,7 @@ export function GuildMenuItems({ guildId }: { guildId: string }) {
       <ContextMenuItem onSelect={() => open({ instanceId, kind: "guild-settings", guildId, tab: "emotes" })}>
         Emotes <Smile className="ml-auto" />
       </ContextMenuItem>
-      {isOwner && (
+      {canChannels && (
         <ContextMenuItem onSelect={() => open({ instanceId, kind: "create-channel", guildId, parentId: null })}>
           Create Channel <PlusCircle className="ml-auto" />
         </ContextMenuItem>
@@ -97,7 +107,7 @@ export function ChannelMenuItems({ channelId }: { channelId: string }) {
   const inst = useInstance();
   const instanceId = inst.id;
   const channel = useApp((s) => s.channels[channelId]);
-  const isOwner = useApp((s) => !!channel && s.guilds[channel.guildId]?.ownerId === s.me?.id);
+  const isOwner = useCan(channel?.guildId, P.MANAGE_CHANNELS);
   const inThis = useVoice((s) => s.channelId === channelId && s.instanceId === instanceId);
   const open = useDialogs((s) => s.open);
   if (!channel) return null;
@@ -140,13 +150,52 @@ export function ChannelMenuItems({ channelId }: { channelId: string }) {
   );
 }
 
+/** Tick roles on and off for someone; roles at or above our own are shown but locked. */
+function RolesSubmenu({ guildId, userId }: { guildId: string; userId: string }) {
+  const inst = useInstance();
+  const roles = useApp(useShallow((s) => (s.roles[guildId] ?? []).filter((r) => r.id !== guildId)));
+  const has = useApp(useShallow((s) => s.members[guildId]?.[userId]?.roles ?? []));
+  const myTop = useApp((s) => topOf(s, guildId, s.me?.id));
+  if (!roles.length) return null;
+  const toggle = async (roleId: string, on: boolean) => {
+    try {
+      const m = await inst.api<Member>(on ? "PUT" : "DELETE", `/guilds/${guildId}/members/${userId}/roles/${roleId}`);
+      inst.app.getState().apply({ t: "MEMBER_UPDATE", d: m });
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  };
+  return (
+    <ContextMenuSub>
+      <ContextMenuSubTrigger>
+        Roles <Shield className="ml-auto size-4" />
+      </ContextMenuSubTrigger>
+      <ContextMenuSubContent className="max-h-80 w-52 overflow-y-auto">
+        {[...roles].reverse().map((r) => (
+          <ContextMenuCheckboxItem
+            key={r.id}
+            checked={has.includes(r.id)}
+            disabled={r.position >= myTop}
+            onSelect={(e) => e.preventDefault()}
+            onCheckedChange={(on) => void toggle(r.id, on)}
+          >
+            <span className="mr-1.5 inline-block size-2.5 shrink-0 rounded-full" style={{ background: roleColor(r) ?? "var(--muted-foreground)" }} />
+            <span className="truncate">{r.name}</span>
+          </ContextMenuCheckboxItem>
+        ))}
+      </ContextMenuSubContent>
+    </ContextMenuSub>
+  );
+}
+
 export function UserMenuItems({ guildId, userId }: { guildId: string; userId: string }) {
   const inst = useInstance();
   const instanceId = inst.id;
   const member = useApp((s) => s.members[guildId]?.[userId]);
   const me = useApp((s) => s.me?.id);
-  const isOwner = useApp((s) => s.guilds[guildId]?.ownerId === me);
-  const ownerId = useApp((s) => s.guilds[guildId]?.ownerId);
+  const canKick = useCan(guildId, P.KICK_MEMBERS);
+  const canRoles = useCan(guildId, P.MANAGE_ROLES);
+  const outranks = useOutranks(guildId, userId);
   const viewing = useApp((s) => s.viewing);
   // Volume applies to people in our voice channel.
   const myVoice = useVoice((s) => (s.instanceId === instanceId ? s.channelId : null));
@@ -188,7 +237,8 @@ export function UserMenuItems({ guildId, userId }: { guildId: string; userId: st
       <ContextMenuItem onSelect={() => void copy(member.user.username, "Copied username")}>
         Copy Username <Copy className="ml-auto" />
       </ContextMenuItem>
-      {isOwner && !self && userId !== ownerId && (
+      {canRoles && <RolesSubmenu guildId={guildId} userId={userId} />}
+      {canKick && outranks && !self && (
         <>
           <ContextMenuSeparator />
           <ContextMenuItem variant="destructive" onSelect={() => void kick(inst, guildId, userId)}>

@@ -33,6 +33,8 @@ export type * from "./generated/ReactionEvent";
 export type * from "./generated/ReadState";
 export type * from "./generated/Ready";
 export type * from "./generated/ReadyGuild";
+export type * from "./generated/Role";
+export type * from "./generated/RoleRef";
 export type * from "./generated/ServerEvent";
 export type * from "./generated/Status";
 export type * from "./generated/TrackInfo";
@@ -45,3 +47,5 @@ export type * from "./generated/VoiceServerMsg";
 export type * from "./generated/VoiceState";
 export type * from "./generated/VoiceStateRef";
 export type * from "./generated/VoiceStateUpdate";
+
+export * from "./permissions";
