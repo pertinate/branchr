@@ -23,6 +23,8 @@ export function ExplorePage() {
   const q = useDebounced(query.trim(), 250);
   const results = useQuery({
     queryKey: ["explore", q, tag],
+    // A live directory: listings come and go, so never show a cached page as current.
+    staleTime: 0,
     queryFn: async () => {
       const params = new URLSearchParams({ q, ...(tag && { tag }) });
       const r = await fetch(`${ID_URL}/discover?${params}`);

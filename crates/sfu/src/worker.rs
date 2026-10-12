@@ -67,7 +67,11 @@ pub enum Cmd {
 
 pub fn spawn(index: usize, config: &Config, shared: Arc<Shared>, rx: mpsc::UnboundedReceiver<Cmd>) -> anyhow::Result<()> {
     let port = config.udp_port + index as u16;
-    let bind: SocketAddr = ([0, 0, 0, 0], port).into();
+    // Advertising loopback (local runs): bind it too, so replies leave from the candidate's own
+    // address. On 0.0.0.0 a peer probing from its LAN address would get answers sourced from that
+    // address instead, which ICE ignores.
+    let ip = if config.public_ip.is_loopback() { config.public_ip } else { [0, 0, 0, 0].into() };
+    let bind = SocketAddr::new(ip, port);
     let socket = socket2::Socket::new(socket2::Domain::IPV4, socket2::Type::DGRAM, Some(socket2::Protocol::UDP))?;
     // Big buffers absorb keyframe bursts of high bitrate streams.
     let _ = socket.set_recv_buffer_size(16 << 20);

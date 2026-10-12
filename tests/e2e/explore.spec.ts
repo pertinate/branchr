@@ -40,7 +40,9 @@ test("explore: list a server, find it by search and tag, join it, unlist it", as
   await bob.getByRole("link", { name: "Explore" }).click();
   await bob.getByLabel("Explore servers").fill(run);
   await expect(async () => {
-    await bob.getByLabel("Explore servers").fill(`${run} `);
+    // Another search in between, so coming back to this one fetches again.
+    await bob.getByLabel("Explore servers").fill(`${run}x`);
+    await bob.waitForTimeout(400);
     await bob.getByLabel("Explore servers").fill(run);
     await expect(bob.getByTestId("explore-card").filter({ hasText: name })).toHaveCount(0, { timeout: 2000 });
   }).toPass({ timeout: 20_000 });
