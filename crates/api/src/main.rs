@@ -10,6 +10,7 @@ mod mentions;
 mod ratelimit;
 mod routes;
 mod state;
+mod storage;
 
 use std::sync::Arc;
 
@@ -38,10 +39,27 @@ async fn main() -> anyhow::Result<()> {
     raise_nofile_limit();
     let config = Config::from_env()?;
     let db = db::connect(&config.database_url).await?;
+    let storage = storage::Storage::new(&config.storage)?;
+    if std::env::args().nth(1).as_deref() == Some("migrate-storage") {
+        return storage::migrate(&storage).await;
+    }
+    // Object storage may still be starting next to us (compose): give it a minute.
+    for attempt in 1.. {
+        match storage.init().await {
+            Ok(()) => break,
+            Err(e) if attempt < 30 => {
+                tracing::warn!("storage not ready ({e:#}), retrying");
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    tracing::info!("files stored in {}", storage.describe());
     let worker = std::env::var("WORKER_ID").ok().and_then(|w| w.parse().ok()).unwrap_or(0);
 
     let state: AppState = Arc::new(State {
         db,
+        storage,
         hub: Default::default(),
         ids: IdGen::new(worker),
         emotes: emote_providers::EmoteProviders::new(),

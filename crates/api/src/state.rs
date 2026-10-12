@@ -14,6 +14,7 @@ pub type AppState = Arc<State>;
 
 pub struct State {
     pub db: Db,
+    pub storage: crate::storage::Storage,
     pub hub: Hub,
     pub config: Config,
     pub ids: IdGen,

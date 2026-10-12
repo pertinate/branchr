@@ -12,6 +12,11 @@ const idDb = process.env.TEST_DATABASE_URL;
 /** E2E_INSTANCE_DB=postgres runs the main instance on Postgres (TEST_DATABASE_URL) instead of SQLite. */
 const instanceOnPostgres = process.env.E2E_INSTANCE_DB === "postgres";
 if (instanceOnPostgres && !idDb) throw new Error("E2E_INSTANCE_DB=postgres needs TEST_DATABASE_URL");
+/**
+ * E2E_S3_ENDPOINT (+ E2E_S3_ACCESS_KEY / E2E_S3_SECRET_KEY) stores the main instance's files in
+ * an S3 bucket (rustfs in CI) instead of on disk; downloads redirect to signed bucket URLs.
+ */
+const s3 = process.env.E2E_S3_ENDPOINT;
 /** Fresh each run, so the federated server registers and gets claimed anew. Tests read it. */
 process.env.E2E_FEDERATED_DIR ??= `${SCRATCH}/federated-${Date.now().toString(36)}`;
 const fedDir = process.env.E2E_FEDERATED_DIR;
@@ -42,7 +47,16 @@ export default defineConfig({
       timeout: 300_000,
       env: {
         DATABASE_URL: instanceOnPostgres ? idDb! : `sqlite://${SCRATCH}/db.sqlite`,
-        ...(instanceOnPostgres ? { DATABASE_SCHEMA: "e2e_instance", UPLOAD_DIR: `${SCRATCH}/uploads` } : {}),
+        ...(instanceOnPostgres ? { DATABASE_SCHEMA: "e2e_instance" } : {}),
+        ...(s3
+          ? {
+              S3_ENDPOINT: s3,
+              S3_PUBLIC_URL: s3,
+              S3_BUCKET: "branchr-e2e",
+              S3_ACCESS_KEY: process.env.E2E_S3_ACCESS_KEY ?? "",
+              S3_SECRET_KEY: process.env.E2E_S3_SECRET_KEY ?? "",
+            }
+          : { UPLOAD_DIR: `${SCRATCH}/uploads` }),
         API_BIND: "127.0.0.1:8080",
         SFU_URLS: "ws://127.0.0.1:8090/ws",
         MAX_UPLOAD_MB: "1",

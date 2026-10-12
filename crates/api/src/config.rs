@@ -1,6 +1,8 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
+use crate::storage::StorageConfig;
+
 /// Which accounts this server accepts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AuthMode {
@@ -25,8 +27,8 @@ pub struct Config {
     pub sfu_urls: Vec<String>,
     /// Allow anyone to register.
     pub open_registration: bool,
-    /// Where uploaded attachments are stored.
-    pub upload_dir: PathBuf,
+    /// Where uploaded files are stored: `UPLOAD_DIR`, or an S3 bucket when `S3_ENDPOINT` is set.
+    pub storage: StorageConfig,
     pub max_upload_bytes: u64,
     pub auth_mode: AuthMode,
     /// The branchr ID this server federates with.
@@ -61,7 +63,19 @@ impl Config {
                 .filter(|s| !s.is_empty())
                 .collect(),
             open_registration: var("OPEN_REGISTRATION").map(|v| v != "false").unwrap_or(true),
-            upload_dir: var("UPLOAD_DIR").map(PathBuf::from).unwrap_or_else(|| data_dir().join("uploads")),
+            storage: match var("STORAGE").as_deref().or(var("S3_ENDPOINT").map(|_| "s3")) {
+                None | Some("local") => StorageConfig::Local(upload_dir()),
+                Some("s3") => StorageConfig::S3 {
+                    endpoint: var("S3_ENDPOINT").ok_or_else(|| anyhow::anyhow!("STORAGE=s3 needs S3_ENDPOINT"))?,
+                    public_url: var("S3_PUBLIC_URL"),
+                    bucket: var("S3_BUCKET").unwrap_or_else(|| "branchr".into()),
+                    region: var("S3_REGION").unwrap_or_else(|| "us-east-1".into()),
+                    access_key: var("S3_ACCESS_KEY").ok_or_else(|| anyhow::anyhow!("STORAGE=s3 needs S3_ACCESS_KEY"))?,
+                    secret_key: var("S3_SECRET_KEY").ok_or_else(|| anyhow::anyhow!("STORAGE=s3 needs S3_SECRET_KEY"))?,
+                    path_style: var("S3_PATH_STYLE").is_none_or(|v| v != "false"),
+                },
+                Some(other) => anyhow::bail!("STORAGE must be local or s3 (got {other})"),
+            },
             max_upload_bytes: var("MAX_UPLOAD_MB").map(|v| v.parse::<u64>()).transpose()?.unwrap_or(500) * 1024 * 1024,
             auth_mode: match var("AUTH_MODE").as_deref() {
                 None | Some("local") => AuthMode::Local,
@@ -85,4 +99,9 @@ fn data_dir() -> PathBuf {
         Some(path) => std::path::Path::new(path.split('?').next().unwrap_or(path)).parent().map(PathBuf::from).unwrap_or_default(),
         None => "data".into(),
     }
+}
+
+/// `UPLOAD_DIR`: local file storage, and what `migrate-storage` copies from.
+pub fn upload_dir() -> PathBuf {
+    std::env::var("UPLOAD_DIR").ok().filter(|v| !v.is_empty()).map(PathBuf::from).unwrap_or_else(|| data_dir().join("uploads"))
 }

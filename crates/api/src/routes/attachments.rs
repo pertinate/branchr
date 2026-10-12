@@ -1,31 +1,34 @@
-//! File attachments: streamed to disk on upload, linked to a message on send.
+//! File attachments: streamed to storage on upload, linked to a message on send.
 
 use axum::Json;
 use axum::body::Body;
 use axum::extract::{Path, Request, State};
-use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
-use axum::response::{IntoResponse, Response};
+use axum::http::{HeaderMap, header};
+use axum::response::Response;
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64;
 use futures::StreamExt;
 use proto::Id;
 use proto::models::Attachment;
 use rand::RngCore;
-use tokio::io::AsyncWriteExt;
-use tower::ServiceExt;
-use tower_http::services::ServeFile;
 
 use super::channel_access;
 use crate::auth::Auth;
 use crate::db;
 use crate::error::{AppError, AppResult, bad};
 use crate::state::AppState;
+use crate::storage::Presentation;
 
 /// Content types safe to render inline on the app's own origin. Anything else (HTML, SVG,
 /// …) is served as a download so it can't run script in the client's origin.
 fn inline_safe(ct: &str) -> bool {
     matches!(ct, "image/png" | "image/jpeg" | "image/gif" | "image/webp" | "image/avif")
         || (ct.starts_with("video/") || ct.starts_with("audio/"))
+}
+
+/// Where an attachment's file is stored.
+fn key(id: impl std::fmt::Display) -> String {
+    format!("att/{id}")
 }
 
 pub fn url(id: Id, token: &str, filename: &str) -> String {
@@ -70,30 +73,21 @@ pub async fn upload(
     rand::rng().fill_bytes(&mut token);
     let token = B64.encode(token);
 
-    tokio::fs::create_dir_all(&state.config.upload_dir).await.map_err(|e| AppError::Internal(e.into()))?;
-    let path = state.config.upload_dir.join(id.to_string());
-    let mut file = tokio::fs::File::create(&path).await.map_err(|e| AppError::Internal(e.into()))?;
-    let mut size: u64 = 0;
-    let mut stream = body.into_data_stream();
-    let result: AppResult<()> = async {
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk.map_err(|e| bad(format!("upload interrupted: {e}")))?;
-            size += chunk.len() as u64;
-            if size > state.config.max_upload_bytes {
-                return Err(too_large());
-            }
-            file.write_all(&chunk).await.map_err(|e| AppError::Internal(e.into()))?;
+    let key = key(id);
+    let mut seen: u64 = 0;
+    let limit = state.config.max_upload_bytes;
+    let stream = body.into_data_stream().map(move |chunk| {
+        let chunk = chunk.map_err(|e| bad(format!("upload interrupted: {e}")))?;
+        seen += chunk.len() as u64;
+        if seen > limit {
+            return Err(too_large());
         }
-        file.flush().await.map_err(|e| AppError::Internal(e.into()))?;
-        if size == 0 {
-            return Err(bad("empty file"));
-        }
-        Ok(())
-    }
-    .await;
-    if let Err(e) = result {
-        let _ = tokio::fs::remove_file(&path).await;
-        return Err(e);
+        Ok(chunk)
+    });
+    let size = state.storage.put(&key, &content_type, stream).await?;
+    if size == 0 {
+        let _ = state.storage.delete(&key).await;
+        return Err(bad("empty file"));
     }
 
     sqlx::query(
@@ -147,26 +141,12 @@ pub async fn serve(
     if expected != token {
         return Err(AppError::NotFound);
     }
-    // ServeFile handles Range requests, so videos can seek.
-    let mut res = ServeFile::new(state.config.upload_dir.join(id.to_string()))
-        .oneshot(req)
-        .await
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("{e}")))?
-        .into_response();
-    if res.status() == StatusCode::NOT_FOUND {
-        return Err(AppError::NotFound);
-    }
-    let h = res.headers_mut();
     let inline = inline_safe(&content_type);
-    h.insert(header::CONTENT_TYPE, HeaderValue::from_str(if inline { &content_type } else { "application/octet-stream" }).unwrap_or(HeaderValue::from_static("application/octet-stream")));
-    let disposition = format!("{}; filename=\"{}\"", if inline { "inline" } else { "attachment" }, filename.replace(['"', '\r', '\n'], "_"));
-    if let Ok(v) = HeaderValue::from_str(&disposition) {
-        h.insert(header::CONTENT_DISPOSITION, v);
-    }
-    h.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
-    h.insert(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static("sandbox; default-src 'none'"));
-    h.insert(header::CACHE_CONTROL, HeaderValue::from_static("public, max-age=31536000, immutable"));
-    Ok(res)
+    // Non-ASCII names would make the header invalid; the URL keeps the real name anyway.
+    let safe_name: String = filename.chars().map(|c| if c.is_ascii_graphic() && c != '"' || c == ' ' { c } else { '_' }).collect();
+    let disposition = format!("{}; filename=\"{safe_name}\"", if inline { "inline" } else { "attachment" });
+    let content_type = if inline { content_type.as_str() } else { "application/octet-stream" };
+    state.storage.serve(&key(id), req, Presentation { content_type, disposition: &disposition }).await
 }
 
 /// Deletes files for attachments that were never sent (24h) or whose message is gone.
@@ -181,17 +161,23 @@ pub async fn gc(state: AppState) {
             .await
             .unwrap_or_default();
         for (id,) in stale {
-            let _ = tokio::fs::remove_file(state.config.upload_dir.join(id.to_string())).await;
-            let _ = sqlx::query("DELETE FROM attachments WHERE id = $1").bind(id).execute(&state.db).await;
+            if state.storage.delete(&key(id)).await.is_ok() {
+                let _ = sqlx::query("DELETE FROM attachments WHERE id = $1").bind(id).execute(&state.db).await;
+            }
         }
         // Files whose rows were removed by cascade (deleted messages/channels/guilds).
-        if let Ok(mut dir) = tokio::fs::read_dir(&state.config.upload_dir).await {
-            while let Ok(Some(entry)) = dir.next_entry().await {
-                let Some(id) = entry.file_name().to_str().and_then(|n| n.parse::<i64>().ok()) else { continue };
-                let exists: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM attachments WHERE id = $1").bind(id).fetch_optional(&state.db).await.unwrap_or(Some((1,)));
-                if exists.is_none() {
-                    let _ = tokio::fs::remove_file(entry.path()).await;
-                }
+        let keys = match state.storage.list("att/").await {
+            Ok(keys) => keys,
+            Err(e) => {
+                tracing::warn!("attachment gc: listing files failed: {e:?}");
+                continue;
+            }
+        };
+        for k in keys {
+            let Some(id) = k.strip_prefix("att/").and_then(|n| n.parse::<i64>().ok()) else { continue };
+            let exists: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM attachments WHERE id = $1").bind(id).fetch_optional(&state.db).await.unwrap_or(Some((1,)));
+            if exists.is_none() {
+                let _ = state.storage.delete(&k).await;
             }
         }
     }

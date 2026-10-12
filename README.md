@@ -124,11 +124,18 @@ Configuration is all through the environment:
 | `BRANCHR_ID_URL` | api | `https://branchr.us` | The branchr ID a federated server trusts. |
 | `INSTANCE_NAME` / `PUBLIC_URL` | api | `branchr server` / empty | Shown to the owner when claiming. |
 | `CLAIM_FILE` | api | `claim-code.txt` next to the SQLite file (`data/` on Postgres) | Where the claim code is written until the server is claimed. |
-| `UPLOAD_DIR` | api | `uploads/` next to the SQLite file (`data/` on Postgres) | Where attachments are stored (local disk for now; S3-compatible storage such as RustFS is planned). |
+| `UPLOAD_DIR` | api | `uploads/` next to the SQLite file (`data/` on Postgres) | Where attachments are stored on local disk. |
+| `S3_ENDPOINT` | api | unset | Store files in an S3-compatible bucket (rustfs, MinIO, R2, AWS) instead. Also needs `S3_ACCESS_KEY` and `S3_SECRET_KEY`. |
+| `S3_BUCKET` / `S3_REGION` | api | `branchr` / `us-east-1` | Created on startup if missing. Set `S3_PATH_STYLE=false` for virtual-host-style buckets. |
+| `S3_PUBLIC_URL` | api | unset | The bucket's endpoint as clients reach it. When set, downloads redirect to short-lived signed URLs so file traffic skips the API; otherwise the API streams them. |
 | `MAX_UPLOAD_MB` | api | `500` | Largest attachment. Sent to clients, which refuse bigger files up front. |
 | `SFU_PUBLIC_IP` | sfu | autodetected | IP put in ICE candidates. |
 | `SFU_UDP_PORT` / `SFU_WORKERS` | sfu | `50000` / #cores | Worker *i* uses `SFU_UDP_PORT + i`. |
 | `SFU_INITIAL_BWE` | sfu | `5000000` | Starting per-viewer estimate (bps). |
+
+### File storage
+
+Uploads go to `UPLOAD_DIR` on local disk unless `S3_ENDPOINT` points at an S3-compatible bucket. `deploy/docker-compose.rustfs.yml` adds a [rustfs](https://rustfs.com) container on the internal network (set `RUSTFS_ACCESS_KEY` and `RUSTFS_SECRET_KEY`). Uploads stream through the API either way, in 8 MB parts, so memory stays flat for large videos. To move existing uploads into a bucket, run `api migrate-storage` with the S3 variables set. It copies `UPLOAD_DIR` across, skips files already there, and leaves the originals in place.
 
 ## branchr ID
 
@@ -146,7 +153,7 @@ How federation works:
 4. On a `both` server, someone with an existing password account can link it to their branchr account (User Settings → My Account → Link), so Discord sign-in reaches that same account from then on.
 5. branchr ID remembers which hosts you use with your branchr account. Signing in on a new device reconnects to all of them, and "Log Out of host" forgets one.
 
-To host it, add `deploy/docker-compose.id.yml`: it runs branchr ID and its own Postgres, and Caddy serves it on `ID_DOMAIN`. It needs `ID_DOMAIN`, `ID_DB_PASSWORD`, `DISCORD_CLIENT_ID` and `DISCORD_CLIENT_SECRET` in `.env`; `scripts/deploy-image.sh` includes it when `ID_DOMAIN` is set. Run it locally against real Discord with `scripts/dev-id.sh`. It reads `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` and a Postgres `DATABASE_URL` from `~/.config/branchr/id.env`, which stays outside the repo. Tests use `TEST_DATABASE_URL` and a throwaway schema; CI provides a Postgres container and runs the e2e suite with the server on SQLite and again on Postgres (`E2E_INSTANCE_DB=postgres`, which also sets the test-only `DATABASE_SCHEMA`). The e2e emote tests talk to a local mock of 7TV, BetterTTV and FrankerFaceZ through the test-only `EMOTE_PROVIDERS_URL`.
+To host it, add `deploy/docker-compose.id.yml`: it runs branchr ID and its own Postgres, and Caddy serves it on `ID_DOMAIN`. It needs `ID_DOMAIN`, `ID_DB_PASSWORD`, `DISCORD_CLIENT_ID` and `DISCORD_CLIENT_SECRET` in `.env`; `scripts/deploy-image.sh` includes it when `ID_DOMAIN` is set. Run it locally against real Discord with `scripts/dev-id.sh`. It reads `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` and a Postgres `DATABASE_URL` from `~/.config/branchr/id.env`, which stays outside the repo. Tests use `TEST_DATABASE_URL` and a throwaway schema; CI provides Postgres and rustfs containers and runs the e2e suite twice: SQLite with files on disk, then Postgres (`E2E_INSTANCE_DB=postgres`, which also sets the test-only `DATABASE_SCHEMA`) with files in rustfs (`E2E_S3_ENDPOINT`). The e2e emote tests talk to a local mock of 7TV, BetterTTV and FrankerFaceZ through the test-only `EMOTE_PROVIDERS_URL`.
 
 ## CI/CD
 

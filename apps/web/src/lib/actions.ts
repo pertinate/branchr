@@ -15,7 +15,9 @@ export async function copy(text: string, what = "Copied") {
 }
 
 async function blobOf(url: string): Promise<Blob> {
-  const r = await fetch(url);
+  // Our own attachments come through the API, not a redirect to a bucket without CORS rules.
+  const own = /\/api\/attachments\//.test(url) && !url.includes("?");
+  const r = await fetch(own ? `${url}?proxy=1` : url);
   if (!r.ok) throw new Error(`download failed (${r.status})`);
   return r.blob();
 }
