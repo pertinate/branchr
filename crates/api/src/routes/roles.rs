@@ -5,11 +5,12 @@ use axum::Json;
 use axum::extract::{Path, State};
 use proto::Id;
 use proto::gateway::{RoleRef, ServerEvent};
-use proto::models::{Member, Role};
+use proto::models::{AuditAction, Member, Role};
 use proto::perms::{self, Permissions};
 use serde::Deserialize;
 
 use super::require_perm;
+use crate::audit::{self, Entry};
 use crate::auth::Auth;
 use crate::db;
 use crate::error::{AppError, AppResult, bad};
@@ -92,6 +93,7 @@ pub async fn create(State(state): State<AppState>, Auth(user): Auth, Path(gid): 
         .await?;
     tx.commit().await?;
     let after = broadcast(&state, gid, &before).await?;
+    audit::log(&state, gid, user, Entry::new(AuditAction::RoleCreate, Some(id), name)).await;
     after.into_iter().find(|r| r.id == id).map(Json).ok_or(AppError::NotFound)
 }
 
@@ -135,6 +137,18 @@ pub async fn update(
     if permissions != role.permissions {
         state.resync_visibility(gid, &gp).await?;
     }
+    if let Some(new) = after.iter().find(|r| r.id == rid) {
+        let hex = |c: Option<u32>| c.map(|c| format!("#{c:06x}"));
+        let entry = Entry::new(AuditAction::RoleUpdate, Some(rid), new.name.clone())
+            .change("name", Some(&role.name), Some(&new.name))
+            .change("color", hex(role.color), hex(new.color))
+            .change("permissions", Some(role.permissions), Some(new.permissions))
+            .change("hoist", Some(role.hoist), Some(new.hoist))
+            .change("mentionable", Some(role.mentionable), Some(new.mentionable));
+        if !entry.changes.is_empty() {
+            audit::log(&state, gid, user, entry).await;
+        }
+    }
     after.into_iter().find(|r| r.id == rid).map(Json).ok_or(AppError::NotFound)
 }
 
@@ -159,6 +173,7 @@ pub async fn delete(State(state): State<AppState>, Auth(user): Auth, Path((gid, 
     tx.commit().await?;
     broadcast(&state, gid, &before).await?;
     state.resync_visibility(gid, &gp).await?;
+    audit::log(&state, gid, user, Entry::new(AuditAction::RoleDelete, Some(rid), role.name.clone())).await;
     Ok(())
 }
 
@@ -218,6 +233,9 @@ async fn set_member_role(state: &AppState, actor: Id, gid: Id, target: Id, rid: 
     .await?;
     let member = db::member(&state.db, gid, target).await?;
     if r.rows_affected() > 0 {
+        let action = if on { AuditAction::MemberRoleAdd } else { AuditAction::MemberRoleRemove };
+        let role_name = db::roles(&state.db, gid).await?.into_iter().find(|r| r.id == rid).map(|r| r.name);
+        audit::log(state, gid, actor, Entry::new(action, Some(target), member.user.username.clone()).change("role", None, role_name)).await;
         state.resync_visibility(gid, &gp).await?;
         state.hub.to_guild(gid, &proto::gateway::ServerEvent::MemberUpdate(member.clone()));
     }

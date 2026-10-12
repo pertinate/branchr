@@ -5,7 +5,7 @@
 import type { ReactNode } from "react";
 import type { Member, Status } from "@app/protocol";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { AtSign, CheckCheck, Copy, LogOut, Pencil, PhoneOff, PlusCircle, Settings, Shield, Smile, Trash2, UserMinus, UserPlus, Volume2 } from "lucide-react";
+import { AtSign, Ban, CheckCheck, Copy, LogOut, Pencil, PhoneOff, PlusCircle, Settings, Shield, Smile, Trash2, UserMinus, UserPlus, Volume2 } from "lucide-react";
 
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
@@ -194,6 +194,7 @@ export function UserMenuItems({ guildId, userId }: { guildId: string; userId: st
   const member = useApp((s) => s.members[guildId]?.[userId]);
   const me = useApp((s) => s.me?.id);
   const canKick = useCan(guildId, P.KICK_MEMBERS);
+  const canBan = useCan(guildId, P.BAN_MEMBERS);
   const canRoles = useCan(guildId, P.MANAGE_ROLES);
   const outranks = useOutranks(guildId, userId);
   const viewing = useApp((s) => s.viewing);
@@ -238,12 +239,19 @@ export function UserMenuItems({ guildId, userId }: { guildId: string; userId: st
         Copy Username <Copy className="ml-auto" />
       </ContextMenuItem>
       {canRoles && <RolesSubmenu guildId={guildId} userId={userId} />}
-      {canKick && outranks && !self && (
+      {(canKick || canBan) && outranks && !self && (
         <>
           <ContextMenuSeparator />
-          <ContextMenuItem variant="destructive" onSelect={() => void kick(inst, guildId, userId)}>
-            Kick {member.nick ?? member.user.displayName} <UserMinus className="ml-auto" />
-          </ContextMenuItem>
+          {canKick && (
+            <ContextMenuItem variant="destructive" onSelect={() => void kick(inst, guildId, userId)}>
+              Kick {member.nick ?? member.user.displayName} <UserMinus className="ml-auto" />
+            </ContextMenuItem>
+          )}
+          {canBan && (
+            <ContextMenuItem variant="destructive" onSelect={() => open({ instanceId, kind: "ban", guildId, userId })}>
+              Ban {member.nick ?? member.user.displayName} <Ban className="ml-auto" />
+            </ContextMenuItem>
+          )}
         </>
       )}
       <CopyId id={userId} label="User ID" />

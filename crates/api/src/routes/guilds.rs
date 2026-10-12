@@ -8,6 +8,7 @@ use serde::Deserialize;
 
 use super::require_perm;
 use proto::perms;
+use crate::audit::{self, Entry};
 use crate::auth::Auth;
 use crate::db;
 use crate::error::{AppError, AppResult, bad};
@@ -98,6 +99,7 @@ pub async fn patch(
     Json(body): Json<PatchGuild>,
 ) -> AppResult<Json<Guild>> {
     require_perm(&state, gid, user, perms::MANAGE_GUILD).await?;
+    let before = db::guild(&state.db, gid).await?;
     if let Some(name) = body.name {
         let name = check_name(&name)?;
         sqlx::query("UPDATE guilds SET name = $1 WHERE id = $2").bind(name).bind(gid.0).execute(&state.db).await?;
@@ -106,6 +108,12 @@ pub async fn patch(
         sqlx::query("UPDATE guilds SET icon_url = $1 WHERE id = $2").bind(icon).bind(gid.0).execute(&state.db).await?;
     }
     let g = db::guild(&state.db, gid).await?;
+    let entry = Entry::new(AuditAction::GuildUpdate, Some(gid), g.name.clone())
+        .change("name", Some(&before.name), Some(&g.name))
+        .change("icon", before.icon_url.as_ref(), g.icon_url.as_ref());
+    if !entry.changes.is_empty() {
+        audit::log(&state, gid, user, entry).await;
+    }
     state.hub.to_guild(gid, &ServerEvent::GuildUpdate(g.clone()));
     Ok(Json(g))
 }
@@ -142,10 +150,13 @@ pub async fn kick(
     if !g.outranks(user, target) {
         return Err(bad("you can only kick people whose highest role is below yours"));
     }
-    remove_member(&state, gid, target).await
+    let name = db::user(&state.db, target).await?.username;
+    remove_member(&state, gid, target).await?;
+    audit::log(&state, gid, user, Entry::new(AuditAction::MemberKick, Some(target), name)).await;
+    Ok(())
 }
 
-async fn remove_member(state: &AppState, gid: Id, user: Id) -> AppResult<()> {
+pub async fn remove_member(state: &AppState, gid: Id, user: Id) -> AppResult<()> {
     let r = sqlx::query("DELETE FROM members WHERE guild_id = $1 AND user_id = $2")
         .bind(gid.0)
         .bind(user.0)
@@ -231,6 +242,9 @@ pub async fn accept_invite(
         .fetch_one(&state.db)
         .await?;
     let gid = Id(gid);
+    if super::bans::is_banned(&state, gid, user).await? {
+        return Err(AppError::Denied("you're banned from this server".into()));
+    }
     let inserted = sqlx::query("INSERT INTO members (guild_id, user_id, joined_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING")
         .bind(gid.0)
         .bind(user.0)

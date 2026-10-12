@@ -32,11 +32,12 @@ export const P = {
   MOVE_MEMBERS: 1 << 21,
   CREATE_INVITE: 1 << 22,
   ADMINISTRATOR: 1 << 23,
+  VIEW_AUDIT_LOG: 1 << 24,
 } as const;
 
 export type Perm = keyof typeof P;
 
-export const ALL_PERMS = (1 << 24) - 1;
+export const ALL_PERMS = (1 << 25) - 1;
 
 /** For settings screens, grouped as Discord does. */
 export const PERM_GROUPS: { title: string; perms: { perm: Perm; label: string; hint: string }[] }[] = [
@@ -53,6 +54,7 @@ export const PERM_GROUPS: { title: string; perms: { perm: Perm; label: string; h
       { perm: "MANAGE_NICKNAMES", label: "Manage Nicknames", hint: "Change other people's nicknames." },
       { perm: "KICK_MEMBERS", label: "Kick Members", hint: "Remove people below their highest role." },
       { perm: "BAN_MEMBERS", label: "Ban Members", hint: "Ban people below their highest role." },
+      { perm: "VIEW_AUDIT_LOG", label: "View Audit Log", hint: "See who changed what in the server." },
     ],
   },
   {

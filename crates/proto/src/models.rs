@@ -250,8 +250,95 @@ wire! {
         pub channel_id: Id,
     }
 
+    /// Someone banned from a guild.
+    pub struct GuildBan {
+        pub user: User,
+        pub reason: Option<String>,
+        pub banned_by: Option<Id>,
+        #[cfg_attr(feature = "ts", ts(type = "number"))]
+        pub created_at: i64,
+    }
+
+    /// One change in an audit log entry, as text (`None` when it didn't exist).
+    pub struct AuditChange {
+        pub key: String,
+        pub old: Option<String>,
+        pub new: Option<String>,
+    }
+
+    pub struct AuditEntry {
+        /// Also when it happened (a snowflake).
+        pub id: Id,
+        pub actor_id: Id,
+        pub action: AuditAction,
+        pub target_id: Option<Id>,
+        /// The target's name at the time (it may since have been renamed or deleted).
+        pub target_name: Option<String>,
+        pub changes: Vec<AuditChange>,
+        pub reason: Option<String>,
+    }
+
+    /// A page of the audit log, with everyone it mentions (including people who left).
+    pub struct AuditLog {
+        pub entries: Vec<AuditEntry>,
+        pub users: Vec<User>,
+    }
+
     pub struct ApiError {
         pub error: String,
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub enum AuditAction {
+    GuildUpdate,
+    ChannelCreate,
+    ChannelUpdate,
+    ChannelDelete,
+    ChannelOverwriteUpdate,
+    ChannelOverwriteDelete,
+    MemberKick,
+    MemberBanAdd,
+    MemberBanRemove,
+    MemberRoleAdd,
+    MemberRoleRemove,
+    RoleCreate,
+    RoleUpdate,
+    RoleDelete,
+    EmoteCreate,
+    EmoteUpdate,
+    EmoteDelete,
+    MessageDelete,
+}
+
+impl AuditAction {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            AuditAction::GuildUpdate => "guild_update",
+            AuditAction::ChannelCreate => "channel_create",
+            AuditAction::ChannelUpdate => "channel_update",
+            AuditAction::ChannelDelete => "channel_delete",
+            AuditAction::ChannelOverwriteUpdate => "channel_overwrite_update",
+            AuditAction::ChannelOverwriteDelete => "channel_overwrite_delete",
+            AuditAction::MemberKick => "member_kick",
+            AuditAction::MemberBanAdd => "member_ban_add",
+            AuditAction::MemberBanRemove => "member_ban_remove",
+            AuditAction::MemberRoleAdd => "member_role_add",
+            AuditAction::MemberRoleRemove => "member_role_remove",
+            AuditAction::RoleCreate => "role_create",
+            AuditAction::RoleUpdate => "role_update",
+            AuditAction::RoleDelete => "role_delete",
+            AuditAction::EmoteCreate => "emote_create",
+            AuditAction::EmoteUpdate => "emote_update",
+            AuditAction::EmoteDelete => "emote_delete",
+            AuditAction::MessageDelete => "message_delete",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        serde_json::from_value(serde_json::Value::String(s.to_owned())).ok()
     }
 }
 

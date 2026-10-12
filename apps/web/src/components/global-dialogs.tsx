@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { copy } from "@/lib/actions";
 import { InstanceProvider, instance, useInstance } from "@/lib/instances";
@@ -40,6 +41,8 @@ function DialogFor({ dialog, close }: { dialog: DialogState; close: () => void }
       return <GuildSettingsDialog guildId={dialog.guildId} tab={dialog.tab} onClose={close} />;
     case "nickname":
       return <NicknameDialog guildId={dialog.guildId} onClose={close} />;
+    case "ban":
+      return <BanDialog guildId={dialog.guildId} userId={dialog.userId} onClose={close} />;
     case "create-channel":
       return <CreateChannelDialog guildId={dialog.guildId} parentId={dialog.parentId} open onOpenChange={(o) => !o && close()} />;
     case "edit-channel":
@@ -111,6 +114,71 @@ function NicknameDialog({ guildId, onClose }: { guildId: string; onClose: () => 
               </Button>
             )}
             <Button type="submit">Save</Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+const DELETE_HISTORY = [
+  { hours: 0, label: "Don't delete any" },
+  { hours: 1, label: "Previous hour" },
+  { hours: 24, label: "Previous 24 hours" },
+  { hours: 168, label: "Previous 7 days" },
+];
+
+function BanDialog({ guildId, userId, onClose }: { guildId: string; userId: string; onClose: () => void }) {
+  const inst = useInstance();
+  const member = useApp((s) => s.members[guildId]?.[userId]);
+  const guild = useApp((s) => s.guilds[guildId]);
+  const [reason, setReason] = useState("");
+  const [hours, setHours] = useState("0");
+  const name = member ? (member.nick ?? member.user.displayName) : "them";
+  const ban = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await inst.api("PUT", `/guilds/${guildId}/bans/${userId}`, { reason: reason.trim() || null, deleteMessageHours: Number(hours) });
+      toast.success(`Banned ${name}`);
+      onClose();
+    } catch (err) {
+      toast.error((err as Error).message);
+    }
+  };
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Ban {name}</DialogTitle>
+          <DialogDescription>They're removed from {guild?.name} and can't rejoin, even with an invite, until unbanned.</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={ban} className="space-y-3">
+          <div className="space-y-1">
+            <Label htmlFor="ban-history">Delete message history</Label>
+            <Select value={hours} onValueChange={setHours}>
+              <SelectTrigger id="ban-history" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {DELETE_HISTORY.map((d) => (
+                  <SelectItem key={d.hours} value={String(d.hours)}>
+                    {d.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="ban-reason">Reason</Label>
+            <Input id="ban-reason" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={512} placeholder="Shown in the ban list and audit log" />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="destructive">
+              Ban
+            </Button>
           </div>
         </form>
       </DialogContent>

@@ -7,6 +7,7 @@ use serde::Deserialize;
 
 use super::{channel_perm, require_perm};
 use proto::perms::{self, Permissions};
+use crate::audit::{self, Entry};
 use crate::auth::Auth;
 use crate::db;
 use crate::error::{AppError, AppResult, bad};
@@ -65,6 +66,7 @@ pub async fn create(
     .await?;
     let c = db::channel(&state.db, id).await?;
     state.channel_guild.insert(id, gid);
+    audit::log(&state, gid, user, Entry::new(AuditAction::ChannelCreate, Some(id), c.name.clone())).await;
     state.to_channel(gid, id, &ServerEvent::ChannelCreate(c.clone())).await;
     Ok(Json(c))
 }
@@ -85,6 +87,7 @@ pub async fn patch(
 ) -> AppResult<Json<Channel>> {
     let c = db::channel(&state.db, cid).await?;
     require_perm(&state, c.guild_id, user, perms::MANAGE_CHANNELS).await?;
+    let before = c.clone();
     if let Some(name) = body.name {
         let name = normalize(&name, c.kind)?;
         sqlx::query("UPDATE channels SET name = $1 WHERE id = $2").bind(name).bind(cid.0).execute(&state.db).await?;
@@ -99,6 +102,13 @@ pub async fn patch(
         sqlx::query("UPDATE channels SET position = $1 WHERE id = $2").bind(pos).bind(cid.0).execute(&state.db).await?;
     }
     let c = db::channel(&state.db, cid).await?;
+    let entry = Entry::new(AuditAction::ChannelUpdate, Some(cid), c.name.clone())
+        .change("name", Some(&before.name), Some(&c.name))
+        .change("topic", before.topic.as_ref(), c.topic.as_ref());
+    // Reordering alone isn't worth an entry.
+    if !entry.changes.is_empty() {
+        audit::log(&state, c.guild_id, user, entry).await;
+    }
     state.to_channel(c.guild_id, cid, &ServerEvent::ChannelUpdate(c.clone())).await;
     Ok(Json(c))
 }
@@ -120,6 +130,7 @@ pub async fn delete(State(state): State<AppState>, Auth(user): Auth, Path(cid): 
     state.to_channel(c.guild_id, cid, &ServerEvent::ChannelDelete(ChannelRef { id: cid, guild_id: c.guild_id })).await;
     state.channel_guild.remove(&cid);
     state.perms.invalidate(c.guild_id);
+    audit::log(&state, c.guild_id, user, Entry::new(AuditAction::ChannelDelete, Some(cid), c.name)).await;
     Ok(())
 }
 
@@ -170,7 +181,12 @@ pub async fn put_overwrite(
     .bind(deny as i64)
     .execute(&state.db)
     .await?;
-    overwrites_changed(&state, gid, cid, &before).await
+    let c = overwrites_changed(&state, gid, cid, &before).await?;
+    let entry = Entry::new(AuditAction::ChannelOverwriteUpdate, Some(cid), c.name.clone())
+        .change(&format!("{} {} allow", body.kind.as_str(), target), old.as_ref().map(|o| o.allow), Some(allow))
+        .change(&format!("{} {} deny", body.kind.as_str(), target), old.as_ref().map(|o| o.deny), Some(deny));
+    audit::log(&state, gid, user, entry).await;
+    Ok(c)
 }
 
 pub async fn delete_overwrite(
@@ -189,7 +205,10 @@ pub async fn delete_overwrite(
         .bind(target.0)
         .execute(&state.db)
         .await?;
-    overwrites_changed(&state, gid, cid, &before).await
+    let c = overwrites_changed(&state, gid, cid, &before).await?;
+    let entry = Entry::new(AuditAction::ChannelOverwriteDelete, Some(cid), c.name.clone()).change(&format!("{} {}", kind.as_str(), target), Some("set"), None);
+    audit::log(&state, gid, user, entry).await;
+    Ok(c)
 }
 
 async fn overwrites_changed(state: &AppState, gid: Id, cid: Id, before: &GuildPerms) -> AppResult<Json<Channel>> {

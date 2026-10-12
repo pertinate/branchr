@@ -5,8 +5,9 @@ use proto::gateway::{EmoteRef, ServerEvent};
 use proto::models::*;
 use serde::Deserialize;
 
-use super::{require_member, require_perm};
+use super::require_perm;
 use proto::perms;
+use crate::audit::{self, Entry};
 use crate::auth::Auth;
 use crate::db;
 use crate::emote_providers::{Link, ProviderError, parse_link};
@@ -87,7 +88,7 @@ pub async fn add(
     Path(gid): Path<Id>,
     Json(body): Json<AddEmote>,
 ) -> AppResult<Json<Emote>> {
-    require_member(&state, gid, user).await?;
+    require_perm(&state, gid, user, perms::MANAGE_EMOTES).await?;
     let (provider, provider_id) = match (body.url.as_deref(), body.provider_id) {
         (Some(url), _) => match parse_link(url) {
             Some(Link::Emote(p, id)) => (p, id),
@@ -102,10 +103,11 @@ pub async fn add(
     if !valid_name(&e.name) {
         return Err(bad("emote names may contain letters, numbers, _ - ! ?"));
     }
-    insert(&state, gid, &e)
+    let emote = insert(&state, gid, &e)
         .await?
-        .map(Json)
-        .ok_or_else(|| AppError::Conflict("an emote with that name exists, or the emote limit was reached".into()))
+        .ok_or_else(|| AppError::Conflict("an emote with that name exists, or the emote limit was reached".into()))?;
+    audit::log(&state, gid, user, Entry::new(AuditAction::EmoteCreate, Some(emote.id), emote.name.clone())).await;
+    Ok(Json(emote))
 }
 
 #[derive(Deserialize)]
@@ -162,6 +164,10 @@ pub async fn import_set(
             added.push(e);
         }
     }
+    if !added.is_empty() {
+        let what = format!("{} emotes from {}", added.len(), body.source.trim());
+        audit::log(&state, gid, user, Entry::new(AuditAction::EmoteCreate, None, what)).await;
+    }
     Ok(Json(EmoteImport { added, found: found as u32 }))
 }
 
@@ -183,6 +189,7 @@ pub async fn rename(
     if !valid_name(name) {
         return Err(bad("emote names are 1-64 letters, numbers, _ - ! ?"));
     }
+    let old = db::emote(&state.db, eid).await?;
     let r = sqlx::query("UPDATE emotes SET name = $1 WHERE id = $2 AND guild_id = $3")
         .bind(name)
         .bind(eid.0)
@@ -197,6 +204,8 @@ pub async fn rename(
         return Err(AppError::NotFound);
     }
     let emote = db::emote(&state.db, eid).await?;
+    let entry = Entry::new(AuditAction::EmoteUpdate, Some(eid), emote.name.clone()).change("name", Some(&old.name), Some(&emote.name));
+    audit::log(&state, gid, user, entry).await;
     state.hub.to_guild(gid, &ServerEvent::EmoteUpdate(emote.clone()));
     Ok(Json(emote))
 }
@@ -207,10 +216,12 @@ pub async fn remove(
     Path((gid, eid)): Path<(Id, Id)>,
 ) -> AppResult<()> {
     require_perm(&state, gid, user, perms::MANAGE_EMOTES).await?;
+    let name = db::emote(&state.db, eid).await.ok().filter(|e| e.guild_id == gid).map(|e| e.name);
     let r = sqlx::query("DELETE FROM emotes WHERE id = $1 AND guild_id = $2").bind(eid.0).bind(gid.0).execute(&state.db).await?;
     if r.rows_affected() == 0 {
         return Err(AppError::NotFound);
     }
+    audit::log(&state, gid, user, Entry::new(AuditAction::EmoteDelete, Some(eid), name)).await;
     state.hub.to_guild(gid, &ServerEvent::EmoteDelete(EmoteRef { id: eid, guild_id: gid }));
     Ok(())
 }

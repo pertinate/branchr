@@ -8,6 +8,8 @@ pub enum AppError {
     BadRequest(String),
     Unauthorized,
     Forbidden,
+    /// 403 with a reason worth showing.
+    Denied(String),
     NotFound,
     Conflict(String),
     TooManyRequests,
@@ -24,6 +26,7 @@ impl IntoResponse for AppError {
             AppError::BadRequest(m) => (StatusCode::BAD_REQUEST, m),
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized".into()),
             AppError::Forbidden => (StatusCode::FORBIDDEN, "forbidden".into()),
+            AppError::Denied(m) => (StatusCode::FORBIDDEN, m),
             AppError::NotFound => (StatusCode::NOT_FOUND, "not found".into()),
             AppError::Conflict(m) => (StatusCode::CONFLICT, m),
             AppError::TooManyRequests => (StatusCode::TOO_MANY_REQUESTS, "slow down".into()),

@@ -7,6 +7,7 @@ use serde::Deserialize;
 
 use super::channel_perm;
 use proto::perms;
+use crate::audit::{self, Entry};
 use crate::auth::Auth;
 use crate::db;
 use crate::error::{AppError, AppResult, bad};
@@ -248,7 +249,8 @@ pub async fn delete(
     Path((cid, mid)): Path<(Id, Id)>,
 ) -> AppResult<()> {
     let (guild, gp) = channel_perm(&state, cid, user, 0).await?;
-    let moderator = gp.has(user, perms::MANAGE_MESSAGES);
+    let moderator = gp.can_in(user, cid, perms::MANAGE_MESSAGES);
+    let author: Option<(i64,)> = sqlx::query_as("SELECT author_id FROM messages WHERE id = $1 AND channel_id = $2").bind(mid.0).bind(cid.0).fetch_optional(&state.db).await?;
     let r = sqlx::query("DELETE FROM messages WHERE id = $1 AND channel_id = $2 AND (author_id = $3 OR $4)")
         .bind(mid.0)
         .bind(cid.0)
@@ -258,6 +260,12 @@ pub async fn delete(
         .await?;
     if r.rows_affected() == 0 {
         return Err(AppError::NotFound);
+    }
+    // Deleting someone else's message is a moderation action.
+    if let Some((author,)) = author.filter(|(a,)| *a != user.0) {
+        let name = db::user(&state.db, Id(author)).await.ok().map(|u| u.username);
+        let channel = db::channel(&state.db, cid).await.ok().map(|c| c.name);
+        audit::log(&state, guild, user, Entry::new(AuditAction::MessageDelete, Some(Id(author)), name).change("channel", None, channel)).await;
     }
     state.to_channel(guild, cid, &ServerEvent::MessageDelete(MessageRef { id: mid, channel_id: cid })).await;
     Ok(())

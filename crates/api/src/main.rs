@@ -1,3 +1,4 @@
+mod audit;
 mod auth;
 mod config;
 mod db;
@@ -29,7 +30,7 @@ use tower_http::services::{ServeDir, ServeFile};
 use tracing_subscriber::EnvFilter;
 
 use crate::config::Config;
-use crate::routes::{admin, attachments, channels, emotes, guilds, messages, roles, users};
+use crate::routes::{admin, attachments, bans, channels, emotes, guilds, messages, roles, users};
 use crate::state::{AppState, State};
 
 #[tokio::main]
@@ -99,6 +100,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/guilds/{gid}", patch(guilds::patch).delete(guilds::delete))
         .route("/guilds/{gid}/members/@me", delete(guilds::leave).patch(guilds::patch_me_member))
         .route("/guilds/{gid}/members/{uid}", delete(guilds::kick))
+        .route("/guilds/{gid}/bans", get(bans::list))
+        .route("/guilds/{gid}/bans/{uid}", put(bans::ban).delete(bans::unban))
+        .route("/guilds/{gid}/audit-log", get(bans::audit_log))
         .route("/guilds/{gid}/members/{uid}/roles/{rid}", put(roles::add_member_role).delete(roles::remove_member_role))
         .route("/guilds/{gid}/roles", post(roles::create).patch(roles::reorder))
         .route("/guilds/{gid}/roles/{rid}", patch(roles::update).delete(roles::delete))
@@ -122,6 +126,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/health", get(|| async { "ok" }));
 
     tokio::spawn(attachments::gc(state.clone()));
+    tokio::spawn(audit::trim(state.clone()));
 
     let mut app = Router::new().nest("/api", api).route("/gateway", get(gateway::upgrade));
 

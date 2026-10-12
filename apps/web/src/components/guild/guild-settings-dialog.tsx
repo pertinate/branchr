@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useDebounced } from "@/hooks/use-debounced";
+import { AuditLogSettings, BansSettings } from "@/components/guild/moderation-settings";
 import { RolesSettings } from "@/components/guild/roles-settings";
 import { useInstance } from "@/lib/instances";
 import { P, useCan } from "@/lib/perms";
@@ -18,11 +19,15 @@ import { type EmoteSource, emoteSource, emoteSrcSet, emoteUrl, providerNames } f
 import { cn } from "@/lib/utils";
 import { useApp } from "@/stores/app";
 
-export function GuildSettingsDialog({ guildId, tab, onClose }: { guildId: string; tab: "overview" | "roles" | "emotes"; onClose: () => void }) {
+type Tab = "overview" | "roles" | "emotes" | "bans" | "audit";
+
+export function GuildSettingsDialog({ guildId, tab, onClose }: { guildId: string; tab: Tab; onClose: () => void }) {
   const canGuild = useCan(guildId, P.MANAGE_GUILD);
   const canRoles = useCan(guildId, P.MANAGE_ROLES);
   const canEmotes = useCan(guildId, P.MANAGE_EMOTES);
-  const allowed = { overview: canGuild, roles: canRoles, emotes: true };
+  const canBans = useCan(guildId, P.BAN_MEMBERS);
+  const canAudit = useCan(guildId, P.VIEW_AUDIT_LOG);
+  const allowed: Record<Tab, boolean> = { overview: canGuild, roles: canRoles, emotes: true, bans: canBans, audit: canAudit };
   const first = allowed[tab] ? tab : canGuild ? "overview" : canRoles ? "roles" : "emotes";
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -35,6 +40,8 @@ export function GuildSettingsDialog({ guildId, tab, onClose }: { guildId: string
             {canGuild && <TabsTrigger value="overview">Overview</TabsTrigger>}
             {canRoles && <TabsTrigger value="roles">Roles</TabsTrigger>}
             <TabsTrigger value="emotes">Emotes</TabsTrigger>
+            {canBans && <TabsTrigger value="bans">Bans</TabsTrigger>}
+            {canAudit && <TabsTrigger value="audit">Audit Log</TabsTrigger>}
           </TabsList>
           {canGuild && (
             <TabsContent value="overview">
@@ -49,6 +56,16 @@ export function GuildSettingsDialog({ guildId, tab, onClose }: { guildId: string
           <TabsContent value="emotes" className="min-h-0 flex-1">
             <Emotes guildId={guildId} canManage={canEmotes} />
           </TabsContent>
+          {canBans && (
+            <TabsContent value="bans" className="min-h-0 flex-1">
+              <BansSettings guildId={guildId} />
+            </TabsContent>
+          )}
+          {canAudit && (
+            <TabsContent value="audit" className="min-h-0 flex-1">
+              <AuditLogSettings guildId={guildId} />
+            </TabsContent>
+          )}
         </Tabs>
       </DialogContent>
     </Dialog>

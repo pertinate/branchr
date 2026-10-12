@@ -41,9 +41,10 @@ perms! {
     MOVE_MEMBERS = 21,
     CREATE_INVITE = 22,
     ADMINISTRATOR = 23,
+    VIEW_AUDIT_LOG = 24,
 }
 
-pub const ALL: Permissions = (1 << 24) - 1;
+pub const ALL: Permissions = (1 << 25) - 1;
 
 /// What `@everyone` can do in a new server: talk, react, join voice, invite, and ping
 /// @everyone/@here (owners can take that away).

@@ -1,6 +1,10 @@
 // Re-exports of types generated from crates/proto by ts-rs.
 export type * from "./generated/ApiError";
 export type * from "./generated/Attachment";
+export type * from "./generated/AuditAction";
+export type * from "./generated/AuditChange";
+export type * from "./generated/AuditEntry";
+export type * from "./generated/AuditLog";
 export type * from "./generated/AuthResponse";
 export type * from "./generated/Channel";
 export type * from "./generated/ChannelKind";
@@ -12,6 +16,7 @@ export type * from "./generated/EmoteProvider";
 export type * from "./generated/EmoteRef";
 export type * from "./generated/ExternalEmote";
 export type * from "./generated/Guild";
+export type * from "./generated/GuildBan";
 export type * from "./generated/GuildRef";
 export type * from "./generated/Hello";
 export type * from "./generated/HostGuild";

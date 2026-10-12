@@ -4,7 +4,8 @@ import { persist } from "zustand/middleware";
 /** Dialogs any menu can open; rendered once by `GlobalDialogs`, for `instanceId`. */
 export type DialogState = { instanceId: string } & (
   | { kind: "invite"; guildId: string }
-  | { kind: "guild-settings"; guildId: string; tab: "overview" | "roles" | "emotes" }
+  | { kind: "guild-settings"; guildId: string; tab: "overview" | "roles" | "emotes" | "bans" | "audit" }
+  | { kind: "ban"; guildId: string; userId: string }
   | { kind: "nickname"; guildId: string }
   | { kind: "create-channel"; guildId: string; parentId: string | null }
   | { kind: "edit-channel"; channelId: string }
