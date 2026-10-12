@@ -8,6 +8,7 @@ import { AudioRenderer } from "@/components/voice/audio-renderer";
 import { syncHosts } from "@/lib/host-sync";
 import { startInstances, useSessions } from "@/lib/instances";
 import { startNotifications } from "@/lib/notify";
+import { startSocial } from "@/lib/social";
 
 export const Route = createFileRoute("/_app")({
   beforeLoad: ({ location }) => {
@@ -24,10 +25,12 @@ function AppLayout() {
   useEffect(() => {
     const stopInstances = startInstances();
     const stopNotifications = startNotifications();
+    const stopSocial = startSocial();
     void syncHosts();
     return () => {
       stopNotifications();
       stopInstances();
+      stopSocial();
     };
   }, []);
 

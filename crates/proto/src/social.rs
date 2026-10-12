@@ -138,7 +138,7 @@ pub enum SocialEvent {
 
 /// Sent to branchr ID's gateway.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "op", content = "d", rename_all = "snake_case")]
+#[serde(tag = "op", content = "d", rename_all = "snake_case", rename_all_fields = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub enum SocialOp {
     Identify { token: String },

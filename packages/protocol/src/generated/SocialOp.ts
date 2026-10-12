@@ -4,4 +4,4 @@ import type { Id } from "./Id";
 /**
  * Sent to branchr ID's gateway.
  */
-export type SocialOp = { "op": "identify", "d": { token: string, } } | { "op": "heartbeat" } | { "op": "typing", "d": { channel_id: Id, } } | { "op": "ack", "d": { channel_id: Id, message_id: Id, } };
+export type SocialOp = { "op": "identify", "d": { token: string, } } | { "op": "heartbeat" } | { "op": "typing", "d": { channelId: Id, } } | { "op": "ack", "d": { channelId: Id, messageId: Id, } };

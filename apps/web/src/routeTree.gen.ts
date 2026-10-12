@@ -13,8 +13,11 @@ import { Route as AppRouteImport } from './routes/_app'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppInstanceRouteImport } from './routes/_app/$instance'
+import { Route as AppHomeRouteImport } from './routes/_app/home'
 import { Route as AppInstanceIndexRouteImport } from './routes/_app/$instance/index'
 import { Route as AppInstanceGuildIdRouteImport } from './routes/_app/$instance/$guildId'
+import { Route as AppHomeIndexRouteImport } from './routes/_app/home/index'
+import { Route as AppHomeChannelIdRouteImport } from './routes/_app/home/$channelId'
 import { Route as AppInstanceGuildIdIndexRouteImport } from './routes/_app/$instance/$guildId/index'
 import { Route as AppInstanceGuildIdChannelIdRouteImport } from './routes/_app/$instance/$guildId/$channelId'
 
@@ -37,6 +40,11 @@ const AppInstanceRoute = AppInstanceRouteImport.update({
   path: '/$instance',
   getParentRoute: () => AppRoute,
 } as any)
+const AppHomeRoute = AppHomeRouteImport.update({
+  id: '/home',
+  path: '/home',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppInstanceIndexRoute = AppInstanceIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -46,6 +54,16 @@ const AppInstanceGuildIdRoute = AppInstanceGuildIdRouteImport.update({
   id: '/$guildId',
   path: '/$guildId',
   getParentRoute: () => AppInstanceRoute,
+} as any)
+const AppHomeIndexRoute = AppHomeIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppHomeRoute,
+} as any)
+const AppHomeChannelIdRoute = AppHomeChannelIdRouteImport.update({
+  id: '/$channelId',
+  path: '/$channelId',
+  getParentRoute: () => AppHomeRoute,
 } as any)
 const AppInstanceGuildIdIndexRoute = AppInstanceGuildIdIndexRouteImport.update({
   id: '/',
@@ -63,15 +81,20 @@ export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/login': typeof LoginRoute
   '/$instance': typeof AppInstanceRouteWithChildren
+  '/home': typeof AppHomeRouteWithChildren
   '/$instance/$guildId': typeof AppInstanceGuildIdRouteWithChildren
+  '/home/$channelId': typeof AppHomeChannelIdRoute
   '/$instance/': typeof AppInstanceIndexRoute
+  '/home/': typeof AppHomeIndexRoute
   '/$instance/$guildId/$channelId': typeof AppInstanceGuildIdChannelIdRoute
   '/$instance/$guildId/': typeof AppInstanceGuildIdIndexRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/': typeof AppIndexRoute
+  '/home/$channelId': typeof AppHomeChannelIdRoute
   '/$instance': typeof AppInstanceIndexRoute
+  '/home': typeof AppHomeIndexRoute
   '/$instance/$guildId/$channelId': typeof AppInstanceGuildIdChannelIdRoute
   '/$instance/$guildId': typeof AppInstanceGuildIdIndexRoute
 }
@@ -80,9 +103,12 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
   '/_app/$instance': typeof AppInstanceRouteWithChildren
+  '/_app/home': typeof AppHomeRouteWithChildren
   '/_app/': typeof AppIndexRoute
   '/_app/$instance/$guildId': typeof AppInstanceGuildIdRouteWithChildren
+  '/_app/home/$channelId': typeof AppHomeChannelIdRoute
   '/_app/$instance/': typeof AppInstanceIndexRoute
+  '/_app/home/': typeof AppHomeIndexRoute
   '/_app/$instance/$guildId/$channelId': typeof AppInstanceGuildIdChannelIdRoute
   '/_app/$instance/$guildId/': typeof AppInstanceGuildIdIndexRoute
 }
@@ -92,15 +118,20 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/$instance'
+    | '/home'
     | '/$instance/$guildId'
+    | '/home/$channelId'
     | '/$instance/'
+    | '/home/'
     | '/$instance/$guildId/$channelId'
     | '/$instance/$guildId/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
     | '/'
+    | '/home/$channelId'
     | '/$instance'
+    | '/home'
     | '/$instance/$guildId/$channelId'
     | '/$instance/$guildId'
   id:
@@ -108,9 +139,12 @@ export interface FileRouteTypes {
     | '/_app'
     | '/login'
     | '/_app/$instance'
+    | '/_app/home'
     | '/_app/'
     | '/_app/$instance/$guildId'
+    | '/_app/home/$channelId'
     | '/_app/$instance/'
+    | '/_app/home/'
     | '/_app/$instance/$guildId/$channelId'
     | '/_app/$instance/$guildId/'
   fileRoutesById: FileRoutesById
@@ -150,6 +184,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppInstanceRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/home': {
+      id: '/_app/home'
+      path: '/home'
+      fullPath: '/home'
+      preLoaderRoute: typeof AppHomeRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/$instance/': {
       id: '/_app/$instance/'
       path: '/'
@@ -163,6 +204,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/$instance/$guildId'
       preLoaderRoute: typeof AppInstanceGuildIdRouteImport
       parentRoute: typeof AppInstanceRoute
+    }
+    '/_app/home/': {
+      id: '/_app/home/'
+      path: '/'
+      fullPath: '/home/'
+      preLoaderRoute: typeof AppHomeIndexRouteImport
+      parentRoute: typeof AppHomeRoute
+    }
+    '/_app/home/$channelId': {
+      id: '/_app/home/$channelId'
+      path: '/$channelId'
+      fullPath: '/home/$channelId'
+      preLoaderRoute: typeof AppHomeChannelIdRouteImport
+      parentRoute: typeof AppHomeRoute
     }
     '/_app/$instance/$guildId/': {
       id: '/_app/$instance/$guildId/'
@@ -208,13 +263,28 @@ const AppInstanceRouteWithChildren = AppInstanceRoute._addFileChildren(
   AppInstanceRouteChildren,
 )
 
+interface AppHomeRouteChildren {
+  AppHomeChannelIdRoute: typeof AppHomeChannelIdRoute
+  AppHomeIndexRoute: typeof AppHomeIndexRoute
+}
+
+const AppHomeRouteChildren: AppHomeRouteChildren = {
+  AppHomeChannelIdRoute: AppHomeChannelIdRoute,
+  AppHomeIndexRoute: AppHomeIndexRoute,
+}
+
+const AppHomeRouteWithChildren =
+  AppHomeRoute._addFileChildren(AppHomeRouteChildren)
+
 interface AppRouteChildren {
   AppInstanceRoute: typeof AppInstanceRouteWithChildren
+  AppHomeRoute: typeof AppHomeRouteWithChildren
   AppIndexRoute: typeof AppIndexRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
   AppInstanceRoute: AppInstanceRouteWithChildren,
+  AppHomeRoute: AppHomeRouteWithChildren,
   AppIndexRoute: AppIndexRoute,
 }
 

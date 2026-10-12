@@ -1,6 +1,6 @@
 import type { ReadyGuild } from "@app/protocol";
-import { Link, useNavigate, useParams } from "@tanstack/react-router";
-import { Copy, LogOut, Plus, Settings, Volume2 } from "lucide-react";
+import { Link, useNavigate, useParams, useRouterState } from "@tanstack/react-router";
+import { Copy, LogOut, MessagesSquare, Plus, Settings, Volume2 } from "lucide-react";
 import { memo, useState } from "react";
 import { toast } from "sonner";
 
@@ -21,6 +21,7 @@ import { forgetHost } from "@/lib/host-sync";
 import { compareIds } from "@/lib/ids";
 import { type Instance, InstanceProvider, hostOf, instance, instanceKey, useActive, useInstance, useInstanceList } from "@/lib/instances";
 import { useMediaUrl } from "@/lib/media";
+import { isUnread, useSocial } from "@/lib/social";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/stores/app";
 import { useDialogs } from "@/stores/ui";
@@ -167,6 +168,8 @@ export function ServerRail() {
   return (
     <nav aria-label="Servers" className="relative flex w-[72px] shrink-0 flex-col items-center py-3">
       <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-2 overflow-y-auto pb-3">
+        <HomeButton />
+        <div className="mx-auto h-0.5 w-8 shrink-0 rounded bg-accent" />
         {ids.map((id, i) => {
           const inst = instance(id);
           if (!inst) return null;
@@ -317,5 +320,37 @@ function AddServerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
         </Tabs>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** Friends and direct messages (on your branchr account), with unread DMs and requests. */
+function HomeButton() {
+  const active = useRouterState({ select: (s) => s.location.pathname.startsWith("/home") });
+  const count = useSocial(
+    (s) => Object.values(s.channels).filter((c) => isUnread(c) && c.id !== s.viewing).length + Object.values(s.relationships).filter((r) => r.kind === "incoming").length,
+  );
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Link to="/home" aria-label="Direct Messages" className="group relative flex w-full justify-center">
+          <span
+            className={cn(
+              "absolute top-1/2 left-0 w-1 -translate-y-1/2 rounded-r-full bg-foreground transition-all",
+              active ? "h-10" : "h-0 group-hover:h-5",
+            )}
+          />
+          <div
+            className={cn(
+              "grid size-12 place-items-center transition-all",
+              active ? "rounded-2xl bg-primary text-white" : "rounded-3xl bg-background group-hover:rounded-2xl group-hover:bg-primary group-hover:text-white",
+            )}
+          >
+            <MessagesSquare className="size-6" />
+          </div>
+          {count > 0 && <MentionBadge count={count} className="absolute right-1 bottom-0 border-4 border-rail" />}
+        </Link>
+      </TooltipTrigger>
+      <TooltipContent side="right">Direct Messages</TooltipContent>
+    </Tooltip>
   );
 }
