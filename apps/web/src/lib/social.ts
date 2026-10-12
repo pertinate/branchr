@@ -57,6 +57,9 @@ export function isUnread(c: DmChannel): boolean {
   return !!c.lastMessageId && (!c.lastReadId || compareIds(c.lastMessageId, c.lastReadId) > 0);
 }
 
+/** Called for each new DM from someone else (notifications). */
+export const dmListeners = new Set<(m: DmMessage) => void>();
+
 function apply(ev: SocialEvent) {
   switch (ev.t) {
     case "READY": {
@@ -99,7 +102,10 @@ function apply(ev: SocialEvent) {
         const typing = s.typing[m.channelId]?.[m.author.id] ? { ...s.typing, [m.channelId]: without(s.typing[m.channelId], m.author.id) } : s.typing;
         return c ? { channels: { ...s.channels, [c.id]: { ...c, lastMessageId: m.id, lastReadId: seen ? m.id : c.lastReadId } }, typing } : { typing };
       });
-      if (get().viewing === m.channelId && m.author.id !== get().me?.id) ack(m.channelId);
+      if (m.author.id !== get().me?.id) {
+        if (get().viewing === m.channelId) ack(m.channelId);
+        for (const l of dmListeners) l(m);
+      }
       if (!get().threads[m.channelId]) return;
       patchThread(m.channelId, (t) => {
         const pending = m.nonce ? t.items.findIndex((x) => x.nonce === m.nonce && x.pending) : -1;

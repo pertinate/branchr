@@ -1,8 +1,9 @@
-import type { Message } from "@app/protocol";
+import type { DmMessage, Message } from "@app/protocol";
 
 import { desktop } from "@/lib/desktop";
 import { type Instance, instance, instances, useActive, useInstanceList } from "@/lib/instances";
 import { mentionsMe, plainText } from "@/lib/mentions";
+import { dmListeners, isUnread, useSocial } from "@/lib/social";
 
 /** A short two-note chime, synthesized so there's no asset to ship. */
 let audio: AudioContext | null = null;
@@ -28,27 +29,37 @@ function chime() {
   }
 }
 
-/** Notifies about a message that mentions us, unless it's on screen in a focused window. */
-function notifyMention(inst: Instance, m: Message) {
-  const s = inst.app.getState();
-  const onScreen = useActive.getState().id === inst.id && s.viewing === m.channelId;
-  if (onScreen && document.hasFocus()) return;
+/** A chime and a desktop (or browser) notification. */
+function show(title: string, body: string, tag: string) {
   chime();
-  const channel = s.channels[m.channelId];
-  const guildId = channel?.guildId;
-  const guild = guildId ? s.guilds[guildId] : undefined;
-  const author = (guildId && s.members[guildId]?.[m.author.id]?.nick) || m.author.displayName;
-  const title = `${author} (#${channel?.name ?? "unknown"}${guild ? `, ${guild.name}` : ""})`;
-  const body = plainText(m, guildId, s) || (m.attachments.length ? "Sent an attachment" : "");
   if (desktop) return desktop.notify(title, body);
   if (typeof Notification === "undefined" || document.hasFocus()) return;
   if (Notification.permission === "granted") {
-    const n = new Notification(title, { body, icon: "/icon.png", tag: m.id });
+    const n = new Notification(title, { body, icon: "/icon.png", tag });
     n.onclick = () => {
       window.focus();
       n.close();
     };
   }
+}
+
+/** Notifies about a message that mentions us, unless it's on screen in a focused window. */
+function notifyMention(inst: Instance, m: Message) {
+  const s = inst.app.getState();
+  const onScreen = useActive.getState().id === inst.id && s.viewing === m.channelId;
+  if (onScreen && document.hasFocus()) return;
+  const channel = s.channels[m.channelId];
+  const guildId = channel?.guildId;
+  const guild = guildId ? s.guilds[guildId] : undefined;
+  const author = (guildId && s.members[guildId]?.[m.author.id]?.nick) || m.author.displayName;
+  const title = `${author} (#${channel?.name ?? "unknown"}${guild ? `, ${guild.name}` : ""})`;
+  show(title, plainText(m, guildId, s) || (m.attachments.length ? "Sent an attachment" : ""), m.id);
+}
+
+/** Every DM notifies (they're all to you), unless that conversation is on screen. */
+function notifyDm(m: DmMessage) {
+  if (useSocial.getState().viewing === m.channelId && document.hasFocus()) return;
+  show(m.author.displayName, m.content.replace(/\s+/g, " ").trim(), m.id);
 }
 
 /**
@@ -65,6 +76,8 @@ export function startNotifications(): () => void {
   const badge = () => {
     let total = 0;
     for (const i of instances()) for (const n of Object.values(i.app.getState().pings)) total += n;
+    // Each unread DM counts as one, like a mention.
+    for (const c of Object.values(useSocial.getState().channels)) if (isUnread(c)) total += 1;
     if (total === last) return;
     last = total;
     desktop?.setBadge(total);
@@ -93,8 +106,12 @@ export function startNotifications(): () => void {
   };
   attach();
   const offList = useInstanceList.subscribe(attach);
+  dmListeners.add(notifyDm);
+  const offSocial = useSocial.subscribe((s, prev) => s.channels !== prev.channels && badge());
   return () => {
     offList();
+    dmListeners.delete(notifyDm);
+    offSocial();
     for (const off of attached.values()) off();
     desktop?.setBadge(0);
     document.title = base;

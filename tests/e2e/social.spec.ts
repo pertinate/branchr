@@ -41,7 +41,9 @@ test("friends and DMs: request, accept, chat live, edit, block", async ({ browse
   await expect(bob.getByTestId("dm-message").filter({ hasText: "hello nelly" })).toBeVisible();
   const dm = alice.getByRole("link", { name: `Message ${bobName}` });
   await expect(dm.getByTestId("dm-unread")).toBeVisible();
+  await expect(alice).toHaveTitle(/^\(1\) /);
   await dm.click();
+  await expect(alice).not.toHaveTitle(/^\(/);
   await expect(alice.getByTestId("dm-message").filter({ hasText: "hello nelly" })).toBeVisible();
   await expect(dm.getByTestId("dm-unread")).toHaveCount(0);
 
