@@ -69,6 +69,8 @@ export default defineConfig({
         SFU_URLS: "ws://127.0.0.1:8090/ws",
         MAX_UPLOAD_MB: "1",
         EMOTE_PROVIDERS_URL: "http://localhost:8072",
+        // Link previews of the mock pages on localhost.
+        EMBED_ALLOW_PRIVATE: "1",
         // With branchr ID around, this host takes branchr accounts too (password logins still work).
         ...(idDb
           ? { AUTH_MODE: "both", BRANCHR_ID_URL: "http://localhost:8070", INSTANCE_NAME: "e2e home", PUBLIC_URL: "http://localhost:8080", CLAIM_FILE: `${SCRATCH}/claim-code.txt`, BRANCHR_POLL_SECS: "1" }

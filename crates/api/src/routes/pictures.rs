@@ -23,7 +23,7 @@ use crate::thumbs::{self, Fit};
 
 /// Largest picture accepted before resizing.
 pub const MAX_BYTES: usize = 10 * 1024 * 1024;
-const PREFIX: &str = "/api/files/";
+pub const PREFIX: &str = "/api/files/";
 
 /// Fits and stores a picture, returning its URL path.
 async fn store(state: &AppState, folder: String, kind: &str, body: Bytes, fit: Fit) -> AppResult<String> {
@@ -114,7 +114,7 @@ pub async fn delete_avatar(State(state): State<AppState>, Auth(user): Auth) -> A
 
 /// Public: icons and avatars show on invites and to anyone who sees the person.
 pub async fn serve(State(state): State<AppState>, Path(key): Path<String>, req: Request) -> AppResult<Response> {
-    let ok = (key.starts_with("guild/") || key.starts_with("avatar/")) && !key.contains("..") && key.len() < 200;
+    let ok = (key.starts_with("guild/") || key.starts_with("avatar/") || key.starts_with("embed/")) && !key.contains("..") && key.len() < 200;
     let ct = match key.rsplit_once('.').map(|(_, e)| e) {
         Some("webp") => "image/webp",
         Some("jpg") => "image/jpeg",

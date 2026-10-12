@@ -127,6 +127,9 @@ wire! {
         /// Pinned to its channel.
         #[serde(default)]
         pub pinned: bool,
+        /// Previews of links in `content`, filled in by the server shortly after sending.
+        #[serde(default)]
+        pub embeds: Vec<Embed>,
         /// Client-generated id echoed back so optimistic sends can be reconciled.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub nonce: Option<String>,
@@ -145,6 +148,27 @@ wire! {
         pub url: String,
         /// A small preview for images too big to show as they are (same origin rule).
         pub thumb_url: Option<String>,
+    }
+
+    /// A link preview, from the page's OpenGraph tags (or the link itself, for an image).
+    pub struct Embed {
+        pub url: String,
+        pub site_name: Option<String>,
+        pub title: Option<String>,
+        pub description: Option<String>,
+        /// The page's picture, copied to this server (a same-origin path), so viewers never
+        /// load anything from the linked site.
+        pub image: Option<EmbedImage>,
+        /// Show the picture full width under the text, rather than beside it.
+        pub large: bool,
+        /// The page's `theme-color`, as `#rrggbb`.
+        pub color: Option<String>,
+    }
+
+    pub struct EmbedImage {
+        pub url: String,
+        pub width: u32,
+        pub height: u32,
     }
 
     pub struct Reaction {

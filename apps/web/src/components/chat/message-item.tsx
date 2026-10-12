@@ -4,6 +4,7 @@ import { memo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Attachments } from "@/components/chat/attachments";
+import { Embeds } from "@/components/chat/embeds";
 import { EmojiPicker } from "@/components/chat/emoji-picker";
 import { EmoteImage, Markup } from "@/components/chat/markup";
 import { Menu, UserMenuItems } from "@/components/menus";
@@ -312,6 +313,7 @@ export const MessageItem = memo(function MessageItem({
             </div>
           )}
           <Attachments items={m.attachments} />
+          <Embeds items={m.embeds ?? []} />
           {m.failed && (
             <button className="mt-1 flex items-center gap-1 text-xs text-destructive hover:underline" onClick={() => useMessages.getState().retry(m.channelId, m.nonce!)}>
               <RotateCw className="size-3" /> Failed to send. Retry

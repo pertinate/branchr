@@ -1,6 +1,8 @@
 // Re-exports of types generated from crates/proto by ts-rs.
 export type * from "./generated/ApiError";
 export type * from "./generated/Attachment";
+export type * from "./generated/Embed";
+export type * from "./generated/EmbedImage";
 export type * from "./generated/AuditAction";
 export type * from "./generated/AuditChange";
 export type * from "./generated/AuditEntry";

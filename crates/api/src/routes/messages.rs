@@ -188,10 +188,14 @@ pub async fn create(
         mention_everyone: mentions.everyone || mentions.here,
         mention_roles: mentions.roles.clone(),
         pinned: false,
+        embeds: Vec::new(),
         mentions: mentions.users,
         nonce: body.nonce,
     };
     state.to_channel(guild, cid, &ServerEvent::MessageCreate(msg.clone())).await;
+    if gp.can_in(user, cid, perms::EMBED_LINKS) {
+        crate::unfurl::spawn(state.clone(), guild, cid, id, user, msg.content.clone(), false);
+    }
     Ok(Json(msg))
 }
 
@@ -241,6 +245,11 @@ pub async fn edit(
     }
     let msg = db::message(&state.db, mid, user).await?;
     state.to_channel(guild, cid, &ServerEvent::MessageUpdate(msg.clone())).await;
+    // New links get previews; ones that went away lose theirs.
+    if crate::unfurl::links(&prev.content) != crate::unfurl::links(&msg.content) && (gp.can_in(user, cid, perms::EMBED_LINKS) || !msg.embeds.is_empty()) {
+        let had = !msg.embeds.is_empty();
+        crate::unfurl::spawn(state.clone(), guild, cid, mid, user, msg.content.clone(), had);
+    }
     Ok(Json(msg))
 }
 

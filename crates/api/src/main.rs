@@ -15,6 +15,7 @@ mod routes;
 mod state;
 mod storage;
 mod thumbs;
+mod unfurl;
 
 use std::sync::Arc;
 
@@ -80,6 +81,9 @@ async fn main() -> anyhow::Result<()> {
         sessions: DashMap::new(),
         channel_guild: DashMap::new(),
         message_limiter: throttle::Buckets::new(10, 5.0),
+        // LINK_PREVIEWS=0 turns link previews off; EMBED_ALLOW_PRIVATE (tests only) lets them reach localhost.
+        unfurl: (std::env::var("LINK_PREVIEWS").as_deref() != Ok("0"))
+            .then(|| unfurl::Unfurler::new(std::env::var("EMBED_ALLOW_PRIVATE").as_deref() == Ok("1"))),
         open_registration: std::sync::atomic::AtomicBool::new(config.open_registration),
         federation: (config.auth_mode != config::AuthMode::Local).then(|| Arc::new(federation::Federation::new(&config))),
         config: config.clone(),

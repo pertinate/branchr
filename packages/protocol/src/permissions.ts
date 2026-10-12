@@ -33,11 +33,12 @@ export const P = {
   CREATE_INVITE: 1 << 22,
   ADMINISTRATOR: 1 << 23,
   VIEW_AUDIT_LOG: 1 << 24,
+  EMBED_LINKS: 1 << 25,
 } as const;
 
 export type Perm = keyof typeof P;
 
-export const ALL_PERMS = (1 << 25) - 1;
+export const ALL_PERMS = (1 << 26) - 1;
 
 /** For settings screens, grouped as Discord does. */
 export const PERM_GROUPS: { title: string; perms: { perm: Perm; label: string; hint: string }[] }[] = [
@@ -62,6 +63,7 @@ export const PERM_GROUPS: { title: string; perms: { perm: Perm; label: string; h
     perms: [
       { perm: "SEND_MESSAGES", label: "Send Messages", hint: "Post in text channels." },
       { perm: "ATTACH_FILES", label: "Attach Files", hint: "Upload files and images." },
+      { perm: "EMBED_LINKS", label: "Embed Links", hint: "Links they post show a preview." },
       { perm: "ADD_REACTIONS", label: "Add Reactions", hint: "React to messages." },
       { perm: "USE_EXTERNAL_EMOTES", label: "Use External Emotes", hint: "Use emotes from other servers." },
       { perm: "MENTION_EVERYONE", label: "Mention @everyone and @here", hint: "Ping everyone in a channel at once." },

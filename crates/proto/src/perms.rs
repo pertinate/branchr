@@ -42,15 +42,17 @@ perms! {
     CREATE_INVITE = 22,
     ADMINISTRATOR = 23,
     VIEW_AUDIT_LOG = 24,
+    EMBED_LINKS = 25,
 }
 
-pub const ALL: Permissions = (1 << 25) - 1;
+pub const ALL: Permissions = (1 << 26) - 1;
 
 /// What `@everyone` can do in a new server: talk, react, join voice, invite, and ping
 /// @everyone/@here (owners can take that away).
 pub const DEFAULT_EVERYONE: Permissions = VIEW_CHANNEL
     | SEND_MESSAGES
     | ATTACH_FILES
+    | EMBED_LINKS
     | ADD_REACTIONS
     | USE_EXTERNAL_EMOTES
     | MENTION_EVERYONE
@@ -155,8 +157,8 @@ mod tests {
         assert!(ALL < 1 << 31);
         assert_eq!(NAMED.iter().fold(0, |a, (_, p)| a | p), ALL);
         // The migrations hardcode these for existing servers.
-        assert_eq!(DEFAULT_EVERYONE, 4694079);
-        assert_eq!(DEFAULT_EVERYONE & !MENTION_EVERYONE, 4694047);
+        assert_eq!(DEFAULT_EVERYONE, 4694079 | EMBED_LINKS);
+        assert_eq!(DEFAULT_EVERYONE & !MENTION_EVERYONE, 4694047 | EMBED_LINKS);
         let ts = include_str!("../../../packages/protocol/src/permissions.ts");
         for (i, (name, _)) in NAMED.iter().enumerate() {
             assert!(ts.contains(&format!("{name}: 1 << {i},")), "permissions.ts is missing {name} = 1 << {i}");

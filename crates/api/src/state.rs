@@ -32,6 +32,8 @@ pub struct State {
     /// channel id -> guild id, channels never move between guilds.
     pub channel_guild: DashMap<Id, Id>,
     pub message_limiter: throttle::Buckets<Id>,
+    /// Link previews, unless turned off.
+    pub unfurl: Option<crate::unfurl::Unfurler>,
     /// Whether new people may join (owner-adjustable; starts from OPEN_REGISTRATION).
     pub open_registration: std::sync::atomic::AtomicBool,
     /// Set when this server accepts branchr accounts.

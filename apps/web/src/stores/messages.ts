@@ -136,6 +136,7 @@ export function createMessagesStore(inst: Instance) {
         channelId,
         kind: "default",
         pinned: false,
+        embeds: [],
         author: me,
         content: local.content,
         mentions: local.mentions,

@@ -68,6 +68,8 @@ pub enum Fit {
     Square(u32),
     /// Centre-cropped to fill `w`×`h` (banners).
     Cover(u32, u32),
+    /// Shrunk to fit inside `w`×`h`, keeping its shape (link previews).
+    Within(u32, u32),
 }
 
 /// Decodes an uploaded picture and fits it, as WebP (lossless; these are small) or JPEG
@@ -83,11 +85,13 @@ pub fn picture(src: &[u8], fit: Fit) -> Option<(Vec<u8>, &'static str)> {
     limits.max_alloc = Some(256 * 1024 * 1024);
     reader.limits(limits);
     let img = reader.decode().ok()?;
-    let (w, h) = match fit {
-        Fit::Square(s) => (s, s),
-        Fit::Cover(w, h) => (w, h),
+    let img = match fit {
+        Fit::Square(s) => img.resize_to_fill(s, s, image::imageops::FilterType::Lanczos3),
+        Fit::Cover(w, h) => img.resize_to_fill(w, h, image::imageops::FilterType::Lanczos3),
+        Fit::Within(w, h) if img.width() > w || img.height() > h => img.resize(w, h, image::imageops::FilterType::Lanczos3),
+        Fit::Within(..) => img,
     };
-    let img = img.resize_to_fill(w, h, image::imageops::FilterType::Lanczos3);
+    let (w, h) = (img.width(), img.height());
     let mut out = Cursor::new(Vec::new());
     let ct = if img.color().has_alpha() || w * h <= 256 * 256 {
         DynamicImage::ImageRgba8(img.to_rgba8()).write_to(&mut out, ImageFormat::WebP).ok()?;
