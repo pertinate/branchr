@@ -59,9 +59,14 @@ jobs:
           PUBLIC_IP: 203.0.113.10
           VOICE_SECRET: ci
           IMAGE: ghcr.io/example/branchr:ci
+          ID_DOMAIN: id.example.com
+          ID_DB_PASSWORD: ci
+          DISCORD_CLIENT_ID: ci
+          DISCORD_CLIENT_SECRET: ci
         run: |
           docker compose -f docker-compose.yml config -q
           docker compose -f docker-compose.yml -f deploy/docker-compose.public.yml -f deploy/docker-compose.image.yml config -q
+          docker compose -f docker-compose.yml -f deploy/docker-compose.public.yml -f deploy/docker-compose.image.yml -f deploy/docker-compose.id.yml config -q
 
   # Browser tests against a local stack (API + SFU + Vite, plus branchr ID with a stand-in
   # Discord): chat, voice, screen streaming, attachments, mentions, branchr sign-in. Local-only: Electron (needs a display), emotes (third-party APIs), and the

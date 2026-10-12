@@ -1,5 +1,8 @@
 # One hostname for everything: web client + API + gateway, and SFU signaling under /sfu/.
 # Caddy obtains and renews the TLS certificate automatically (DNS must point here, unproxied).
+# Extra sites (e.g. branchr ID, deploy/Caddyfile.id) are mounted into /etc/caddy/sites/.
+import /etc/caddy/sites/*.caddy
+
 {$DOMAIN} {
 	encode zstd gzip
 	handle_path /sfu/* {

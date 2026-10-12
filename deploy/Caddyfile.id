@@ -1,0 +1,5 @@
+# branchr ID on its own hostname (mounted by deploy/docker-compose.id.yml).
+{$ID_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy id:8070
+}

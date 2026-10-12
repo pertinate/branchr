@@ -146,7 +146,7 @@ How federation works:
 4. On a `both` server, someone with an existing password account can link it to their branchr account (User Settings → My Account → Link), so Discord sign-in reaches that same account from then on.
 5. branchr ID remembers which hosts you use with your branchr account. Signing in on a new device reconnects to all of them, and "Log Out of host" forgets one.
 
-Run it locally against real Discord with `scripts/dev-id.sh`. It reads `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` and a Postgres `DATABASE_URL` from `~/.config/branchr/id.env`, which stays outside the repo. Tests use `TEST_DATABASE_URL` and a throwaway schema; CI provides a Postgres container.
+To host it, add `deploy/docker-compose.id.yml`: it runs branchr ID and its own Postgres, and Caddy serves it on `ID_DOMAIN`. It needs `ID_DOMAIN`, `ID_DB_PASSWORD`, `DISCORD_CLIENT_ID` and `DISCORD_CLIENT_SECRET` in `.env`; `scripts/deploy-image.sh` includes it when `ID_DOMAIN` is set. Run it locally against real Discord with `scripts/dev-id.sh`. It reads `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` and a Postgres `DATABASE_URL` from `~/.config/branchr/id.env`, which stays outside the repo. Tests use `TEST_DATABASE_URL` and a throwaway schema; CI provides a Postgres container.
 
 ## CI/CD
 

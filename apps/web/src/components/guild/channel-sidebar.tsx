@@ -8,7 +8,6 @@ import { GuildMenu } from "@/components/guild/guild-menu";
 import { MentionBadge } from "@/components/mention-badge";
 import { ChannelMenuItems, Menu, UserMenuItems } from "@/components/menus";
 import { UserAvatar } from "@/components/user-avatar";
-import { UserPanel } from "@/components/voice/user-panel";
 import { compareIds } from "@/lib/ids";
 import { useInstance } from "@/lib/instances";
 import { cn } from "@/lib/utils";
@@ -70,7 +69,6 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
           </div>
         ))}
       </div>
-      <UserPanel />
     </aside>
   );
 }

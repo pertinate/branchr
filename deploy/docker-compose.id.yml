@@ -1,0 +1,45 @@
+# branchr ID (central accounts, Discord sign-in) alongside an instance, with its own Postgres.
+#   ID_DOMAIN=id.example.com DISCORD_CLIENT_ID=... DISCORD_CLIENT_SECRET=... ID_DB_PASSWORD=... \
+#     docker compose -f docker-compose.yml -f deploy/docker-compose.public.yml \
+#       [-f deploy/docker-compose.image.yml] -f deploy/docker-compose.id.yml up -d
+# Discord must allow the redirect https://$ID_DOMAIN/auth/discord/callback.
+services:
+  id-db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: branchr
+      POSTGRES_PASSWORD: ${ID_DB_PASSWORD:?set ID_DB_PASSWORD}
+      POSTGRES_DB: branchr
+    volumes:
+      - id-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U branchr -d branchr"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  id:
+    image: ${IMAGE:-branchr}
+    command: ["branchr-id"]
+    restart: unless-stopped
+    depends_on:
+      id-db:
+        condition: service_healthy
+    environment:
+      ID_BIND: 0.0.0.0:8070
+      PUBLIC_URL: https://${ID_DOMAIN:?set ID_DOMAIN}
+      DATABASE_URL: postgres://branchr:${ID_DB_PASSWORD}@id-db:5432/branchr
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:?set DISCORD_CLIENT_ID}
+      DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET:?set DISCORD_CLIENT_SECRET}
+      # The desktop app, and the web client this host serves.
+      ALLOWED_REDIRECTS: branchr://auth/callback,https://${DOMAIN}/
+
+  caddy:
+    environment:
+      ID_DOMAIN: ${ID_DOMAIN}
+    volumes:
+      - ./deploy/Caddyfile.id:/etc/caddy/sites/id.caddy:ro
+
+volumes:
+  id-db:

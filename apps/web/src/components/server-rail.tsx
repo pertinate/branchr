@@ -4,6 +4,7 @@ import { Copy, LogOut, Plus, Volume2 } from "lucide-react";
 import { memo, useState } from "react";
 import { toast } from "sonner";
 
+import { UserPanel } from "@/components/voice/user-panel";
 import { guildInitials } from "@/components/guild/guild-badge";
 import { MentionBadge } from "@/components/mention-badge";
 import { GuildMenuItems, Menu } from "@/components/menus";
@@ -154,31 +155,34 @@ export function ServerRail() {
   const params = useParams({ strict: false }) as { instance?: string; guildId?: string };
   const [open, setOpen] = useState(false);
   return (
-    <nav className="flex w-[72px] shrink-0 flex-col items-center gap-2 overflow-y-auto py-3">
-      {ids.map((id, i) => {
-        const inst = instance(id);
-        if (!inst) return null;
-        return (
-          <InstanceProvider key={id} instance={inst}>
-            {i > 0 && <div className="mx-auto h-0.5 w-8 shrink-0 rounded bg-accent" />}
-            {ids.length > 1 && <InstanceHeader />}
-            <InstanceGuilds activeGuild={params.instance === id ? params.guildId : undefined} />
-          </InstanceProvider>
-        );
-      })}
-      <div className="mx-auto h-0.5 w-8 shrink-0 rounded bg-accent" />
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            onClick={() => setOpen(true)}
-            aria-label="Add a Server"
-            className="grid size-12 shrink-0 place-items-center rounded-3xl bg-background text-online transition-all hover:rounded-2xl hover:bg-online hover:text-white"
-          >
-            <Plus />
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="right">Add a Server</TooltipContent>
-      </Tooltip>
+    <nav aria-label="Servers" className="relative flex w-[72px] shrink-0 flex-col items-center py-3">
+      <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-2 overflow-y-auto pb-3">
+        {ids.map((id, i) => {
+          const inst = instance(id);
+          if (!inst) return null;
+          return (
+            <InstanceProvider key={id} instance={inst}>
+              {i > 0 && <div className="mx-auto h-0.5 w-8 shrink-0 rounded bg-accent" />}
+              {ids.length > 1 && <InstanceHeader />}
+              <InstanceGuilds activeGuild={params.instance === id ? params.guildId : undefined} />
+            </InstanceProvider>
+          );
+        })}
+        <div className="mx-auto h-0.5 w-8 shrink-0 rounded bg-accent" />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={() => setOpen(true)}
+              aria-label="Add a Server"
+              className="grid size-12 shrink-0 place-items-center rounded-3xl bg-background text-online transition-all hover:rounded-2xl hover:bg-online hover:text-white"
+            >
+              <Plus />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right">Add a Server</TooltipContent>
+        </Tooltip>
+      </div>
+      <UserPanel />
       <AddServerDialog open={open} onOpenChange={setOpen} />
     </nav>
   );

@@ -7,6 +7,7 @@ test.skip(!process.env.TEST_DATABASE_URL, "branchr ID needs TEST_DATABASE_URL (P
 test("branchr account: sign in with Discord, survive a reload, sign out", async ({ browser }) => {
   const page = await register(browser, "bid");
   await createServer(page, "Accounts");
+  await page.getByRole("button", { name: "Your account" }).hover();
   await page.getByRole("button", { name: "User Settings" }).click();
   const card = page.getByTestId("branchr-account");
 
@@ -29,6 +30,7 @@ test("branchr account: sign in with Discord, survive a reload, sign out", async 
   const me = await page.evaluate(async (t) => (await fetch("http://localhost:8070/me", { headers: { authorization: `Bearer ${t}` } })).json(), token);
   expect(me.displayName).toBe("E2E Nelly");
 
+  await page.getByRole("button", { name: "Your account" }).hover();
   await page.getByRole("button", { name: "User Settings" }).click();
   await expect(card.getByText("E2E Nelly")).toBeVisible();
   await expect(card.getByText("Signed in with Discord")).toBeVisible();
@@ -64,6 +66,7 @@ test("federated server: sign in with Discord from the login screen, claim it, co
   const code = readFileSync(claimFile, "utf8").trim();
   expect(code).toMatch(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
   await createServer(page, "Federated home");
+  await page.getByRole("button", { name: "Your account" }).hover();
   await page.getByRole("button", { name: "User Settings" }).click();
   await page.getByLabel(/Claim a server you host/).fill(code.toLowerCase());
   await page.getByRole("button", { name: "Claim" }).click();
@@ -107,9 +110,11 @@ test("federated server: a password account links to branchr and is reached by Di
   const local = await current();
 
   // Sign in to branchr from Settings (a full redirect; still logged in to the server after).
+  await page.getByRole("button", { name: "Your account" }).hover();
   await page.getByRole("button", { name: "User Settings" }).click();
   await page.getByTestId("branchr-account").getByRole("button", { name: "Sign in with Discord" }).click();
   await expect(page.getByText("Signed in to branchr as Link Tester")).toBeVisible();
+  await page.getByRole("button", { name: "Your account" }).hover();
   await page.getByRole("button", { name: "User Settings" }).click();
   await page.getByTestId("branchr-account").getByRole("button", { name: "Link" }).click();
   await expect(page.getByText("This server account is linked")).toBeVisible();

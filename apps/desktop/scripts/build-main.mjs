@@ -1,5 +1,5 @@
 // Bundles the main and preload scripts to CommonJS (sandboxed preloads must be CJS).
-import { build } from "esbuild";
+import { build, context } from "esbuild";
 import { cp, mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -7,8 +7,8 @@ import { pathToFileURL } from "node:url";
 const root = path.resolve(import.meta.dirname, "..");
 const watch = process.argv.includes("--watch");
 
-export async function buildMain() {
-  await build({
+function buildOptions(development = watch) {
+  return {
     entryPoints: { main: path.join(root, "src/main.ts"), preload: path.join(root, "src/preload.ts") },
     outdir: path.join(root, "dist"),
     outExtension: { ".js": ".cjs" },
@@ -17,13 +17,34 @@ export async function buildMain() {
     format: "cjs",
     target: "node22",
     external: ["electron", "@vencord/venmic"],
-    sourcemap: watch ? "inline" : false,
-    minify: !watch,
+    sourcemap: development ? "inline" : false,
+    minify: !development,
     logLevel: "warning",
-  });
+  };
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+export async function buildMain() {
+  await build(buildOptions());
+}
+
+/** Watch both entry points and their imports; restart only after a successful build. */
+export async function watchMain(onBuild) {
+  const watcher = await context({
+    ...buildOptions(true),
+    plugins: [{
+      name: "restart-electron",
+      setup(builder) {
+        builder.onEnd(async (result) => {
+          if (!result.errors.length) await onBuild();
+        });
+      },
+    }],
+  });
+  await watcher.watch();
+  return watcher;
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   await buildMain();
   if (!watch) {
     // Bundle the built web client next to the main process.

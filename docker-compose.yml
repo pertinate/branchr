@@ -13,6 +13,11 @@ services:
       # Where clients reach the SFU. Use wss:// behind a TLS proxy.
       SFU_URLS: ${SFU_URL:-ws://${PUBLIC_HOST}:8090/ws}
       OPEN_REGISTRATION: ${OPEN_REGISTRATION:-true}
+      # branchr accounts: local (own accounts only), federated, or both. See README.
+      AUTH_MODE: ${AUTH_MODE:-local}
+      BRANCHR_ID_URL: ${BRANCHR_ID_URL:-}
+      INSTANCE_NAME: ${INSTANCE_NAME:-}
+      PUBLIC_URL: ${PUBLIC_URL:-}
     volumes:
       - ./data:/data
     ports:

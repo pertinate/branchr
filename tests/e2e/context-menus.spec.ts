@@ -107,6 +107,7 @@ test("context menus: messages, people, channels, servers", async ({ browser }) =
   await alice.locator("aside").last().getByText("ctx_b").click({ button: "right" });
   await expect(item(alice, "Copy User ID")).toHaveCount(0);
   await alice.keyboard.press("Escape");
+  await alice.getByRole("button", { name: "Your account" }).hover();
   await alice.getByRole("button", { name: "User Settings" }).click();
   await alice.getByRole("tab", { name: "Advanced" }).click();
   await alice.getByLabel("Developer Mode").click();
