@@ -46,7 +46,22 @@ export const Attachments = memo(function Attachments({ items }: { items: Attachm
         }
         if (type.startsWith("video/")) {
           const s = fit(a);
-          return <video key={a.id} data-attachment-url={url} data-attachment-name={a.filename} data-attachment-video src={url} controls preload="metadata" className="rounded-md bg-black" style={s} />;
+          // With a poster frame nothing is fetched until it's played.
+          const poster = a.thumbUrl ? attachmentUrl(a.thumbUrl) : undefined;
+          return (
+            <video
+              key={a.id}
+              data-attachment-url={url}
+              data-attachment-name={a.filename}
+              data-attachment-video
+              src={url}
+              poster={poster}
+              controls
+              preload={poster ? "none" : "metadata"}
+              className="rounded-md bg-black"
+              style={s}
+            />
+          );
         }
         if (type.startsWith("audio/")) {
           return (

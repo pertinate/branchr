@@ -99,3 +99,27 @@ test("attachments: big images show a small preview in chat and the original in t
   const full = alice.getByTestId("image-viewer").locator('img[alt="wide.png"]');
   await expect.poll(() => full.evaluate((i: HTMLImageElement) => i.naturalWidth)).toBe(2000);
 });
+
+test("attachments: videos get a poster frame (with ffmpeg on the server)", async ({ browser }) => {
+  const { execFileSync } = await import("node:child_process");
+  const { mkdtempSync, readFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { tmpdir } = await import("node:os");
+  const file = join(mkdtempSync(join(tmpdir(), "poster-")), "clip.mp4");
+  try {
+    execFileSync("ffmpeg", ["-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=10", "-t", "2", "-pix_fmt", "yuv420p", "-y", file]);
+  } catch {
+    test.skip(true, "ffmpeg isn't installed");
+  }
+  const alice = await register(browser, "att_vid");
+  await createServer(alice, "Clips");
+  await alice.locator('input[type="file"]').setInputFiles({ name: "clip.mp4", mimeType: "video/mp4", buffer: readFileSync(file) });
+  await expect(alice.locator('[data-upload="done"]')).toHaveCount(1);
+  await alice.getByPlaceholder("Message #general").press("Enter");
+  const video = alice.locator("video[data-attachment-video]");
+  await expect(video).toHaveAttribute("poster", /\/thumb\//);
+  await expect(video).toHaveAttribute("preload", "none");
+  // The poster is a real image.
+  const poster = await alice.request.get((await video.getAttribute("poster"))!);
+  expect(poster.headers()["content-type"]).toBe("image/jpeg");
+});

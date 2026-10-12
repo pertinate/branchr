@@ -126,6 +126,14 @@ impl Storage {
         }
     }
 
+    /// Where a tool like ffmpeg can read `key`: the file, or a short-lived signed URL.
+    pub fn readable(&self, key: &str) -> String {
+        match self {
+            Storage::Local(root) => root.join(key).to_string_lossy().into_owned(),
+            Storage::S3(s3) => s3.bucket.get_object(Some(&s3.creds), key).sign(SIGN_TTL).to_string(),
+        }
+    }
+
     pub async fn delete(&self, key: &str) -> AppResult<()> {
         match self {
             Storage::Local(root) => match tokio::fs::remove_file(root.join(key)).await {

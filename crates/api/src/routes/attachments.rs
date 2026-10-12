@@ -116,6 +116,15 @@ pub async fn upload(
     }
     let (mut width, mut height) = (width, height);
     let mut thumb_type = None;
+    // Videos: a poster frame, so chat shows a still without fetching the video.
+    if content_type.starts_with("video/") {
+        if let Some(jpeg) = thumbs::video_poster(&state.storage.readable(&key)).await {
+            let body = futures::stream::iter([Ok::<_, AppError>(Bytes::from(jpeg))]);
+            if state.storage.put(&thumb_key(id), "image/jpeg", body).await.is_ok() {
+                thumb_type = Some("image/jpeg");
+            }
+        }
+    }
     let parts = copy.lock().take();
     if let Some(parts) = parts {
         let thumb = tokio::task::spawn_blocking(move || thumbs::make(&parts.concat())).await.ok().flatten();

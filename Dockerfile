@@ -17,7 +17,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo build --release -p api -p sfu -p id && cp target/release/api target/release/sfu target/release/branchr-id /usr/local/bin/
 
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+# ffmpeg makes poster frames for uploaded videos (optional; without it there are none).
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates ffmpeg && rm -rf /var/lib/apt/lists/*
 COPY --from=rust /usr/local/bin/api /usr/local/bin/sfu /usr/local/bin/branchr-id /usr/local/bin/
 COPY --from=web /src/apps/web/dist /srv/web
 ENV WEB_DIR=/srv/web DATABASE_URL=sqlite:///data/discord.db

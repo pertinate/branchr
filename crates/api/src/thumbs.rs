@@ -99,6 +99,37 @@ pub fn picture(src: &[u8], fit: Fit) -> Option<(Vec<u8>, &'static str)> {
     Some((out.into_inner(), ct))
 }
 
+/// A poster frame for a video (JPEG, fitting 800×600), from ffmpeg when it's installed.
+/// `None` without ffmpeg, for files it can't read, or after 15 seconds.
+pub async fn video_poster(source: &str) -> Option<Vec<u8>> {
+    // Uploads are untrusted: only real video containers (no playlists or concat lists, which
+    // could point ffmpeg at other files or hosts), and only the protocol the source needs.
+    let protocols = if source.starts_with("http") { "http,https,tcp,tls,crypto" } else { "file" };
+    let run = |seek: &'static str| {
+        tokio::process::Command::new("ffmpeg")
+            .args(["-hide_banner", "-loglevel", "error", "-protocol_whitelist", protocols])
+            .args(["-format_whitelist", "mov,mp4,m4a,3gp,3g2,mj2,matroska,webm,avi,mpegts,ogg,flv"])
+            .args(["-ss", seek, "-i", source, "-frames:v", "1"])
+            .args(["-vf", "scale='min(800,iw)':'min(600,ih)':force_original_aspect_ratio=decrease", "-f", "image2pipe", "-vcodec", "mjpeg", "-q:v", "4", "-"])
+            .stdin(std::process::Stdio::null())
+            .kill_on_drop(true)
+            .output()
+    };
+    let attempt = async {
+        // A second in skips black first frames; very short clips fall back to the start.
+        for seek in ["1", "0"] {
+            if let Ok(out) = run(seek).await
+                && out.status.success()
+                && !out.stdout.is_empty()
+            {
+                return Some(out.stdout);
+            }
+        }
+        None
+    };
+    tokio::time::timeout(std::time::Duration::from_secs(15), attempt).await.ok().flatten()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -147,5 +178,29 @@ mod tests {
     fn small_images_and_junk_get_none() {
         assert!(make(&encode(DynamicImage::ImageRgb8(noisy(64, 64)), ImageFormat::Png)).is_none());
         assert!(make(b"not an image").is_none());
+    }
+
+    #[tokio::test]
+    async fn posters_from_videos_when_ffmpeg_is_around() {
+        let dir = std::env::temp_dir().join(format!("poster-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let video = dir.join("clip.mp4");
+        // Two seconds of test pattern; skip quietly where ffmpeg isn't installed.
+        let made = std::process::Command::new("ffmpeg")
+            .args(["-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=1280x720:rate=10", "-t", "2", "-pix_fmt", "yuv420p", "-y"])
+            .arg(&video)
+            .status();
+        if !made.is_ok_and(|s| s.success()) {
+            return;
+        }
+        let jpeg = video_poster(video.to_str().unwrap()).await.expect("poster");
+        let img = image::load_from_memory(&jpeg).unwrap();
+        assert_eq!((img.width(), img.height()), (800, 450));
+        assert!(video_poster(dir.join("missing.mp4").to_str().unwrap()).await.is_none());
+        // A playlist dressed as a video is refused (it could read other files).
+        let sneaky = dir.join("sneaky.mp4");
+        std::fs::write(&sneaky, format!("#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXTINF:2,\n{}\n#EXT-X-ENDLIST\n", video.display())).unwrap();
+        assert!(video_poster(sneaky.to_str().unwrap()).await.is_none());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
