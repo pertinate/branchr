@@ -117,7 +117,13 @@ async fn find(state: &AppState, user: Id, visible: &[i64], words: &[String], aut
         // (Postgres refuses a bound parameter the query doesn't use.)
         (true, true) => ("messages m", "$1::text IS NOT NULL".to_string()),
         (true, false) => ("messages m", "$1 IS NOT NULL".to_string()),
-        (false, true) => ("messages m", "to_tsvector('simple', m.content) @@ to_tsquery('simple', $1)".to_string()),
+        // Matches from the index first (OFFSET 0 keeps the planner from folding it in): left to
+        // choose, Postgres walked every message newest first testing each, so a rare word
+        // read the whole table (~10x slower at 20k messages, and growing with them).
+        (false, true) => (
+            "(SELECT id FROM messages WHERE to_tsvector('simple', content) @@ to_tsquery('simple', $1) OFFSET 0) hit JOIN messages m ON m.id = hit.id",
+            "TRUE".to_string(),
+        ),
         // CROSS JOIN keeps SQLite on the index first (matches, then their messages); left to
         // choose, it walked the channel's messages probing the index for each (~60x slower).
         (false, false) => ("messages_fts f CROSS JOIN messages m ON m.id = f.rowid", "messages_fts MATCH $1".to_string()),
