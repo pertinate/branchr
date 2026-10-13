@@ -487,33 +487,20 @@ pub async fn emote(db: &Db, id: Id) -> sqlx::Result<Emote> {
     .map(Into::into)
 }
 
-/// Messages before/after a cursor, newest first. Reactions are loaded in one extra query.
-pub async fn messages(
-    db: &Db,
-    channel: Id,
-    before: Option<Id>,
-    after: Option<Id>,
-    limit: u32,
-    viewer: Id,
-) -> sqlx::Result<Vec<Message>> {
-    let rows = sqlx::query_as::<_, MessageRow>(AssertSqlSafe(format!(
+/// The columns a message is read with (`m` messages, `u` its author).
+fn message_select() -> String {
+    format!(
         "SELECT m.id AS mid, m.channel_id, m.kind, m.content, m.edited_at, m.reply_to, m.emotes, m.mentions, m.mention_everyone, m.mention_roles, m.pinned_at, m.embeds, m.author_name, m.author_avatar, {USER_COLS}
-         FROM messages m JOIN users u ON u.id = m.author_id
-         WHERE m.channel_id = $1 AND m.id < $2 AND m.id > $3
-         ORDER BY m.id {} LIMIT $4",
-        if after.is_some() && before.is_none() { "ASC" } else { "DESC" }
-    )))
-    .bind(channel.0)
-    .bind(before.map(|b| b.0).unwrap_or(i64::MAX))
-    .bind(after.map(|a| a.0).unwrap_or(0))
-    .bind(limit as i64)
-    .fetch_all(db)
-    .await?;
+         FROM messages m JOIN users u ON u.id = m.author_id"
+    )
+}
 
+/// Rows into messages, with their reactions, attachments and polls loaded in one query each.
+async fn hydrate(db: &Db, rows: Vec<MessageRow>, viewer: Id) -> sqlx::Result<Vec<Message>> {
     let mut reactions = reactions_for(db, rows.iter().map(|r| r.id), viewer).await?;
     let mut attachments = attachments_for(db, rows.iter().map(|r| r.id)).await?;
     let mut polls = polls_for(db, rows.iter().map(|r| r.id), viewer).await?;
-    let mut out: Vec<Message> = rows
+    Ok(rows
         .into_iter()
         .map(|r| Message {
             id: Id(r.id),
@@ -534,7 +521,30 @@ pub async fn messages(
             nonce: None,
             poll: polls.remove(&r.id),
         })
-        .collect();
+        .collect())
+}
+
+/// Messages before/after a cursor, newest first. Reactions are loaded in one extra query.
+pub async fn messages(
+    db: &Db,
+    channel: Id,
+    before: Option<Id>,
+    after: Option<Id>,
+    limit: u32,
+    viewer: Id,
+) -> sqlx::Result<Vec<Message>> {
+    let rows = sqlx::query_as::<_, MessageRow>(AssertSqlSafe(format!(
+        "{} WHERE m.channel_id = $1 AND m.id < $2 AND m.id > $3 ORDER BY m.id {} LIMIT $4",
+        message_select(),
+        if after.is_some() && before.is_none() { "ASC" } else { "DESC" }
+    )))
+    .bind(channel.0)
+    .bind(before.map(|b| b.0).unwrap_or(i64::MAX))
+    .bind(after.map(|a| a.0).unwrap_or(0))
+    .bind(limit as i64)
+    .fetch_all(db)
+    .await?;
+    let mut out = hydrate(db, rows, viewer).await?;
     if after.is_some() && before.is_none() {
         out.reverse();
     }
@@ -542,35 +552,20 @@ pub async fn messages(
 }
 
 pub async fn message(db: &Db, id: Id, viewer: Id) -> sqlx::Result<Message> {
-    let r = sqlx::query_as::<_, MessageRow>(AssertSqlSafe(format!(
-        "SELECT m.id AS mid, m.channel_id, m.kind, m.content, m.edited_at, m.reply_to, m.emotes, m.mentions, m.mention_everyone, m.mention_roles, m.pinned_at, m.embeds, m.author_name, m.author_avatar, {USER_COLS}
-         FROM messages m JOIN users u ON u.id = m.author_id WHERE m.id = $1"
-    )))
-    .bind(id.0)
-    .fetch_one(db)
-    .await?;
-    let mut reactions = reactions_for(db, std::iter::once(r.id), viewer).await?;
-    let mut attachments = attachments_for(db, std::iter::once(r.id)).await?;
-    let mut polls = polls_for(db, std::iter::once(r.id), viewer).await?;
-    Ok(Message {
-        id: Id(r.id),
-        channel_id: Id(r.channel_id),
-        kind: MessageKind::parse(&r.kind),
-        author: posted_as(r.author.into(), r.author_name, r.author_avatar),
-        content: r.content,
-        edited_at: r.edited_at,
-        reply_to: r.reply_to.map(Id),
-        reactions: reactions.remove(&r.id).unwrap_or_default(),
-        attachments: attachments.remove(&r.id).unwrap_or_default(),
-        emotes: snapshot(r.emotes.as_deref()),
-        mentions: snapshot(r.mentions.as_deref()),
-        mention_everyone: r.mention_everyone.0,
-        mention_roles: snapshot(r.mention_roles.as_deref()),
-        pinned: r.pinned_at.is_some(),
-        embeds: snapshot(r.embeds.as_deref()),
-        nonce: None,
-        poll: polls.remove(&r.id),
-    })
+    let r = sqlx::query_as::<_, MessageRow>(AssertSqlSafe(format!("{} WHERE m.id = $1", message_select()))).bind(id.0).fetch_one(db).await?;
+    Ok(hydrate(db, vec![r], viewer).await?.pop().expect("one row in, one message out"))
+}
+
+/// The messages with these ids, in the same order (any that are gone are left out).
+pub async fn messages_by_ids(db: &Db, ids: &[i64], viewer: Id) -> sqlx::Result<Vec<Message>> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    // Ids are integers, so inlining them is safe.
+    let list = ids.iter().map(i64::to_string).collect::<Vec<_>>().join(",");
+    let rows = sqlx::query_as::<_, MessageRow>(AssertSqlSafe(format!("{} WHERE m.id IN ({list})", message_select()))).fetch_all(db).await?;
+    let mut by_id: HashMap<i64, Message> = hydrate(db, rows, viewer).await?.into_iter().map(|m| (m.id.0, m)).collect();
+    Ok(ids.iter().filter_map(|i| by_id.remove(i)).collect())
 }
 
 /// Polls among `ids`, with vote counts and what `viewer` picked.

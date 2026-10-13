@@ -118,7 +118,9 @@ async fn find(state: &AppState, user: Id, visible: &[i64], words: &[String], aut
         (true, true) => ("messages m", "$1::text IS NOT NULL".to_string()),
         (true, false) => ("messages m", "$1 IS NOT NULL".to_string()),
         (false, true) => ("messages m", "to_tsvector('simple', m.content) @@ to_tsquery('simple', $1)".to_string()),
-        (false, false) => ("messages_fts f JOIN messages m ON m.id = f.rowid", "messages_fts MATCH $1".to_string()),
+        // CROSS JOIN keeps SQLite on the index first (matches, then their messages); left to
+        // choose, it walked the channel's messages probing the index for each (~60x slower).
+        (false, false) => ("messages_fts f CROSS JOIN messages m ON m.id = f.rowid", "messages_fts MATCH $1".to_string()),
     };
     let query = if postgres {
         words.iter().map(|w| format!("{w}:*")).collect::<Vec<_>>().join(" & ")
@@ -137,11 +139,8 @@ async fn find(state: &AppState, user: Id, visible: &[i64], words: &[String], aut
         .bind(offset.max(0))
         .fetch_all(&state.db)
         .await?;
-    let mut out = Vec::with_capacity(ids.len());
-    for (id,) in ids {
-        out.push(db::message(&state.db, Id(id), user).await?);
-    }
-    Ok(out)
+    let ids: Vec<i64> = ids.into_iter().map(|(id,)| id).collect();
+    Ok(db::messages_by_ids(&state.db, &ids, user).await?)
 }
 
 pub async fn pins(State(state): State<AppState>, Auth(user): Auth, Path(cid): Path<Id>) -> AppResult<Json<Vec<Message>>> {
@@ -150,11 +149,8 @@ pub async fn pins(State(state): State<AppState>, Auth(user): Auth, Path(cid): Pa
         .bind(cid.0)
         .fetch_all(&state.db)
         .await?;
-    let mut out = Vec::with_capacity(ids.len());
-    for (id,) in ids {
-        out.push(db::message(&state.db, Id(id), user).await?);
-    }
-    Ok(Json(out))
+    let ids: Vec<i64> = ids.into_iter().map(|(id,)| id).collect();
+    Ok(Json(db::messages_by_ids(&state.db, &ids, user).await?))
 }
 
 async fn set_pin(state: &AppState, user: Id, cid: Id, mid: Id, on: bool) -> AppResult<Json<Message>> {

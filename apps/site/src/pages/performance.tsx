@@ -88,6 +88,17 @@ export function PerformancePage() {
           ]}
         />
         <Table
+          caption="Reading history: a Hub on SQLite with 20,000 messages in a channel (polls and reactions included), measured locally"
+          head={["Request", "Latency p50 / p99", "Throughput"]}
+          rows={[
+            ["Connect (READY)", "1.0 / 2.7 ms", ""],
+            ["Newest 50 messages", "1.3 / 2.5 ms", ""],
+            ["Scrolling back, 50 at a time", "1.5 / 2.1 ms", ""],
+            ["Search a word, or has:link", "1.6–1.7 / 2.0–4.1 ms", ""],
+            ["50 people loading pages at once", "15 / 32 ms", "~3,100 pages/s"],
+          ]}
+        />
+        <Table
           caption="Big voice calls: everyone hears everyone; silence isn't forwarded"
           head={["Call", "Streams", "Speech delivered", "Latency p50 / p99", "SFU CPU"]}
           rows={[

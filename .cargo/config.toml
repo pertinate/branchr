@@ -1,2 +1,5 @@
 [env]
 TS_RS_EXPORT_DIR = { value = "packages/protocol/src/generated", relative = true }
+# SQLite's allocation statistics take one global lock on every malloc, which serialized
+# concurrent queries across connections (message pages: ~800/s -> ~3,400/s without it).
+LIBSQLITE3_FLAGS = "SQLITE_DEFAULT_MEMSTATUS=0"
