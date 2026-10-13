@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-# One image with the Rust services (api, sfu, branchr-id) and the built web client.
+# One image with the Rust services (api, sfu, branchr-id, branchr-relay) and the built web client.
 
 FROM node:24-bookworm-slim AS web
 WORKDIR /src
@@ -14,12 +14,12 @@ COPY .cargo .cargo
 COPY crates crates
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \
-    cargo build --release -p api -p sfu -p id && cp target/release/api target/release/sfu target/release/branchr-id /usr/local/bin/
+    cargo build --release -p api -p sfu -p id -p relay && cp target/release/api target/release/sfu target/release/branchr-id target/release/branchr-relay /usr/local/bin/
 
 FROM debian:bookworm-slim
 # ffmpeg makes poster frames for uploaded videos (optional; without it there are none).
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates ffmpeg && rm -rf /var/lib/apt/lists/*
-COPY --from=rust /usr/local/bin/api /usr/local/bin/sfu /usr/local/bin/branchr-id /usr/local/bin/
+COPY --from=rust /usr/local/bin/api /usr/local/bin/sfu /usr/local/bin/branchr-id /usr/local/bin/branchr-relay /usr/local/bin/
 COPY --from=web /src/apps/web/dist /srv/web
 ENV WEB_DIR=/srv/web DATABASE_URL=sqlite:///data/discord.db
 VOLUME /data

@@ -9,6 +9,9 @@ pub struct Config {
     pub workers: usize,
     /// IP advertised in ICE candidates (the address clients send media to).
     pub public_ip: IpAddr,
+    /// First UDP port advertised (worker `i` advertises `public_udp_port + i`). Differs from
+    /// `udp_port` behind a relay that forwards other public ports to ours.
+    pub public_udp_port: u16,
     pub voice_secret: Vec<u8>,
     /// Initial per-subscriber bandwidth estimate in bits/s before TWCC converges.
     pub initial_bwe_bps: u64,
@@ -25,9 +28,11 @@ impl Config {
                 ip
             }
         };
+        let udp_port = var("SFU_UDP_PORT").map(|p| p.parse()).transpose()?.unwrap_or(50000);
         Ok(Self {
             bind: var("SFU_BIND").unwrap_or_else(|| "0.0.0.0:8090".into()).parse()?,
-            udp_port: var("SFU_UDP_PORT").map(|p| p.parse()).transpose()?.unwrap_or(50000),
+            udp_port,
+            public_udp_port: var("SFU_PUBLIC_UDP_PORT").map(|p| p.parse()).transpose()?.unwrap_or(udp_port),
             workers: var("SFU_WORKERS")
                 .map(|w| w.parse())
                 .transpose()?

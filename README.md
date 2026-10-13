@@ -165,6 +165,7 @@ Configuration is all through the environment:
 | `S3_PUBLIC_URL` | api | unset | The bucket's endpoint as clients reach it. When set, downloads redirect to short-lived signed URLs so file traffic skips the API; otherwise the API streams them. |
 | `TRUST_PROXY` | api, id | unset | `1` behind a reverse proxy that sets `X-Forwarded-For` (the Caddy compose files set it). Sign-in, registration, invites and branchr ID's public endpoints are rate limited per client address; without this every client would look like the proxy. Loopback clients are never limited. |
 | `LINK_PREVIEWS` | api | on | `0` turns off link previews (the server then never fetches links people post). |
+| `SFU_PUBLIC_UDP_PORT` | sfu | `SFU_UDP_PORT` | First UDP port advertised to clients, when a relay forwards other public ports to the sfu's own. |
 | `MAX_UPLOAD_MB` | api | `500` | Largest attachment. Sent to clients, which refuse bigger files up front. |
 | `SFU_PUBLIC_IP` | sfu | autodetected | IP put in ICE candidates. |
 | `SFU_UDP_PORT` / `SFU_WORKERS` | sfu | `50000` / #cores | Worker *i* uses `SFU_UDP_PORT + i`. |
@@ -191,6 +192,21 @@ How federation works:
 5. branchr ID remembers which hosts you use with your branchr account. Signing in on a new device reconnects to all of them, and "Log Out of host" forgets one.
 
 To host it, add `deploy/docker-compose.id.yml`: it runs branchr ID and its own Postgres, and Caddy serves it on `ID_DOMAIN`. It needs `ID_DOMAIN`, `ID_DB_PASSWORD`, `DISCORD_CLIENT_ID` and `DISCORD_CLIENT_SECRET` in `.env`; `scripts/deploy-image.sh` includes it when `ID_DOMAIN` is set. DM calls go through a second SFU, `id-sfu`, next to branchr ID: set `ID_VOICE_SECRET` (`openssl rand -hex 32`) and `COMPOSE_PROFILES=calls` in `.env`, and open UDP 52000–52001 (`ID_SFU_UDP_PORT`/`ID_SFU_UDP_END`). Without them, branchr ID runs as before and calls are off. Its token signing keys rotate on their own every `KEY_ROTATE_DAYS` (default 90, `0` turns it off): a new key is published an hour before it starts signing, and the old one is retired an hour after, when every token it signed has expired. Run it locally against real Discord with `scripts/dev-id.sh`. It reads `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` and a Postgres `DATABASE_URL` from `~/.config/branchr/id.env`, which stays outside the repo. Tests use `TEST_DATABASE_URL` and a throwaway schema; CI provides Postgres and rustfs containers and runs the e2e suite twice: SQLite with files on disk, then Postgres (`E2E_INSTANCE_DB=postgres`, which also sets the test-only `DATABASE_SCHEMA`) with files in rustfs (`E2E_S3_ENDPOINT`). The e2e emote tests talk to a local mock of 7TV, BetterTTV and FrankerFaceZ through the test-only `EMOTE_PROVIDERS_URL`.
+
+## Reaching a home branch (branchr-relay)
+
+Like Plex's relay: a branch at home (no public IP, no port forwarding) is reached through a public gateway. The connector next to the branch dials out to the gateway over QUIC and keeps the connection open. Visitors' HTTPS and WebSockets come back over QUIC streams, and voice/video over QUIC datagrams, so a lost packet never holds up the others.
+
+On the gateway (e.g. the droplet, next to Caddy):
+
+```sh
+branchr-relay serve        # RELAY_QUIC (UDP, default 0.0.0.0:7443), RELAY_HTTP (default 127.0.0.1:8800), RELAY_DIR
+branchr-relay add home home.branchr.us 53000 2   # prints the branch's token; media on UDP 53000-53001
+```
+
+Point the branch's address at the gateway, have Caddy proxy it to `RELAY_HTTP` (`reverse_proxy relay:8800`; for many branches, on-demand TLS can ask `/_relay/check?domain=`), and open UDP 7443 plus the branch's media ports.
+
+Next to the branch: `RELAY_TOKEN=<token> RELAY_API=http://api:8080 RELAY_SFU=http://sfu:8090 RELAY_SFU_UDP=sfu-host:50000 branchr-relay connect`. The branch then runs with `PUBLIC_URL=https://home.branchr.us`, `SFU_URLS=wss://home.branchr.us/sfu/ws` and `TRUST_PROXY=1` on the api, and `SFU_PUBLIC_IP=<gateway IP>` plus `SFU_PUBLIC_UDP_PORT=53000` on the sfu, so clients send media to the gateway. The connector trusts only the gateway certificate named in its token, and the gateway only the secret in it. Relayed media costs the gateway's bandwidth both ways; direct connections, when a branch has them, come later.
 
 ## CI/CD
 

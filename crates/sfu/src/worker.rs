@@ -80,7 +80,7 @@ pub fn spawn(index: usize, config: &Config, shared: Arc<Shared>, rx: mpsc::Unbou
     socket.bind(&bind.into())?;
     let std_socket: std::net::UdpSocket = socket.into();
 
-    let public = SocketAddr::new(config.public_ip, port);
+    let public = SocketAddr::new(config.public_ip, config.public_udp_port + index as u16);
     let initial_bwe = config.initial_bwe_bps;
     std::thread::Builder::new().name(format!("sfu-worker-{index}")).spawn(move || {
         let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().expect("worker runtime");
