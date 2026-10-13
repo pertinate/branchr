@@ -42,7 +42,10 @@ function Step({ n, title, children }: { n: number; title: string; children: Reac
 export function SelfHostPage() {
   return (
     <>
-      <PageHead title="Run your own Hub">A Hub is one Docker setup. It gets its own branchr key the first time it starts, and you claim it by signing in.</PageHead>
+      <PageHead title="Run your own Hub">
+        A Hub is one Docker setup. At home, <a href="/app/#/setup-hub" className="text-primary underline">set it up from the app</a>: it's reachable through branchr.us
+        with no domain. On a server with its own domain, follow the steps below.
+      </PageHead>
       <section className="mx-auto grid max-w-6xl gap-10 px-4 py-12 sm:px-6 lg:grid-cols-[1fr_20rem]">
         <div className="space-y-10">
           <div className="flex items-center gap-2 text-lg font-semibold">
@@ -88,9 +91,12 @@ EOF`}</Code>
               <Home className="size-5 text-primary" /> At home, no domain
             </div>
             <p className="mt-2 text-sm text-muted-foreground">
-              Coming next: get your Hub's key right here, paste one command on your home server or Unraid box, and it's reachable at branchr.us/h/&lt;its key&gt; with
-              no web ports to open. This page will walk you through it and check that voice can reach it.
+              The easy way: sign in, name your Hub, and paste what you're given on your home server or Unraid box. It's yours from the first start and reachable at
+              branchr.us/h/&lt;its key&gt;, with no domain or web ports to open.
             </p>
+            <Button size="sm" className="mt-3" asChild>
+              <a href="/app/#/setup-hub">Set up a Hub at home</a>
+            </Button>
           </div>
           <div className="rounded-xl border border-white/5 bg-card p-5 text-sm text-muted-foreground">
             <p className="font-semibold text-foreground">More options</p>

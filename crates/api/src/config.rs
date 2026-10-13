@@ -43,6 +43,9 @@ pub struct Config {
     pub claim_file: PathBuf,
     /// Be reached through branchr ID's gateway (RELAY=1): no domain or open web ports needed.
     pub relay: bool,
+    /// A one-time code from branchr's "Set up a hub" (BRANCHR_SETUP): on first start the hub
+    /// trades it for its key, already owned by whoever got the code.
+    pub setup_code: Option<String>,
 }
 
 impl Config {
@@ -60,6 +63,7 @@ impl Config {
             database_url: var("DATABASE_URL").unwrap_or_else(|| "sqlite://data/discord.db".into()),
             web_dir: var("WEB_DIR").map(PathBuf::from),
             site_dir: var("SITE_DIR").map(PathBuf::from),
+            setup_code: var("BRANCHR_SETUP"),
             relay: var("RELAY").is_some_and(|v| matches!(v.trim(), "1" | "true" | "on" | "yes")),
             voice_secret,
             sfu_urls: var("SFU_URLS")

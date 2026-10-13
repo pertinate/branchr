@@ -209,6 +209,8 @@ To host it, add `deploy/docker-compose.id.yml`: it runs branchr ID and its own P
 
 ## Reaching a home Hub through branchr.us (branchr-relay)
 
+**The easy way:** sign in at `https://branchr.us/app/#/setup-hub`, name the Hub, and paste the Compose file or `docker run` commands it gives you. They carry a one-time setup code (`BRANCHR_SETUP`), so the Hub is yours from its first start, and `RELAY=1`, so it's reachable at `https://branchr.us/h/<its key>/`. The page waits for it to check in and then opens it. What follows is how that works underneath, and how to run your own gateway.
+
 Like Plex: a Hub at home (no public IP, no port forwarding) is reached through the gateway at `https://branchr.us/h/<name>/`. The connector next to the Hub dials out to the gateway over QUIC and keeps the connection open. Visitors' HTTPS and WebSockets come back over QUIC streams (with the `/h/<name>` prefix removed), and voice/video over QUIC datagrams, so a lost packet never holds up the others.
 
 branchr.us is the front door: branchr ID serves the product site at `/` and the app at `/app/` (`SITE_DIR`/`WEB_DIR`, both in the image), and the app opens `DEFAULT_HUB` unless you pick another. `deploy/docker-compose.id.yml` has the gateway as the `relay` profile (UDP 7443, plus media ports `RELAY_UDP_START`..`RELAY_UDP_END`), and Caddy sends `/h/*` to it. Allow a Hub there:

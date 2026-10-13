@@ -13,6 +13,7 @@ pub mod instances;
 pub mod keys;
 pub mod network;
 pub mod reach;
+pub mod setup;
 pub mod oauth;
 pub mod social;
 
@@ -87,6 +88,7 @@ pub fn router(state: AppState) -> Router {
         .route("/instances/{id}/claim-code", post(instances::new_claim_code))
         .route("/instances/{id}/token", post(instances::token))
         .route("/claims", post(instances::claim))
+        .route("/instances/setup", post(setup::redeem))
         .layer(axum::middleware::from_fn_with_state(throttle::IpLimit::new(30, 60.0, trust_proxy), throttle::ip_limit));
     let explore = Router::new()
         .route("/discover", get(discovery::search))
@@ -116,6 +118,8 @@ pub fn router(state: AppState) -> Router {
         .route("/instances/{id}", get(instances::status))
         .route("/instances/{id}/claim", axum::routing::delete(instances::release))
         .route("/instances/{id}/relay-pass", post(instances::relay_pass))
+        .route("/setup-codes", post(setup::create))
+        .route("/setup-codes/{code}", get(setup::status))
         .route("/relay", get(instances::relay_info))
         .route("/instances/{id}/transfer", post(instances::transfer))
         .route("/network/me", get(network::me))

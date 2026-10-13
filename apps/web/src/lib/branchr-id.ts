@@ -65,6 +65,19 @@ function redirectUri(): string {
 }
 
 /** Opens Discord sign-in. Finishes in `completeSignIn` when the redirect comes back. */
+const AFTER_KEY = "branchr-after-sign-in";
+
+/** Where to go once sign-in comes back (a page that needed it first). */
+export function setAfterSignIn(path: string) {
+  localStorage.setItem(AFTER_KEY, path);
+}
+
+export function takeAfterSignIn(): string | null {
+  const p = localStorage.getItem(AFTER_KEY);
+  localStorage.removeItem(AFTER_KEY);
+  return p;
+}
+
 export async function startSignIn() {
   const verifier = random();
   const challenge = b64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));

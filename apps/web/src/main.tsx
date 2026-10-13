@@ -6,7 +6,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { toast } from "sonner";
 
-import { listenForSignIn, useBranchrId } from "@/lib/branchr-id";
+import { listenForSignIn, takeAfterSignIn, useBranchrId } from "@/lib/branchr-id";
 import { syncHosts } from "@/lib/host-sync";
 import { continueServerLogin } from "@/lib/server-login";
 
@@ -34,6 +34,9 @@ declare module "@tanstack/react-router" {
 listenForSignIn((err) => {
   if (err) return void toast.error("Couldn't sign in to branchr", { description: err.message });
   toast.success(`Signed in to branchr as ${useBranchrId.getState().account?.displayName}`);
+  // Signing in was a step of something else (e.g. setting up a hub): go back to it.
+  const back = takeAfterSignIn();
+  if (back) return void router.navigate({ to: back as "/setup-hub" });
   // If signing in was the first step of logging in to a server, finish that.
   continueServerLogin().then(
     (to) => {

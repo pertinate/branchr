@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as SetupHubRouteImport } from './routes/setup-hub'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppGuildIdRouteImport } from './routes/_app/$guildId'
 import { Route as AppExploreRouteImport } from './routes/_app/explore'
@@ -29,6 +30,11 @@ const AppRoute = AppRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SetupHubRoute = SetupHubRouteImport.update({
+  id: '/setup-hub',
+  path: '/setup-hub',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppIndexRoute = AppIndexRouteImport.update({
@@ -85,6 +91,7 @@ const AppHubInstanceIndexRoute = AppHubInstanceIndexRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/login': typeof LoginRoute
+  '/setup-hub': typeof SetupHubRoute
   '/$guildId': typeof AppGuildIdRouteWithChildren
   '/explore': typeof AppExploreRoute
   '/home': typeof AppHomeRouteWithChildren
@@ -97,6 +104,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
+  '/setup-hub': typeof SetupHubRoute
   '/explore': typeof AppExploreRoute
   '/': typeof AppIndexRoute
   '/$guildId/$channelId': typeof AppGuildIdChannelIdRoute
@@ -109,6 +117,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
+  '/setup-hub': typeof SetupHubRoute
   '/_app/$guildId': typeof AppGuildIdRouteWithChildren
   '/_app/explore': typeof AppExploreRoute
   '/_app/home': typeof AppHomeRouteWithChildren
@@ -125,6 +134,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/login'
+    | '/setup-hub'
     | '/$guildId'
     | '/explore'
     | '/home'
@@ -137,6 +147,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
+    | '/setup-hub'
     | '/explore'
     | '/'
     | '/$guildId/$channelId'
@@ -148,6 +159,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_app'
     | '/login'
+    | '/setup-hub'
     | '/_app/$guildId'
     | '/_app/explore'
     | '/_app/home'
@@ -163,6 +175,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   LoginRoute: typeof LoginRoute
+  SetupHubRoute: typeof SetupHubRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -179,6 +192,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/setup-hub': {
+      id: '/setup-hub'
+      path: '/setup-hub'
+      fullPath: '/setup-hub'
+      preLoaderRoute: typeof SetupHubRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app/': {
@@ -314,6 +334,7 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   LoginRoute: LoginRoute,
+  SetupHubRoute: SetupHubRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

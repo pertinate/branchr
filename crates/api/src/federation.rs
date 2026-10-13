@@ -177,15 +177,31 @@ impl Federation {
                     if stale.is_some() {
                         tracing::warn!("BRANCHR_ID_URL changed; registering with {}", self.id_url);
                     }
-                    let r: Registered = self
-                        .http
-                        .post(format!("{}/instances", self.id_url))
-                        .json(&Register { name: &config.instance_name, public_url: &config.public_url })
-                        .send()
-                        .await?
-                        .error_for_status()?
-                        .json()
-                        .await?;
+                    // With a setup code from branchr's website, we're already someone's.
+                    let r: Registered = match &config.setup_code {
+                        Some(code) => {
+                            let resp = self
+                                .http
+                                .post(format!("{}/instances/setup", self.id_url))
+                                .json(&serde_json::json!({ "code": code, "publicUrl": config.public_url }))
+                                .send()
+                                .await?;
+                            if !resp.status().is_success() {
+                                let body = resp.text().await.unwrap_or_default();
+                                anyhow::bail!("setup code refused: {body}");
+                            }
+                            resp.json().await?
+                        }
+                        None => self
+                            .http
+                            .post(format!("{}/instances", self.id_url))
+                            .json(&Register { name: &config.instance_name, public_url: &config.public_url })
+                            .send()
+                            .await?
+                            .error_for_status()?
+                            .json()
+                            .await?,
+                    };
                     sqlx::query(
                         "INSERT INTO federation (id, branchr_id_url, instance_id, secret) VALUES (1, $1, $2, $3)
                          ON CONFLICT (id) DO UPDATE SET branchr_id_url = $1, instance_id = $2, secret = $3, owner_global_id = NULL",
@@ -196,7 +212,11 @@ impl Federation {
                     .execute(db)
                     .await?;
                     tracing::info!("registered with branchr ID as {}", r.instance_id);
-                    show_claim_code(config, &r.claim_code);
+                    if r.claim_code.is_empty() {
+                        tracing::info!("set up with a code: it's already yours");
+                    } else {
+                        show_claim_code(config, &r.claim_code);
+                    }
                     *self.claim_issued.lock() = Some(Instant::now());
                     *self.identity.write() = Some(Identity { instance_id: r.instance_id, secret: r.secret, owner: None });
                 }

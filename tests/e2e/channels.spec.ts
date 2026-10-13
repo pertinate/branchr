@@ -12,7 +12,8 @@ test("channel list: right-click to create, drag to reorder and move; send button
   const bob = await register(browser, "chan_b");
   await joinServer(bob, code);
 
-  // The send button sends.
+  // The send button sends (once bob is in the channel, so he gets it live).
+  await expect(bob.getByPlaceholder("Message #general")).toBeVisible();
   await alice.getByPlaceholder("Message #general").fill("sent with the button");
   await alice.getByRole("button", { name: "Send", exact: true }).click();
   await expect(bob.getByText("sent with the button")).toBeVisible();
