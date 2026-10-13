@@ -202,6 +202,31 @@ wire! {
         pub token: Option<String>,
     }
 
+    /// What a community notifies about: every message, only mentions (the default), or nothing.
+    #[derive(Copy, Eq)]
+    pub enum NotifyLevel {
+        All,
+        Mentions,
+        Nothing,
+    }
+
+    pub struct GuildNotifyLevel {
+        pub guild_id: Id,
+        pub level: NotifyLevel,
+    }
+
+    /// Your muted communities and channels and notification levels on this hub.
+    #[derive(Default)]
+    pub struct NotifySettings {
+        #[serde(default)]
+        pub muted_guilds: Vec<Id>,
+        #[serde(default)]
+        pub muted_channels: Vec<Id>,
+        /// Only those not at the default (mentions).
+        #[serde(default)]
+        pub levels: Vec<GuildNotifyLevel>,
+    }
+
     pub struct Poll {
         pub question: String,
         pub answers: Vec<PollAnswer>,

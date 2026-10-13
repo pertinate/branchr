@@ -96,6 +96,8 @@ pub enum ServerEvent {
     TypingStart(TypingStart),
     PresenceUpdate(Presence),
     UserUpdate(User),
+    /// Your notify settings changed (on another device).
+    NotifySettingsUpdate(NotifySettings),
 
     /// Voice state for a user changed. `channel_id: None` in `VoiceStateRemove` means left.
     VoiceStateUpdate(VoiceState),
@@ -134,6 +136,9 @@ pub struct Ready {
     #[cfg_attr(feature = "ts", ts(type = "number"))]
     pub max_upload_bytes: u64,
     pub read_states: Vec<ReadState>,
+    /// None when you've never saved any here.
+    #[serde(default)]
+    pub notify: Option<NotifySettings>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -78,11 +78,12 @@ async fn run(mut ws: WebSocket, state: AppState) -> anyhow::Result<()> {
     let _guard = SessionGuard { state: state.clone(), key };
 
     let me = db::user(&state.db, user).await?;
-    let (guilds, read_states) = tokio::try_join!(
+    let (guilds, read_states, notify) = tokio::try_join!(
         try_join_all(guild_ids.iter().map(|g| ready_guild(&state, *g, user))),
         async { Ok(db::read_states(&state.db, user).await?) },
+        async { Ok(db::notify_settings(&state.db, user).await?) },
     )?;
-    let ready = Ready { user: me, session_id: key.to_string(), guilds, max_upload_bytes: state.max_upload_bytes.load(std::sync::atomic::Ordering::Relaxed), read_states };
+    let ready = Ready { user: me, session_id: key.to_string(), guilds, max_upload_bytes: state.max_upload_bytes.load(std::sync::atomic::Ordering::Relaxed), read_states, notify };
     send(&mut ws, &ServerEvent::Ready(ready)).await?;
 
     // Another session of theirs may have shown something else; the newest choice wins.

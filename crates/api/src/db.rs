@@ -705,6 +705,12 @@ impl From<ReadStateRow> for proto::gateway::ReadState {
     }
 }
 
+/// `user`'s notify settings here, if ever saved.
+pub async fn notify_settings(db: &Db, user: Id) -> sqlx::Result<Option<NotifySettings>> {
+    let row: Option<(String,)> = sqlx::query_as("SELECT data FROM notify_settings WHERE user_id = $1").bind(user.0).fetch_optional(db).await?;
+    Ok(row.and_then(|(d,)| serde_json::from_str(&d).ok()))
+}
+
 /// Read states for channels in guilds `user` is still in.
 pub async fn read_states(db: &Db, user: Id) -> sqlx::Result<Vec<proto::gateway::ReadState>> {
     Ok(sqlx::query_as::<_, ReadStateRow>(

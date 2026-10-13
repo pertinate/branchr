@@ -51,3 +51,42 @@ test("muting a channel hides its unread marker; community mute and notification 
   await bob.getByRole("menuitem", { name: "Notification Settings" }).hover();
   await expect(bob.getByRole("menuitemradio", { name: "Nothing" })).toHaveAttribute("aria-checked", "true");
 });
+
+test("mutes and notification levels follow you to another device", async ({ browser }) => {
+  const alice = await register(browser, "mute_dev");
+  await createServer(alice, "Synced");
+  const general = (p: typeof alice) => p.getByRole("link", { name: "general", exact: true });
+  await general(alice).click({ button: "right" });
+  await alice.getByRole("menuitemcheckbox", { name: "Mute Channel" }).click();
+  await alice.getByRole("button", { name: "Synced" }).click();
+  await alice.getByRole("menuitem", { name: "Notification Settings" }).hover();
+  await alice.getByRole("menuitemradio", { name: "Nothing" }).click();
+  await alice.waitForTimeout(800); // the save is debounced
+
+  // Another device: the same login, nothing on it yet.
+  const saved = await alice.evaluate(() => localStorage.getItem("sessions")!);
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  await ctx.addInitScript((s) => {
+    if (!localStorage.getItem("sessions")) localStorage.setItem("sessions", s);
+  }, saved);
+  const phone = await ctx.newPage();
+  await phone.goto(alice.url());
+  await expect(general(phone)).toHaveAttribute("data-muted", "true");
+  await phone.getByRole("button", { name: "Synced" }).click();
+  await phone.getByRole("menuitem", { name: "Notification Settings" }).hover();
+  await expect(phone.getByRole("menuitemradio", { name: "Nothing" })).toHaveAttribute("aria-checked", "true");
+  await phone.keyboard.press("Escape");
+  await phone.keyboard.press("Escape");
+
+  // Unmuting there shows on the first device right away.
+  await general(phone).click({ button: "right" });
+  await phone.getByRole("menuitemcheckbox", { name: "Mute Channel", checked: true }).click();
+  await expect(general(alice)).not.toHaveAttribute("data-muted", "true");
+
+  // And then they're quiet: no device answers a change by saving again.
+  await phone.waitForTimeout(500);
+  let saves = 0;
+  for (const p of [alice, phone]) p.on("request", (r) => r.url().includes("/notify-settings") && saves++);
+  await phone.waitForTimeout(1500);
+  expect(saves).toBe(0);
+});

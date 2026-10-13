@@ -36,6 +36,7 @@ const TABLES: &[&str] = &[
     "webhooks",
     "polls",
     "poll_votes",
+    "notify_settings",
 ];
 
 pub async fn run(from: &str, to: &str) -> anyhow::Result<()> {

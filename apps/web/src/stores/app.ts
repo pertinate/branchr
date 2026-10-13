@@ -16,6 +16,7 @@ import { create } from "zustand";
 import { compareIds } from "@/lib/ids";
 import { type Instance, instanceStore } from "@/lib/instances";
 import { mentionsMe } from "@/lib/mentions";
+import { fromHubReady, fromHubUpdate } from "@/lib/mutes";
 
 export type ConnectionState = "idle" | "connecting" | "ready" | "reconnecting";
 
@@ -158,6 +159,7 @@ export function createAppStore(inst: Instance) {
   apply: (ev) => {
     switch (ev.t) {
       case "READY": {
+        fromHubReady(inst.id, ev.d.notify ?? null);
         const base: AppState = {
           ...get(),
           me: ev.d.user,
@@ -247,6 +249,9 @@ export function createAppStore(inst: Instance) {
         set((s) => ({
           members: { ...s.members, [ev.d.guildId]: without(s.members[ev.d.guildId] ?? {}, ev.d.userId) },
         }));
+        return;
+      case "NOTIFY_SETTINGS_UPDATE":
+        fromHubUpdate(inst.id, ev.d);
         return;
       case "USER_UPDATE":
         set((s) => updateUserEverywhere(s, ev.d));

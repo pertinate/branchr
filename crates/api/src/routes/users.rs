@@ -2,7 +2,7 @@ use axum::Json;
 use axum::extract::{Path, State};
 use proto::Id;
 use proto::gateway::ServerEvent;
-use proto::models::{Profile, User};
+use proto::models::{NotifySettings, Profile, User};
 use serde::Deserialize;
 
 use crate::auth::Auth;
@@ -65,6 +65,24 @@ pub async fn patch_me(
         sqlx::query("UPDATE users SET avatar_url = $1 WHERE id = $2").bind(url).bind(user.0).execute(&state.db).await?;
     }
     Ok(Json(announce(&state, user).await?))
+}
+
+/// Most ids each list of notify settings keeps.
+const NOTIFY_MAX: usize = 2000;
+
+/// Replaces your notify settings here, and tells your other sessions.
+pub async fn put_notify_settings(State(state): State<AppState>, Auth(user): Auth, Json(body): Json<NotifySettings>) -> AppResult<Json<NotifySettings>> {
+    if body.muted_guilds.len() > NOTIFY_MAX || body.muted_channels.len() > NOTIFY_MAX || body.levels.len() > NOTIFY_MAX {
+        return Err(bad("too many notify settings"));
+    }
+    let data = serde_json::to_string(&body).expect("settings serialize");
+    sqlx::query("INSERT INTO notify_settings (user_id, data) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET data = excluded.data")
+        .bind(user.0)
+        .bind(data)
+        .execute(&state.db)
+        .await?;
+    state.hub.to_user(user, &ServerEvent::NotifySettingsUpdate(body.clone()));
+    Ok(Json(body))
 }
 
 /// Sends `user`'s current profile to everyone who shares a guild with them, and returns it.
