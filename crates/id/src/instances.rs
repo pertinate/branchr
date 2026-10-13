@@ -257,6 +257,30 @@ pub async fn owned(State(s): State<AppState>, headers: HeaderMap) -> Result<Json
     Ok(Json(rows.into_iter().map(|(instance_id, name, public_url, last_seen)| Owned { instance_id, name, public_url, last_seen }).collect()))
 }
 
+#[derive(Deserialize)]
+pub struct Transfer {
+    /// The new owner's branchr handle.
+    handle: String,
+}
+
+/// Hands a claimed server to another account (the server picks it up on its next check).
+pub async fn transfer(State(s): State<AppState>, Path(id): Path<Uuid>, headers: HeaderMap, Json(body): Json<Transfer>) -> Result<axum::http::StatusCode> {
+    let account = authed(&s, &headers).await?;
+    let handle = body.handle.trim().trim_start_matches('@').to_lowercase();
+    let to: Option<(Uuid,)> = sqlx::query_as("SELECT id FROM accounts WHERE handle = $1").bind(&handle).fetch_optional(&s.db).await?;
+    let Some((to,)) = to else {
+        return Err(bad("invalid_request", format!("no branchr account @{handle}")));
+    };
+    if to == account {
+        return Err(bad("invalid_request", "that's you"));
+    }
+    let r = sqlx::query("UPDATE instances SET owner_id = $1 WHERE id = $2 AND owner_id = $3").bind(to).bind(id).bind(account).execute(&s.db).await?;
+    if r.rows_affected() == 0 {
+        return Err(Error::NotFound);
+    }
+    Ok(axum::http::StatusCode::NO_CONTENT)
+}
+
 /// Gives up a claim: the server shows a claim code again (a wiped server's old record, or one
 /// you're handing to someone else).
 pub async fn release(State(s): State<AppState>, Path(id): Path<Uuid>, headers: HeaderMap) -> Result<axum::http::StatusCode> {

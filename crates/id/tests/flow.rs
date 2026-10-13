@@ -208,6 +208,24 @@ async fn servers_register_get_claimed_and_issue_passes() {
     assert_eq!(owned.len(), 1);
     assert_eq!(owned[0]["instanceId"], reg.instance_id.to_string());
     assert_eq!(owned[0]["publicUrl"], "https://chat.example.com");
+
+    // Handing it to Bob: it's his now, and the server sees the new owner.
+    let bob = h.token_for("bob").await;
+    let transfer = format!("{status_url}/transfer");
+    let r = h.http.post(&transfer).bearer_auth(&at).json(&serde_json::json!({ "handle": "nobody_here" })).send().await.unwrap();
+    assert_eq!(r.status(), StatusCode::BAD_REQUEST, "unknown handle");
+    let r = h.http.post(&transfer).bearer_auth(&bob).json(&serde_json::json!({ "handle": "bob" })).send().await.unwrap();
+    assert_eq!(r.status(), StatusCode::BAD_REQUEST, "only to someone else");
+    let r = h.http.post(&transfer).bearer_auth(&at).json(&serde_json::json!({ "handle": "@Bob" })).send().await.unwrap();
+    assert_eq!(r.status(), StatusCode::NO_CONTENT);
+    let mine: Vec<serde_json::Value> = h.http.get(format!("{}/me/owned", h.base)).bearer_auth(&at).send().await.unwrap().json().await.unwrap();
+    assert!(mine.is_empty());
+    let his: Vec<serde_json::Value> = h.http.get(format!("{}/me/owned", h.base)).bearer_auth(&bob).send().await.unwrap().json().await.unwrap();
+    assert_eq!(his.len(), 1);
+    let st2: Status = h.http.get(&status_url).bearer_auth(&reg.secret).send().await.unwrap().json().await.unwrap();
+    assert!(st2.claimed && st2.owner_id != st.owner_id);
+    let r = h.http.post(&transfer).bearer_auth(&at).json(&serde_json::json!({ "handle": "bob" })).send().await.unwrap();
+    assert_eq!(r.status(), StatusCode::NOT_FOUND, "no longer Nelly's to give");
     h.finish().await;
 }
 

@@ -209,6 +209,18 @@ export async function releaseHost(instanceId: string): Promise<void> {
   if (!r.ok) throw new Error(await errorOf(r));
 }
 
+/** Hands a hub you own to another branchr account, by handle. */
+export async function transferHost(instanceId: string, handle: string): Promise<void> {
+  const at = await accessToken();
+  if (!at) throw new Error("sign in to branchr first");
+  const r = await fetch(`${ID_URL}/instances/${encodeURIComponent(instanceId)}/transfer`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${at}`, "content-type": "application/json" },
+    body: JSON.stringify({ handle }),
+  });
+  if (!r.ok) throw new Error(await errorOf(r));
+}
+
 export async function ownedHosts(): Promise<OwnedHost[]> {
   const at = await accessToken();
   if (!at) return [];

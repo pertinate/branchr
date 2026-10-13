@@ -15,7 +15,7 @@ import { PicturePicker } from "@/components/picture-picker";
 import { MicTest } from "@/components/voice/mic-test";
 import { setStatus } from "@/lib/actions";
 import { api } from "@/lib/api";
-import { type OwnedHost, claimServer, ownedHosts, releaseHost, signOut, startSignIn, useBranchrId } from "@/lib/branchr-id";
+import { type OwnedHost, claimServer, ownedHosts, releaseHost, transferHost, signOut, startSignIn, useBranchrId } from "@/lib/branchr-id";
 import { desktop } from "@/lib/desktop";
 import { hostOf, instanceKey, normalizeUrl, useActive, useInstance, useInstanceList } from "@/lib/instances";
 import { uploadPicture } from "@/lib/media";
@@ -410,6 +410,17 @@ function OwnedHosts() {
       toast.error((e as Error).message);
     }
   };
+  const transfer = async (h: OwnedHost) => {
+    const handle = prompt(`Give ${h.name} to which branchr account? Their handle (they own it once it checks in, within a few minutes):`)?.trim();
+    if (!handle) return;
+    try {
+      await transferHost(h.instanceId, handle);
+      toast.success(`${h.name} now belongs to @${handle.replace(/^@/, "")}`);
+      await qc.invalidateQueries({ queryKey: ["owned-hosts"] });
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  };
   if (!hosts.length) return null;
   return (
     <div className="space-y-1" data-testid="owned-hosts">
@@ -434,6 +445,9 @@ function OwnedHosts() {
                 Connect
               </Button>
             ) : null}
+            <Button size="sm" variant="ghost" aria-label={`Transfer ${h.name}`} title="Give it to another account" onClick={() => void transfer(h)}>
+              Transfer
+            </Button>
             <Button size="sm" variant="ghost" aria-label={`Release ${h.name}`} title="Release your claim" onClick={() => void release([h], h.name)}>
               Release
             </Button>
