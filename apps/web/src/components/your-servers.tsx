@@ -11,6 +11,7 @@ import { forgetHost } from "@/lib/host-sync";
 import { shortKey, useHubLabel } from "@/lib/hub-names";
 import { type Instance, InstanceProvider, hostOf, instance, useInstance, useInstanceList } from "@/lib/instances";
 import { useMediaUrl } from "@/lib/media";
+import { useMutes } from "@/lib/mutes";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/stores/app";
 import { useDialogs } from "@/stores/ui";
@@ -100,7 +101,11 @@ function HostActions({ inst }: { inst: Instance }) {
 function GuildCard({ guildId }: { guildId: string }) {
   const guild = useApp((s) => s.guilds[guildId]);
   const icon = useMediaUrl(guild?.iconUrl);
-  const unread = useApp((s) => guildUnread(s, guildId));
+  const instanceId = useInstance().id;
+  // Muting changes what counts as unread.
+  useMutes((m) => m.guilds);
+  useMutes((m) => m.channels);
+  const unread = useApp((s) => guildUnread(s, guildId, instanceId));
   const pings = useApp((s) => guildPings(s, guildId));
   if (!guild) return null;
   return (

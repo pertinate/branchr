@@ -5,7 +5,7 @@
 import type { ReactNode } from "react";
 import type { Member, Status } from "@app/protocol";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { AtSign, Ban, CheckCheck, Copy, LogOut, Pencil, PhoneOff, PlusCircle, Settings, Shield, Smile, Trash2, UserMinus, UserPlus, Volume2 } from "lucide-react";
+import { AtSign, Ban, Bell, CheckCheck, Copy, LogOut, Pencil, PhoneOff, PlusCircle, Settings, Shield, Smile, Trash2, UserMinus, UserPlus, Volume2 } from "lucide-react";
 
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
@@ -28,6 +28,7 @@ import { Slider } from "@/components/ui/slider";
 import { useHostOwner } from "@/components/host-admin-dialog";
 import { copy, deleteChannel, insertIntoComposer, kick, leaveGuild, markGuildRead, setStatus } from "@/lib/actions";
 import { useInstance } from "@/lib/instances";
+import { type NotifyLevel, notifyLevel, useChannelMuted, useGuildMuted, useMutes } from "@/lib/mutes";
 import { P, SETTINGS_PERMS, roleColor, topOf, useCan, useCanAny, useOutranks } from "@/lib/perms";
 import { useApp } from "@/stores/app";
 import { useDialogs, usePrefs } from "@/stores/ui";
@@ -71,6 +72,8 @@ export function GuildMenuItems({ guildId }: { guildId: string }) {
         Mark As Read <CheckCheck className="ml-auto" />
       </ContextMenuItem>
       <ContextMenuSeparator />
+      <GuildNotifyItems guildId={guildId} />
+      <ContextMenuSeparator />
       {canInvite && (
         <ContextMenuItem className="text-primary" onSelect={() => open({ instanceId, kind: "invite", guildId })}>
           Invite People <UserPlus className="ml-auto" />
@@ -104,6 +107,42 @@ export function GuildMenuItems({ guildId }: { guildId: string }) {
   );
 }
 
+/** Mute the community, and what in it notifies. */
+function GuildNotifyItems({ guildId }: { guildId: string }) {
+  const instanceId = useInstance().id;
+  const muted = useGuildMuted(instanceId, guildId);
+  const level = useMutes((m) => notifyLevel(m, instanceId, guildId));
+  return (
+    <>
+      <ContextMenuCheckboxItem checked={muted} onCheckedChange={(on) => useMutes.getState().muteGuild(instanceId, guildId, on)}>
+        Mute Community
+      </ContextMenuCheckboxItem>
+      <ContextMenuSub>
+        <ContextMenuSubTrigger>
+          Notification Settings <Bell className="ml-auto size-4" />
+        </ContextMenuSubTrigger>
+        <ContextMenuSubContent className="w-48">
+          <ContextMenuRadioGroup value={level} onValueChange={(v) => useMutes.getState().setLevel(instanceId, guildId, v as NotifyLevel)}>
+            <ContextMenuRadioItem value="all">All Messages</ContextMenuRadioItem>
+            <ContextMenuRadioItem value="mentions">Only @mentions</ContextMenuRadioItem>
+            <ContextMenuRadioItem value="nothing">Nothing</ContextMenuRadioItem>
+          </ContextMenuRadioGroup>
+        </ContextMenuSubContent>
+      </ContextMenuSub>
+    </>
+  );
+}
+
+function MuteChannelItem({ channelId }: { channelId: string }) {
+  const instanceId = useInstance().id;
+  const muted = useChannelMuted(instanceId, channelId);
+  return (
+    <ContextMenuCheckboxItem checked={muted} onCheckedChange={(on) => useMutes.getState().muteChannel(instanceId, channelId, on)}>
+      Mute Channel
+    </ContextMenuCheckboxItem>
+  );
+}
+
 export function ChannelMenuItems({ channelId }: { channelId: string }) {
   const inst = useInstance();
   const instanceId = inst.id;
@@ -116,9 +155,12 @@ export function ChannelMenuItems({ channelId }: { channelId: string }) {
   return (
     <>
       {channel.kind === "text" && (
-        <ContextMenuItem onSelect={() => inst.app.getState().markRead(channelId)}>
-          Mark As Read <CheckCheck className="ml-auto" />
-        </ContextMenuItem>
+        <>
+          <ContextMenuItem onSelect={() => inst.app.getState().markRead(channelId)}>
+            Mark As Read <CheckCheck className="ml-auto" />
+          </ContextMenuItem>
+          <MuteChannelItem channelId={channelId} />
+        </>
       )}
       {channel.kind === "voice" &&
         (inThis ? (

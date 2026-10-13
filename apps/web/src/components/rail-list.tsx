@@ -14,14 +14,23 @@ import { compareIds } from "@/lib/ids";
 import { loadHubName, useHubLabel } from "@/lib/hub-names";
 import { InstanceProvider, instance, useInstance, useInstanceList } from "@/lib/instances";
 import { useMediaUrl } from "@/lib/media";
+import { channelMuted, guildMuted, useMutes } from "@/lib/mutes";
 import { type DropTarget, FOLDER_COLORS, type Folder, type GuildRef, type RailItem, guildRef, itemKey, parseRef, useRailLayout } from "@/lib/rail-layout";
 import { cn } from "@/lib/utils";
 import { type AppState, useApp } from "@/stores/app";
 import { useVoice } from "@/stores/voice";
 
-export function guildUnread(s: AppState, guildId: string) {
+/** Unread anywhere in the community, leaving out what's muted (on this host). */
+export function guildUnread(s: AppState, guildId: string, instanceId: string) {
+  const m = useMutes.getState();
+  if (guildMuted(m, instanceId, guildId)) return false;
   return Object.values(s.channels).some(
-    (c) => c.guildId === guildId && (c.kind === "text" || c.kind === "thread") && c.lastMessageId && (!s.lastRead[c.id] || compareIds(c.lastMessageId, s.lastRead[c.id]) > 0),
+    (c) =>
+      c.guildId === guildId &&
+      (c.kind === "text" || c.kind === "thread") &&
+      c.lastMessageId &&
+      (!s.lastRead[c.id] || compareIds(c.lastMessageId, s.lastRead[c.id]) > 0) &&
+      !channelMuted(m, instanceId, c.id),
   );
 }
 
@@ -114,7 +123,10 @@ const GuildIcon = memo(function GuildIcon({ guildId, active, inFolder }: { guild
   const instanceId = inst.id;
   const guild = useApp((s) => s.guilds[guildId]);
   const icon = useMediaUrl(guild?.iconUrl);
-  const unread = useApp((s) => guildUnread(s, guildId));
+  // Muting changes what counts as unread.
+  useMutes((m) => m.guilds);
+  useMutes((m) => m.channels);
+  const unread = useApp((s) => guildUnread(s, guildId, instanceId));
   const pings = useApp((s) => guildPings(s, guildId));
   const inVoice = useVoice((s) => s.guildId === guildId && s.instanceId === instanceId);
   const severalHosts = useInstanceList((s) => s.ids.length > 1);
@@ -201,6 +213,7 @@ function useFolderStatus(refs: GuildRef[]) {
         const inst = instance(h);
         return inst ? [inst.app.subscribe(cb)] : [];
       });
+      offs.push(useMutes.subscribe(cb));
       return () => offs.forEach((off) => off());
     },
     [key],
@@ -213,7 +226,7 @@ function useFolderStatus(refs: GuildRef[]) {
       const s = instance(instanceId)?.app.getState();
       if (!s) continue;
       pings += guildPings(s, guildId);
-      unread ||= guildUnread(s, guildId);
+      unread ||= guildUnread(s, guildId, instanceId);
     }
     // One number, so unchanged status doesn't re-render.
     return pings * 2 + (unread ? 1 : 0);

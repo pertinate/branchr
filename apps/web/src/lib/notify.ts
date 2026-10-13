@@ -3,6 +3,7 @@ import type { DmMessage, Message } from "@app/protocol";
 import { desktop } from "@/lib/desktop";
 import { type Instance, instance, instances, useActive, useInstanceList } from "@/lib/instances";
 import { mentionsMe, plainText } from "@/lib/mentions";
+import { channelMuted, guildMuted, notifyLevel, useMutes } from "@/lib/mutes";
 import { dmListeners, isUnread, useSocial } from "@/lib/social";
 
 /** A short two-note chime, synthesized so there's no asset to ship. */
@@ -43,8 +44,24 @@ function show(title: string, body: string, tag: string) {
   }
 }
 
-/** Notifies about a message that mentions us, unless it's on screen in a focused window. */
-function notifyMention(inst: Instance, m: Message) {
+/**
+ * Whether a new message notifies: mentions do unless the community is set to nothing; with
+ * "All Messages", so does everything else that isn't muted.
+ */
+function shouldNotify(inst: Instance, m: Message): boolean {
+  const s = inst.app.getState();
+  if (m.author.id === s.me?.id) return false;
+  const guildId = s.channels[m.channelId]?.guildId;
+  if (!guildId) return false;
+  const mutes = useMutes.getState();
+  const level = notifyLevel(mutes, inst.id, guildId);
+  if (level === "nothing") return false;
+  if (mentionsMe(m, s)) return true;
+  return level === "all" && !guildMuted(mutes, inst.id, guildId) && !channelMuted(mutes, inst.id, m.channelId);
+}
+
+/** Notifies about a message, unless it's on screen in a focused window. */
+function notifyMessage(inst: Instance, m: Message) {
   const s = inst.app.getState();
   const onScreen = useActive.getState().id === inst.id && s.viewing === m.channelId;
   if (onScreen && document.hasFocus()) return;
@@ -89,7 +106,7 @@ export function startNotifications(): () => void {
     for (const inst of instances()) {
       if (attached.has(inst.id)) continue;
       const offGateway = inst.gateway.on((ev) => {
-        if (ev.t === "MESSAGE_CREATE" && mentionsMe(ev.d, inst.app.getState())) notifyMention(inst, ev.d);
+        if (ev.t === "MESSAGE_CREATE" && shouldNotify(inst, ev.d)) notifyMessage(inst, ev.d);
       });
       const offStore = inst.app.subscribe((s, prev) => s.pings !== prev.pings && badge());
       attached.set(inst.id, () => {

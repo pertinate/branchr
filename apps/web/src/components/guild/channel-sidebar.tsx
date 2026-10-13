@@ -14,6 +14,7 @@ import { type ChannelDrop, reorder } from "@/lib/channel-order";
 import { compareIds } from "@/lib/ids";
 import { useInstance } from "@/lib/instances";
 import { cn } from "@/lib/utils";
+import { useChannelMuted } from "@/lib/mutes";
 import { useMediaUrl } from "@/lib/media";
 import { P, useCan } from "@/lib/perms";
 import { useApp } from "@/stores/app";
@@ -216,9 +217,10 @@ function ChannelListMenuItems({ guildId }: { guildId: string }) {
 const TextChannelRow = memo(function TextChannelRow({ channel, thread }: { channel: Channel; thread?: boolean }) {
   const params = useParams({ strict: false }) as { channelId?: string };
   const active = params.channelId === channel.id;
-  const unread = useApp(
-    (s) => !!channel.lastMessageId && (!s.lastRead[channel.id] || compareIds(channel.lastMessageId, s.lastRead[channel.id]) > 0),
-  );
+  const instanceId = useInstance().id;
+  const muted = useChannelMuted(instanceId, channel.id);
+  const unread =
+    useApp((s) => !!channel.lastMessageId && (!s.lastRead[channel.id] || compareIds(channel.lastMessageId, s.lastRead[channel.id]) > 0)) && !muted;
   const pings = useApp((s) => s.pings[channel.id] ?? 0);
   return (
     <Menu items={<ChannelMenuItems channelId={channel.id} />}>
@@ -227,9 +229,12 @@ const TextChannelRow = memo(function TextChannelRow({ channel, thread }: { chann
       to="/$guildId/$channelId"
       params={{ guildId: channel.guildId, channelId: channel.id }}
       data-thread={thread || undefined}
+      data-muted={muted || undefined}
+      data-unread={(unread && !active) || undefined}
       className={cn(
         "relative flex items-center gap-1.5 rounded px-2 py-1.5 text-[15px] font-medium",
         thread && "ml-5 py-1 text-sm",
+        muted && !active && "opacity-50",
         active ? "bg-sidebar-accent text-sidebar-accent-foreground" : unread ? "text-foreground hover:bg-sidebar-accent/60" : "text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
       )}
     >

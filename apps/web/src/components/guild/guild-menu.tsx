@@ -1,15 +1,22 @@
 import { useNavigate } from "@tanstack/react-router";
-import { ChevronDown, LogOut, Pencil, PlusCircle, Settings, Smile, Trash2, UserPlus } from "lucide-react";
+import { Bell, ChevronDown, LogOut, Pencil, PlusCircle, Settings, Smile, Trash2, UserPlus } from "lucide-react";
 
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuCheckboxItem,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { leaveGuild } from "@/lib/actions";
 import { useInstance } from "@/lib/instances";
+import { type NotifyLevel, notifyLevel, useGuildMuted, useMutes } from "@/lib/mutes";
 import { P, SETTINGS_PERMS, useCan, useCanAny } from "@/lib/perms";
 import { useApp } from "@/stores/app";
 import { useDialogs } from "@/stores/ui";
@@ -24,6 +31,8 @@ export function GuildMenu({ guildId }: { guildId: string }) {
   const canChannels = useCan(guildId, P.MANAGE_CHANNELS);
   const navigate = useNavigate();
   const open = useDialogs((s) => s.open);
+  const muted = useGuildMuted(instanceId, guildId);
+  const level = useMutes((m) => notifyLevel(m, instanceId, guildId));
 
   if (!guild) return null;
   return (
@@ -56,6 +65,22 @@ export function GuildMenu({ guildId }: { guildId: string }) {
         <DropdownMenuItem onClick={() => open({ instanceId, kind: "nickname", guildId })}>
           Change Nickname <Pencil className="ml-auto" />
         </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuCheckboxItem checked={muted} onCheckedChange={(on) => useMutes.getState().muteGuild(instanceId, guildId, on)}>
+          Mute Community
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            Notification Settings <Bell className="ml-auto size-4" />
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="w-48">
+            <DropdownMenuRadioGroup value={level} onValueChange={(v) => useMutes.getState().setLevel(instanceId, guildId, v as NotifyLevel)}>
+              <DropdownMenuRadioItem value="all">All Messages</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="mentions">Only @mentions</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="nothing">Nothing</DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
         <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onClick={() => void leaveGuild(inst, guildId).then((left) => { if (left) void navigate({ to: "/" }); })}>
           {isOwner ? "Delete Community" : "Leave Community"} {isOwner ? <Trash2 className="ml-auto" /> : <LogOut className="ml-auto" />}
