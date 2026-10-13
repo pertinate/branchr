@@ -133,6 +133,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/admin/guilds", get(admin::guilds))
         .route("/admin/guilds/{gid}", delete(admin::delete_guild))
         .route("/users/@me", get(users::me).patch(users::patch_me))
+        .route("/users/{uid}/profile", get(users::profile))
         .route("/users/@me/avatar", put(pictures::put_avatar).delete(pictures::delete_avatar).layer(DefaultBodyLimit::max(pictures::MAX_BYTES)))
         .route("/guilds/{gid}/icon", put(pictures::put_icon).delete(pictures::delete_icon).layer(DefaultBodyLimit::max(pictures::MAX_BYTES)))
         .route("/guilds/{gid}/banner", put(pictures::put_banner).delete(pictures::delete_banner).layer(DefaultBodyLimit::max(pictures::MAX_BYTES)))

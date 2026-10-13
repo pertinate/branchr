@@ -244,6 +244,13 @@ wire! {
         pub self_stream: bool,
     }
 
+    /// More about someone than a message carries, for their user card.
+    pub struct Profile {
+        pub user_id: Id,
+        /// "About me" (empty when unset).
+        pub bio: String,
+    }
+
     pub struct Presence {
         pub user_id: Id,
         pub status: Status,

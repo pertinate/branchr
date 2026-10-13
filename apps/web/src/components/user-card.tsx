@@ -1,4 +1,5 @@
-import type { User } from "@app/protocol";
+import type { Profile, User } from "@app/protocol";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { MessageCircle, UserCheck, UserPlus } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
@@ -44,6 +45,13 @@ function UserCard({ guildId, user }: { guildId?: string; user: User }) {
   const relation = useSocial((s) => (user.globalId ? s.relationships[user.globalId]?.kind : undefined));
   const live = useApp((s) => s.members[guildId ?? ""]?.[user.id]?.user) ?? user;
   const custom = useApp((s) => s.customStatus[user.id]);
+  const profile = useQuery({
+    queryKey: ["profile", inst.id, user.id],
+    queryFn: () => inst.api<Profile>("GET", `/users/${user.id}/profile`),
+    enabled: !user.bot,
+    staleTime: 60_000,
+  });
+  const bio = profile.data?.bio;
   const self = user.id === me;
   const branchr = !!live.globalId && live.globalId !== myAccount;
 
@@ -76,6 +84,14 @@ function UserCard({ guildId, user }: { guildId?: string; user: User }) {
           @{live.username} · {hubName}
         </div>
         {custom && <div className="mt-2 text-sm break-words">{custom}</div>}
+        {bio && (
+          <div className="mt-3 text-xs">
+            <div className="font-semibold text-muted-foreground uppercase">About me</div>
+            <div className="mt-0.5 text-sm break-words whitespace-pre-wrap" data-testid="bio">
+              {bio}
+            </div>
+          </div>
+        )}
         {member && (
           <div className="mt-3 text-xs">
             <div className="font-semibold text-muted-foreground uppercase">Member since</div>

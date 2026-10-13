@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { createServer, joinServer, register } from "./helpers";
+import { createServer, joinServer, openUserSettings, register, session } from "./helpers";
 
 test("custom status and Do Not Disturb show to others and survive a reload", async ({ browser }) => {
   const alice = await register(browser, "status_a");
@@ -54,4 +54,30 @@ test("going idle after ten minutes away, and back on input", async ({ browser })
   await alice.mouse.move(200, 200);
   await alice.mouse.move(300, 300);
   await expect(bob.locator('[data-status="idle"]')).toHaveCount(0);
+});
+
+test("about me: set in settings, shown on the user card", async ({ browser }) => {
+  const alice = await register(browser, "prof_a");
+  const code = await createServer(alice, "Profiles");
+  const bob = await register(browser, "prof_b");
+  await joinServer(bob, code);
+
+  await openUserSettings(alice);
+  await alice.getByLabel("About me").fill("I paint\nand climb");
+  await alice.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(alice.getByText("Profile updated")).toBeVisible();
+
+  await bob.getByText("prof_a", { exact: true }).click();
+  await expect(bob.getByTestId("bio")).toHaveText("I paint\nand climb");
+
+  // Someone who shares no community with her can't read it.
+  const carol = await register(browser, "prof_c");
+  await expect(carol.getByRole("button", { name: "Your account", exact: true })).toBeVisible();
+  const aliceId = (await session(alice)).user.id;
+  const c = await session(carol);
+  const status = await carol.evaluate(
+    async ([url, token, id]) => (await fetch(`${url}/api/users/${id}/profile`, { headers: { authorization: `Bearer ${token}` } })).status,
+    [c.url, c.token, aliceId] as const,
+  );
+  expect(status).toBe(404);
 });

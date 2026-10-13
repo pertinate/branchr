@@ -1,13 +1,13 @@
 use axum::Json;
-use axum::extract::State;
+use axum::extract::{Path, State};
 use proto::Id;
 use proto::gateway::ServerEvent;
-use proto::models::User;
+use proto::models::{Profile, User};
 use serde::Deserialize;
 
 use crate::auth::Auth;
 use crate::db;
-use crate::error::{AppResult, bad};
+use crate::error::{AppError, AppResult, bad};
 use crate::state::AppState;
 
 pub async fn me(State(state): State<AppState>, Auth(user): Auth) -> AppResult<Json<User>> {
@@ -19,6 +19,24 @@ pub async fn me(State(state): State<AppState>, Auth(user): Auth) -> AppResult<Js
 pub struct PatchMe {
     display_name: Option<String>,
     avatar_url: Option<Option<String>>,
+    bio: Option<String>,
+}
+
+/// Longest "about me", in characters.
+const BIO_MAX: usize = 190;
+
+/// Someone's profile: yours, or of someone you share a community with.
+pub async fn profile(State(state): State<AppState>, Auth(me): Auth, Path(uid): Path<Id>) -> AppResult<Json<Profile>> {
+    let row: Option<(String,)> = sqlx::query_as(
+        "SELECT u.bio FROM users u WHERE u.id = $1 AND ($1 = $2 OR EXISTS (
+           SELECT 1 FROM members a JOIN members b ON a.guild_id = b.guild_id WHERE a.user_id = $1 AND b.user_id = $2))",
+    )
+    .bind(uid.0)
+    .bind(me.0)
+    .fetch_optional(&state.db)
+    .await?;
+    let (bio,) = row.ok_or(AppError::NotFound)?;
+    Ok(Json(Profile { user_id: uid, bio }))
 }
 
 pub async fn patch_me(
@@ -32,6 +50,13 @@ pub async fn patch_me(
             return Err(bad("display name must be 1-32 characters"));
         }
         sqlx::query("UPDATE users SET display_name = $1 WHERE id = $2").bind(name).bind(user.0).execute(&state.db).await?;
+    }
+    if let Some(bio) = body.bio {
+        let bio = bio.trim();
+        if bio.chars().count() > BIO_MAX {
+            return Err(bad("about me must be at most 190 characters"));
+        }
+        sqlx::query("UPDATE users SET bio = $1 WHERE id = $2").bind(bio).bind(user.0).execute(&state.db).await?;
     }
     if let Some(url) = body.avatar_url {
         if url.as_ref().is_some_and(|u| !u.starts_with("https://") || u.len() > 512) {

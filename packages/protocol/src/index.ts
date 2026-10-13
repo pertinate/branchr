@@ -40,6 +40,7 @@ export type * from "./generated/PermissionOverwrite";
 export type * from "./generated/MessageKind";
 export type * from "./generated/MessageRef";
 export type * from "./generated/Presence";
+export type * from "./generated/Profile";
 export type * from "./generated/PublishTrack";
 export type * from "./generated/Reaction";
 export type * from "./generated/ReactionEvent";

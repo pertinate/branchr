@@ -1,4 +1,4 @@
-import type { Status, User } from "@app/protocol";
+import type { Profile, Status, User } from "@app/protocol";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import { PicturePicker } from "@/components/picture-picker";
 import { MicTest } from "@/components/voice/mic-test";
 import { setCustomStatus, setStatus } from "@/lib/actions";
@@ -66,13 +67,17 @@ function Account() {
   const [custom, setCustom] = useState(useMyStatus.getState().custom);
   const [name, setName] = useState(me.displayName);
   const inst = useInstance();
+  const queryClient = useQueryClient();
+  const profile = useQuery({ queryKey: ["profile", inst.id, me.id], queryFn: () => inst.api<Profile>("GET", `/users/${me.id}/profile`) });
+  const [bio, setBio] = useState<string | null>(null);
   const applied = (u: User) => {
     useApp.getState().apply({ t: "USER_UPDATE", d: u });
     useAuth.getState().setUser(u);
   };
   const save = async () => {
     try {
-      applied(await api<User>("PATCH", "/users/@me", { displayName: name }));
+      applied(await api<User>("PATCH", "/users/@me", { displayName: name, ...(bio !== null ? { bio } : {}) }));
+      if (bio !== null) void queryClient.invalidateQueries({ queryKey: ["profile", inst.id, me.id] });
       if (custom.trim() !== useMyStatus.getState().custom) setCustomStatus(custom);
       toast.success("Profile updated");
     } catch (e) {
@@ -90,6 +95,10 @@ function Account() {
       <div className="space-y-2">
         <Label>Display name</Label>
         <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={32} />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="bio">About me</Label>
+        <Textarea id="bio" value={bio ?? profile.data?.bio ?? ""} onChange={(e) => setBio(e.target.value)} maxLength={190} rows={3} className="resize-none" />
       </div>
       <PicturePicker
         label="Avatar"
