@@ -19,4 +19,8 @@ instanceId: string | null,
 /**
  * Whether an owner has claimed it at branchr ID.
  */
-claimed: boolean, };
+claimed: boolean, 
+/**
+ * What people see it called (INSTANCE_NAME); its key above is what tells hubs apart.
+ */
+name: string, };

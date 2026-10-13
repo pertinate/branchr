@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { UserAvatar, userColor } from "@/components/user-avatar";
 import { useBranchrId } from "@/lib/branchr-id";
-import { hostOf, useInstance } from "@/lib/instances";
+import { useHubLabel } from "@/lib/hub-names";
+import { useInstance } from "@/lib/instances";
 import { roleColor } from "@/lib/perms";
 import { addFriendById, openDm, useSocial } from "@/lib/social";
 import { useApp } from "@/stores/app";
@@ -33,6 +34,7 @@ export function UserCardPopover({ guildId, user, children, ...trigger }: { guild
 
 function UserCard({ guildId, user }: { guildId?: string; user: User }) {
   const inst = useInstance();
+  const hubName = useHubLabel(inst.id).name;
   const navigate = useNavigate();
   const member = useApp((s) => (guildId ? s.members[guildId]?.[user.id] : undefined));
   const roles = useApp(useShallow((s) => (guildId && member ? (s.roles[guildId] ?? []).filter((r) => member.roles.includes(r.id)).reverse() : [])));
@@ -70,7 +72,7 @@ function UserCard({ guildId, user }: { guildId?: string; user: User }) {
         </div>
         <div className="mt-2 text-xl font-semibold">{member?.nick ?? live.displayName}</div>
         <div className="text-sm text-muted-foreground">
-          @{live.username} · {hostOf(inst.url)}
+          @{live.username} · {hubName}
         </div>
         {member && (
           <div className="mt-3 text-xs">

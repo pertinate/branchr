@@ -1,5 +1,6 @@
 import { Navigate, createFileRoute, useRouterState } from "@tanstack/react-router";
 
+import { useHubLabel } from "@/lib/hub-names";
 import { useInstance } from "@/lib/instances";
 import { useApp } from "@/stores/app";
 
@@ -10,7 +11,7 @@ export const Route = createFileRoute("/_app/hub/$instance/")({
 function InstanceHome() {
   const { instance } = Route.useParams();
   const first = useApp((s) => s.guildOrder[0]);
-  const host = useInstance().url.replace(/^https?:\/\//, "");
+  const hub = useHubLabel(useInstance().id).name;
   // Still where we're headed: while another page loads (after a click elsewhere), this one
   // stays on screen and mustn't redirect over it.
   const here = useRouterState({ select: (s) => s.location.pathname === `/hub/${instance}` });
@@ -19,7 +20,7 @@ function InstanceHome() {
     <div className="grid flex-1 place-items-center bg-background">
       <div className="max-w-sm text-center text-muted-foreground">
         <h2 className="mb-2 text-xl font-semibold text-foreground">No communities yet</h2>
-        Create a community on <span className="font-medium text-foreground">{host}</span> or join one with an invite using the{" "}
+        Create a community on <span className="font-medium text-foreground">{hub}</span> or join one with an invite using the{" "}
         <span className="font-bold text-online">+</span> button on the left.
       </div>
     </div>

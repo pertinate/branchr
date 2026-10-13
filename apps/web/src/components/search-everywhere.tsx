@@ -4,7 +4,8 @@ import { useQueries } from "@tanstack/react-query";
 import { FoundMessages } from "@/components/chat/found-messages";
 import { useDebounced } from "@/hooks/use-debounced";
 import { snowflakeTime } from "@/lib/ids";
-import { InstanceProvider, hostOf, instance, useInstanceList } from "@/lib/instances";
+import { hubLabel } from "@/lib/hub-names";
+import { InstanceProvider, instance, useInstanceList } from "@/lib/instances";
 
 /** Messages matching `query` in every server you're in, on every host, newest first. */
 export function SearchEverywhere({ query }: { query: string }) {
@@ -32,7 +33,7 @@ export function SearchEverywhere({ query }: { query: string }) {
     <div className="flex max-w-3xl flex-col gap-1 px-8 py-6" data-testid="search-everywhere">
       {failed.map((id) => (
         <p key={id} className="text-sm text-destructive">
-          Couldn't search {hostOf(instance(id)?.url ?? id)}.
+          Couldn't search {hubLabel(id).name}.
         </p>
       ))}
       {!loading && all.length === 0 && <p className="text-muted-foreground">No messages match.</p>}

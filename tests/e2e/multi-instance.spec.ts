@@ -42,7 +42,7 @@ test("multiple instances: connect a second host, badges and voice across them, l
   // A second host, alongside the first.
   await connectHost(alice, AWAY, "multi_a_away");
   await expect(alice.getByRole("heading", { name: "No communities yet" })).toBeVisible();
-  await expect(alice.getByText("localhost:18081")).toBeVisible();
+  await expect(alice).toHaveURL(/#\/hub\/localhost-18081/);
   expect((await sessions(alice)).map((s) => s.url)).toEqual([HOME, AWAY]);
   // My Guilds lists both hosts.
   await alice.getByRole("link", { name: "Explore" }).click();
@@ -51,7 +51,7 @@ test("multiple instances: connect a second host, badges and voice across them, l
   // Creating a server lands on the host on screen.
   const code = await createServer(alice, "Away B");
   await alice.getByRole("link", { name: "Explore" }).click();
-  await expect(alice.getByTestId("host-section").filter({ hasText: "localhost:18081" }).getByTestId("guild-card").filter({ hasText: "Away B" })).toBeVisible();
+  await expect(alice.locator('[data-testid="host-section"][data-instance="localhost-18081"]').getByTestId("guild-card").filter({ hasText: "Away B" })).toBeVisible();
   await alice.getByRole("navigation", { name: "Communities" }).getByRole("link", { name: "Away B" }).click();
   await expect(alice.getByPlaceholder("Message #general")).toBeVisible();
   await expect(alice.getByRole("link", { name: "Home A" })).toBeVisible();
@@ -91,14 +91,15 @@ test("multiple instances: connect a second host, badges and voice across them, l
   await alice.getByRole("link", { name: "Away B" }).click();
   await expect(alice.getByText("over here")).toBeVisible();
   await expect(alice.getByText("Voice Connected")).toBeVisible();
-  await expect(alice.getByText("· localhost:18080")).toBeVisible();
+  // Named after the hub it's on (its display name; the key tells hubs apart).
+  await expect(alice.getByText(/· (e2e home|branchr hub)$/)).toBeVisible();
   // Reading it cleared the badge.
   await expect(alice.getByTestId("mention-badge")).toHaveCount(0);
 
   // Log out of the second host only: its servers go, the first host and its voice stay.
   alice.on("dialog", (d) => void d.accept());
   await alice.getByRole("link", { name: "Explore" }).click();
-  await alice.getByRole("button", { name: "Log Out of localhost:18081" }).click();
+  await alice.locator('[data-testid="host-section"][data-instance="localhost-18081"]').getByRole("button", { name: /^Log Out of/ }).click();
   const rail = alice.getByRole("navigation", { name: "Communities" });
   await expect(rail.getByRole("link", { name: "Away B" })).toHaveCount(0);
   await expect(rail.getByRole("link", { name: "Home A" })).toBeVisible();

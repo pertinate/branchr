@@ -13,7 +13,8 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { type Instance, hostOf, hubBase, instance, instanceKey, useActive, useInstanceList } from "@/lib/instances";
+import { hubLabel } from "@/lib/hub-names";
+import { type Instance, hubBase, instance, instanceKey, useActive, useInstanceList } from "@/lib/instances";
 import { isUnread, useSocial } from "@/lib/social";
 import { cn } from "@/lib/utils";
 
@@ -107,7 +108,7 @@ function AddServerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
     } catch (err) {
       toast.error(
         (err as Error).message === "not found"
-          ? `No invite "${parsed.code}" on ${hostOf(inst.url)}: it may have expired or been used up. Invites only work on the host that created them.`
+          ? `No invite "${parsed.code}" on ${hubLabel(inst.id).name}: it may have expired or been used up. Invites only work on the host that created them.`
           : (err as Error).message,
         { duration: 10_000 },
       );
@@ -134,7 +135,7 @@ function AddServerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
         <SelectContent>
           {ids.map((id) => (
             <SelectItem key={id} value={id}>
-              On {hostOf(instance(id)?.url ?? id)}
+              On {hubLabel(id).name}
             </SelectItem>
           ))}
         </SelectContent>

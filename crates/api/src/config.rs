@@ -87,7 +87,7 @@ impl Config {
                 Some(other) => anyhow::bail!("AUTH_MODE must be local, federated or both (got {other})"),
             },
             branchr_id_url: var("BRANCHR_ID_URL").unwrap_or_else(|| "https://branchr.us".into()).trim_end_matches('/').into(),
-            instance_name: var("INSTANCE_NAME").unwrap_or_else(|| "branchr server".into()),
+            instance_name: var("INSTANCE_NAME").unwrap_or_else(|| "branchr hub".into()),
             public_url: var("PUBLIC_URL").unwrap_or_default(),
             claim_file: var("CLAIM_FILE").map(PathBuf::from).unwrap_or_else(|| data_dir().join("claim-code.txt")),
         })

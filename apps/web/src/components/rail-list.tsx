@@ -11,7 +11,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { compareIds } from "@/lib/ids";
-import { InstanceProvider, hostOf, instance, useInstance, useInstanceList } from "@/lib/instances";
+import { loadHubName, useHubLabel } from "@/lib/hub-names";
+import { InstanceProvider, instance, useInstance, useInstanceList } from "@/lib/instances";
 import { useMediaUrl } from "@/lib/media";
 import { type DropTarget, FOLDER_COLORS, type Folder, type GuildRef, type RailItem, guildRef, itemKey, parseRef, useRailLayout } from "@/lib/rail-layout";
 import { cn } from "@/lib/utils";
@@ -38,6 +39,9 @@ function HostSync() {
   useEffect(() => {
     if (ready) useRailLayout.getState().sync(inst.id, order);
   }, [inst.id, ready, order]);
+  useEffect(() => {
+    if (ready) void loadHubName(inst.id);
+  }, [inst.id, ready]);
   return null;
 }
 
@@ -114,6 +118,7 @@ const GuildIcon = memo(function GuildIcon({ guildId, active, inFolder }: { guild
   const pings = useApp((s) => guildPings(s, guildId));
   const inVoice = useVoice((s) => s.guildId === guildId && s.instanceId === instanceId);
   const severalHosts = useInstanceList((s) => s.ids.length > 1);
+  const hub = useHubLabel(instanceId);
   const ref = guildRef(instanceId, guildId);
   if (!guild) return null;
   return (
@@ -168,7 +173,7 @@ const GuildIcon = memo(function GuildIcon({ guildId, active, inFolder }: { guild
       </Menu>
       <TooltipContent side="right">
         {guild.name}
-        {severalHosts && <div className="text-xs text-muted-foreground">{hostOf(inst.url)}</div>}
+        {severalHosts && <div className="text-xs text-muted-foreground">{hub.name}</div>}
       </TooltipContent>
     </Tooltip>
   );

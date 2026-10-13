@@ -3,6 +3,7 @@
 //!   branchr-relay serve                                   on the gateway (the droplet)
 //!   branchr-relay add <name> <host|-> <udp-base> <ports> on the gateway: allow a hub, print its token
 //!                                                         (it's at https://<gateway>/h/<name>/, and at <host> too if given)
+//!   branchr-relay remove <name>                           on the gateway: stop relaying a hub
 //!   branchr-relay connect                                 next to the branch (RELAY_TOKEN=...)
 
 mod agent;
@@ -60,6 +61,18 @@ async fn main() -> anyhow::Result<()> {
             eprintln!("allowed hub {name} at https://{gateway}/h/{name}/{also}, media on UDP {base}..{}; give the token above to its connector (RELAY_TOKEN)", base + ports - 1);
             Ok(())
         }
+        Some("remove") => {
+            let [_, name] = &args[..] else {
+                anyhow::bail!("usage: branchr-relay remove <name>");
+            };
+            let mut branches = server::load_branches(&dir)?;
+            let before = branches.len();
+            branches.retain(|b| !b.name.eq_ignore_ascii_case(name));
+            anyhow::ensure!(branches.len() < before, "no hub {name} here");
+            server::save_branches(&dir, &branches)?;
+            eprintln!("removed hub {name} (a connector still running for it is refused from its next connection)");
+            Ok(())
+        }
         Some("connect") => {
             let token = proto::Token::decode(&std::env::var("RELAY_TOKEN").map_err(|_| anyhow::anyhow!("set RELAY_TOKEN"))?)?;
             let targets = agent::Targets {
@@ -70,7 +83,7 @@ async fn main() -> anyhow::Result<()> {
             agent::run(token, targets).await
         }
         _ => {
-            eprintln!("usage: branchr-relay serve | add <name> <host> <udp-base> <udp-ports> | connect");
+            eprintln!("usage: branchr-relay serve | add <name> <host|-> <udp-base> <udp-ports> | remove <name> | connect");
             std::process::exit(2);
         }
     }

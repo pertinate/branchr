@@ -82,7 +82,7 @@ test("federated server: sign in with Discord from the login screen, claim it, co
   await createServer(bad, "Spam Palace");
 
   await openUserSettings(page);
-  const ours = page.getByTestId("owned-host").filter({ hasText: "localhost:18081" });
+  const ours = page.getByTestId("owned-host").filter({ hasText: `key ${info.instanceId.replace(/-/g, "").slice(0, 8)}` });
   await expect(ours.getByText("e2e federated")).toBeVisible();
   await ours.getByRole("button", { name: "Manage" }).click();
   const admin = page.getByTestId("host-admin");
@@ -149,17 +149,11 @@ test("federated server: sign in with Discord from the login screen, claim it, co
 
   // Releasing the claim: the hub leaves "Your hubs" (and shows a claim code again).
   await openUserSettings(page);
-  const mine = page.getByTestId("owned-host").filter({ hasText: "localhost:18081" });
+  const mine = page.getByTestId("owned-host").filter({ hasText: `key ${info.instanceId.replace(/-/g, "").slice(0, 8)}` });
   await expect(mine).toContainText("online");
-  // Records for the address: this run's, plus older ones earlier runs left behind.
-  const records = async () => {
-    const old = mine.getByTestId("old-claims");
-    const older = (await old.count()) ? Number((await old.textContent())?.match(/^(\d+)/)?.[1] ?? 0) : 0;
-    return (await mine.count()) + older;
-  };
-  const before = await records();
+  // Found by its key (names and addresses can repeat); releasing it takes it off the list.
   await mine.getByRole("button", { name: "Release e2e federated" }).click();
-  await expect.poll(records).toBe(before - 1);
+  await expect(mine).toHaveCount(0);
 
   await ctx.close();
 });
@@ -281,7 +275,7 @@ test("a new device reconnects to every host used with the branchr account", asyn
 
   // Logging out of a host on purpose forgets it for the account.
   two.on("dialog", (d) => void d.accept());
-  await two.getByRole("button", { name: "Log Out of localhost:18080" }).click();
+  await two.locator('[data-testid="host-section"][data-instance="localhost-18080"]').getByRole("button", { name: /^Log Out of/ }).click();
   await expect(two.getByTestId("host-section")).toHaveCount(1);
   const three = await (await browser.newContext()).newPage();
   await three.goto("/#/login");

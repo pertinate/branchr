@@ -337,6 +337,9 @@ wire! {
         pub instance_id: Option<String>,
         /// Whether an owner has claimed it at branchr ID.
         pub claimed: bool,
+        /// What people see it called (INSTANCE_NAME); its key above is what tells hubs apart.
+        #[serde(default)]
+        pub name: String,
     }
 
     pub struct VoiceServer {

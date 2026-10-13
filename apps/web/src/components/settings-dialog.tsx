@@ -5,6 +5,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { NetworkStaff } from "@/components/network-staff";
+import { shortKey } from "@/lib/hub-names";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -18,7 +19,7 @@ import { setStatus } from "@/lib/actions";
 import { api } from "@/lib/api";
 import { type OwnedHost, claimServer, ownedHosts, releaseHost, transferHost, signOut, startSignIn, useBranchrId } from "@/lib/branchr-id";
 import { desktop } from "@/lib/desktop";
-import { hostOf, instanceKey, normalizeUrl, useActive, useInstance, useInstanceList } from "@/lib/instances";
+import { instanceKey, normalizeUrl, useActive, useInstance, useInstanceList } from "@/lib/instances";
 import { uploadPicture } from "@/lib/media";
 import { instanceInfo, linkToBranchr } from "@/lib/server-login";
 import { useApp } from "@/stores/app";
@@ -435,7 +436,7 @@ function OwnedHosts() {
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-medium">{h.name}</div>
               <div className="truncate text-xs text-muted-foreground">
-                {h.publicUrl ? hostOf(h.publicUrl) : "address unknown"} · {lastSeen(h.lastSeen)}
+                key {shortKey(h.instanceId)} · {lastSeen(h.lastSeen)}
               </div>
             </div>
             {here ? (

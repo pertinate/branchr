@@ -272,6 +272,7 @@ pub async fn instance_info(State(state): State<AppState>) -> Json<InstanceInfo> 
         branchr_id_url: state.federation.as_ref().map(|f| f.id_url().to_string()),
         claimed: identity.as_ref().is_some_and(|i| i.owner.is_some()),
         instance_id: identity.map(|i| i.instance_id),
+        name: state.config.instance_name.clone(),
     })
 }
 

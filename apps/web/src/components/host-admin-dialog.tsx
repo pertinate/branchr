@@ -13,7 +13,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { UserAvatar } from "@/components/user-avatar";
-import { type Instance, hostOf, useInstance } from "@/lib/instances";
+import { hubLabel } from "@/lib/hub-names";
+import { type Instance, useInstance } from "@/lib/instances";
 import { formatBytes } from "@/lib/upload";
 import { cn } from "@/lib/utils";
 
@@ -39,7 +40,7 @@ export function HostAdminDialog({ onClose }: { onClose: () => void }) {
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="flex h-[75vh] flex-col sm:max-w-3xl" data-testid="host-admin">
         <DialogHeader>
-          <DialogTitle>Manage {hostOf(inst.url)}</DialogTitle>
+          <DialogTitle>Manage {hubLabel(inst.id).name}</DialogTitle>
           <DialogDescription>
             {role === "owner"
               ? "You claimed this hub: change its settings, appoint staff, ban people and remove communities."
@@ -183,7 +184,7 @@ function Members() {
     void qc.invalidateQueries({ queryKey: ["host-overview", inst.id] });
   };
   const ban = async (u: HostUser) => {
-    const reason = prompt(`Ban ${u.user.displayName} (@${u.user.username}) from ${hostOf(inst.url)}? They're logged out and can't come back.\n\nReason (optional):`);
+    const reason = prompt(`Ban ${u.user.displayName} (@${u.user.username}) from ${hubLabel(inst.id).name}? They're logged out and can't come back.\n\nReason (optional):`);
     if (reason === null) return;
     try {
       await inst.api("PUT", `/admin/bans/${u.user.id}`, { reason });

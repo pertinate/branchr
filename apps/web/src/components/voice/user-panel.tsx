@@ -8,7 +8,8 @@ import { Menu, SelfMenuItems } from "@/components/menus";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { UserAvatar } from "@/components/user-avatar";
 import { StreamDialog } from "@/components/voice/stream-dialog";
-import { hostOf, instance, useInstance } from "@/lib/instances";
+import { useHubLabel } from "@/lib/hub-names";
+import { instance, useInstance } from "@/lib/instances";
 import { P, channelPermsOf, has } from "@/lib/perms";
 import { dmTitle, useSocial } from "@/lib/social";
 import { ALL_PERMS } from "@app/protocol";
@@ -45,7 +46,8 @@ export function UserPanel() {
   const voiceInst = instance(v.instanceId) ?? here;
   const channel = useStore(voiceInst.app, (s) => (v.channelId ? s.channels[v.channelId] : undefined));
   const guild = useStore(voiceInst.app, (s) => (v.guildId ? s.guilds[v.guildId] : undefined));
-  const elsewhere = voiceInst.id !== here.id ? ` · ${hostOf(voiceInst.url)}` : "";
+  const voiceHub = useHubLabel(voiceInst.id);
+  const elsewhere = voiceInst.id !== here.id ? ` · ${voiceHub.name}` : "";
   // What this channel lets us send (the SFU refuses the rest).
   // (DM calls on branchr ID have no permissions to check.)
   const perms = useStore(voiceInst.app, (s) => (v.call ? ALL_PERMS : v.channelId ? channelPermsOf(s, v.channelId) : 0));

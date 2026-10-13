@@ -8,6 +8,7 @@ import { guildPings, guildUnread } from "@/components/rail-list";
 import { Button } from "@/components/ui/button";
 import { copy } from "@/lib/actions";
 import { forgetHost } from "@/lib/host-sync";
+import { shortKey, useHubLabel } from "@/lib/hub-names";
 import { type Instance, InstanceProvider, hostOf, instance, useInstance, useInstanceList } from "@/lib/instances";
 import { useMediaUrl } from "@/lib/media";
 import { cn } from "@/lib/utils";
@@ -33,18 +34,21 @@ export function YourServers({ query }: { query: string }) {
 
 function HostSection({ query }: { query: string }) {
   const inst = useInstance();
-  const host = hostOf(inst.url);
+  const hub = useHubLabel(inst.id);
   const connection = useApp((s) => s.connection);
   const me = useApp((s) => s.me);
   const all = useApp((s) => s.guildOrder);
   const guilds = useApp((s) => s.guilds);
   const order = query ? all.filter((g) => guilds[g]?.name.toLowerCase().includes(query)) : all;
   return (
-    <section data-testid="host-section" data-instance={inst.id} aria-label={host} className="flex flex-col gap-3">
+    <section data-testid="host-section" data-instance={inst.id} aria-label={hub.name} className="flex flex-col gap-3">
       <header className="flex flex-wrap items-center gap-3 border-b border-border pb-2">
         <span className={cn("size-2 shrink-0 rounded-full", connection === "ready" ? "bg-online" : "bg-idle")} title={connection === "ready" ? "Connected" : "Connecting…"} />
-        <h2 className="text-lg font-semibold">{host}</h2>
-        {me && <span className="text-sm text-muted-foreground">as @{me.username}</span>}
+        <h2 className="text-lg font-semibold">{hub.name}</h2>
+        <span className="text-sm text-muted-foreground" title={hub.key ? `branchr key ${hub.key}\n${inst.url}` : inst.url}>
+          {hub.key ? `key ${shortKey(hub.key)}` : hostOf(inst.url)}
+          {me && ` · as @${me.username}`}
+        </span>
         <div className="flex-1" />
         <HostActions inst={inst} />
       </header>
@@ -64,7 +68,7 @@ function HostSection({ query }: { query: string }) {
 function HostActions({ inst }: { inst: Instance }) {
   const owner = useHostOwner(inst);
   const navigate = useNavigate();
-  const host = hostOf(inst.url);
+  const { name } = useHubLabel(inst.id);
   return (
     <div className="flex gap-2">
       {owner && (
@@ -78,9 +82,9 @@ function HostActions({ inst }: { inst: Instance }) {
       <Button
         size="sm"
         variant="destructive"
-        aria-label={`Log Out of ${host}`}
+        aria-label={`Log Out of ${name}`}
         onClick={() => {
-          if (!confirm(`Log out of ${host}? Your other hubs stay connected.`)) return;
+          if (!confirm(`Log out of ${name}? Your other hubs stay connected.`)) return;
           forgetHost(inst.url);
           void inst.api("POST", "/auth/logout").catch(() => {});
           inst.auth.getState().logout();

@@ -116,7 +116,7 @@ export function ExplorePage({ tab, onTab }: { tab: ExploreTab; onTab: (t: Explor
                 </span>
                 <div className="min-w-0">
                   <h2 className="truncate font-semibold">{l.server.name}</h2>
-                  <div className="truncate text-xs text-muted-foreground">on {hostOf(l.hostUrl)}</div>
+                  <div className="truncate text-xs text-muted-foreground">on {l.hostName || hostOf(l.hostUrl)}</div>
                 </div>
               </div>
               <p className="mt-2 line-clamp-3 flex-1 text-sm text-muted-foreground">{l.server.description}</p>
