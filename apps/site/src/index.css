@@ -141,11 +141,7 @@
     @apply font-sans;
     }
 }
-html, body, #root { height: 100%; overflow: hidden; }
-body { user-select: none; -webkit-font-smoothing: antialiased; }
-.selectable, input, textarea { user-select: text; }
-/* Thin scrollbars like the desktop app. */
-* { scrollbar-width: thin; scrollbar-color: oklch(0.2 0.006 264) transparent; }
-/* Electron frameless window drag regions. */
-.drag { -webkit-app-region: drag; }
-.no-drag { -webkit-app-region: no-drag; }
+/* A website: it scrolls, and text can be selected (unlike the app). */
+body { -webkit-font-smoothing: antialiased; }
+html { scroll-behavior: smooth; }
+* { scrollbar-width: thin; scrollbar-color: oklch(0.35 0.01 264) transparent; }
