@@ -742,6 +742,23 @@ pub async fn ack(db: &Db, user: Id, channel: Id, message: Id) -> sqlx::Result<pr
     .map(Into::into)
 }
 
+/// Sets `user`'s read point in `channel` to just before `message` (so it and what follows
+/// are unread), whatever it was.
+pub async fn mark_unread(db: &Db, user: Id, channel: Id, message: Id) -> sqlx::Result<proto::gateway::ReadState> {
+    sqlx::query_as::<_, ReadStateRow>(
+        "INSERT INTO read_states (user_id, channel_id, last_read_id, mention_count)
+         VALUES ($1, $2, COALESCE((SELECT MAX(id) FROM messages WHERE channel_id = $2 AND id < $3), 0), 0)
+         ON CONFLICT (user_id, channel_id) DO UPDATE SET last_read_id = excluded.last_read_id
+         RETURNING channel_id, last_read_id, mention_count",
+    )
+    .bind(user.0)
+    .bind(channel.0)
+    .bind(message.0)
+    .fetch_one(db)
+    .await
+    .map(Into::into)
+}
+
 /// Adds a mention to `channel` for each of `users`, or for every member of `guild` but
 /// `except` when `users` is None (@everyone).
 pub async fn bump_mentions(db: &Db, guild: Id, channel: Id, users: Option<&[Id]>, except: Id) -> sqlx::Result<()> {

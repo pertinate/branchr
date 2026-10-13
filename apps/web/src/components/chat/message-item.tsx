@@ -1,5 +1,5 @@
 import type { Emote } from "@app/protocol";
-import { Copy, CornerDownRight, CornerUpLeft, MessagesSquare, Download, ExternalLink, Image as ImageIcon, Link2, Pencil, RotateCw, SmilePlus, Sparkles, Trash2, ArrowRight, Pin } from "lucide-react";
+import { Copy, CornerDownRight, CornerUpLeft, MessagesSquare, Download, ExternalLink, Image as ImageIcon, Link2, Pencil, RotateCw, SmilePlus, Sparkles, Trash2, ArrowRight, MailOpen, Pin } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { memo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -138,7 +138,8 @@ export const MessageItem = memo(function MessageItem({
   const thread = useApp((s) => threadsByStarter(s.channels).get(m.id));
   // Threads start from messages in text channels, not inside other threads.
   const inText = useApp((s) => s.channels[m.channelId]?.kind === "text");
-  const instanceId = useInstance().id;
+  const inst = useInstance();
+  const instanceId = inst.id;
 
   const toggleReaction = async (emoji: string, me: boolean) => {
     try {
@@ -231,6 +232,11 @@ export const MessageItem = memo(function MessageItem({
             </ContextMenuItem>
           )}
         </>
+      )}
+      {real && (
+        <ContextMenuItem onSelect={() => inst.app.getState().markUnread(m.channelId, m.id)}>
+          Mark Unread <MailOpen className="ml-auto" />
+        </ContextMenuItem>
       )}
       {m.content && (
         <ContextMenuItem onSelect={() => void copy(plainText(m, guildId), "Copied text")}>

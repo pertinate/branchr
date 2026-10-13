@@ -198,6 +198,16 @@ async fn handle_op(state: &AppState, key: SessionKey, user: Id, op: ClientOp) {
                 Err(e) => tracing::warn!("ack: {e}"),
             }
         }
+        ClientOp::MarkUnread { channel_id, message_id } => {
+            let Ok(guild) = state.guild_of_channel(channel_id).await else { return };
+            if !db::is_member(&state.db, guild, user).await.unwrap_or(false) {
+                return;
+            }
+            match db::mark_unread(&state.db, user, channel_id, message_id).await {
+                Ok(rs) => state.hub.to_user(user, &ServerEvent::ReadStateReset(rs)),
+                Err(e) => tracing::warn!("mark unread: {e}"),
+            }
+        }
         ClientOp::Identify { .. } | ClientOp::Heartbeat => {}
     }
 }

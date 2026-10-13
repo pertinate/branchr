@@ -39,6 +39,13 @@ pub enum ClientOp {
         #[serde(rename = "messageId")]
         message_id: Id,
     },
+    /// Mark a channel unread from `message_id` on (it and everything after it).
+    MarkUnread {
+        #[serde(rename = "channelId")]
+        channel_id: Id,
+        #[serde(rename = "messageId")]
+        message_id: Id,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -110,6 +117,8 @@ pub enum ServerEvent {
     VoiceServer(VoiceServer),
     /// Sent to all of a user's sessions when they read a channel.
     ReadStateUpdate(ReadState),
+    /// Your read point in a channel was set back (marked unread, maybe on another device).
+    ReadStateReset(ReadState),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

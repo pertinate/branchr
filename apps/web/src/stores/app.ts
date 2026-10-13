@@ -55,6 +55,10 @@ export interface AppState {
   setViewing: (channelId: string | null) => void;
   setConnection: (c: ConnectionState) => void;
   markRead: (channelId: string) => void;
+  /** Marks `channelId` unread from `messageId` on; it stays so while you're in it. */
+  markUnread: (channelId: string, messageId: string) => void;
+  /** A channel marked unread that's still on screen (not to be read again until left). */
+  heldUnread: string | null;
   apply: (ev: ServerEvent) => void;
 }
 
@@ -148,12 +152,14 @@ export function createAppStore(inst: Instance) {
   maxUploadBytes: Infinity,
   pings: {},
   viewing: null,
-  setViewing: (viewing) => set({ viewing }),
+  heldUnread: null,
+  setViewing: (viewing) => set((s) => ({ viewing, heldUnread: s.heldUnread === viewing ? s.heldUnread : null })),
   setConnection: (connection) => set({ connection }),
   markRead: (channelId) => {
     // Not while the window is hidden (minimized, in the tray): nobody's reading.
     if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
     const s = get();
+    if (s.heldUnread === channelId) return;
     const last = s.channels[channelId]?.lastMessageId;
     if (!last || (s.lastRead[channelId] === last && !s.pings[channelId])) return;
     const lastRead = { ...s.lastRead, [channelId]: last };
@@ -161,6 +167,20 @@ export function createAppStore(inst: Instance) {
     set({ lastRead, pings: without(s.pings, channelId) });
     // Synced so other devices and the next login agree.
     inst.gateway.send({ op: "ack", d: { channelId, messageId: last } });
+  },
+  markUnread: (channelId, messageId) => {
+    // Read up to the message before it (as far as we have them; the hub has the final say).
+    const items = inst.messages.getState().channels[channelId]?.items ?? [];
+    const at = items.findIndex((m) => m.id === messageId);
+    const before = at > 0 ? items[at - 1].id : undefined;
+    set((s) => {
+      const lastRead = { ...s.lastRead };
+      if (before) lastRead[channelId] = before;
+      else delete lastRead[channelId];
+      saveLastRead(lastRead);
+      return { lastRead, heldUnread: channelId };
+    });
+    inst.gateway.send({ op: "mark_unread", d: { channelId, messageId } });
   },
   apply: (ev) => {
     switch (ev.t) {
@@ -355,6 +375,17 @@ export function createAppStore(inst: Instance) {
           const l = later(s.lastRead[ev.d.channelId], ev.d.lastReadId ?? undefined);
           const lastRead = l ? { ...s.lastRead, [ev.d.channelId]: l } : s.lastRead;
           if (l) saveLastRead(lastRead);
+          const pings = ev.d.mentionCount ? { ...s.pings, [ev.d.channelId]: ev.d.mentionCount } : without(s.pings, ev.d.channelId);
+          return { lastRead, pings };
+        });
+        return;
+      case "READ_STATE_RESET":
+        // Marked unread here or on another device: set back, not just forward.
+        set((s) => {
+          const lastRead = { ...s.lastRead };
+          if (ev.d.lastReadId) lastRead[ev.d.channelId] = ev.d.lastReadId;
+          else delete lastRead[ev.d.channelId];
+          saveLastRead(lastRead);
           const pings = ev.d.mentionCount ? { ...s.pings, [ev.d.channelId]: ev.d.mentionCount } : without(s.pings, ev.d.channelId);
           return { lastRead, pings };
         });
