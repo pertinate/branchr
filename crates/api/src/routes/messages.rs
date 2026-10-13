@@ -478,6 +478,11 @@ pub async fn unreact(
     Ok(())
 }
 
+/// Votes change only until the poll closes.
+fn still_open(ends_at: i64, now: i64) -> AppResult<()> {
+    if now >= ends_at { Err(bad("this poll has ended")) } else { Ok(()) }
+}
+
 /// Votes for answer `answer` of the poll in `mid`. On a single-choice poll, it replaces
 /// your other vote.
 pub async fn vote(State(state): State<AppState>, Auth(user): Auth, Path((cid, mid, answer)): Path<(Id, Id, u32)>) -> AppResult<()> {
@@ -490,9 +495,7 @@ pub async fn vote(State(state): State<AppState>, Auth(user): Auth, Path((cid, mi
     .fetch_optional(&state.db)
     .await?;
     let (answers, multi, ends_at) = row.ok_or(AppError::NotFound)?;
-    if db::now_ms() >= ends_at {
-        return Err(bad("this poll has ended"));
-    }
+    still_open(ends_at, db::now_ms())?;
     let count = serde_json::from_str::<Vec<String>>(&answers).map(|a| a.len()).unwrap_or(0);
     if answer as usize >= count {
         return Err(bad("no such answer"));
@@ -535,9 +538,7 @@ pub async fn unvote(State(state): State<AppState>, Auth(user): Auth, Path((cid, 
         .fetch_optional(&state.db)
         .await?;
     let (ends_at,) = open.ok_or(AppError::NotFound)?;
-    if db::now_ms() >= ends_at {
-        return Err(bad("this poll has ended"));
-    }
+    still_open(ends_at, db::now_ms())?;
     let r = sqlx::query("DELETE FROM poll_votes WHERE message_id = $1 AND answer = $2 AND user_id = $3")
         .bind(mid.0)
         .bind(i64::from(answer))
@@ -553,7 +554,7 @@ pub async fn unvote(State(state): State<AppState>, Auth(user): Auth, Path((cid, 
 
 #[cfg(test)]
 mod tests {
-    use super::{NewPoll, emote_tokens};
+    use super::{NewPoll, emote_tokens, still_open};
 
     fn poll(question: &str, answers: &[&str], hours: Option<u32>) -> NewPoll {
         NewPoll { question: question.into(), answers: answers.iter().map(|a| a.to_string()).collect(), multi: false, duration_hours: hours }
@@ -570,6 +571,11 @@ mod tests {
         assert!(poll("q", &["a", &"x".repeat(56)], None).validate().is_err());
         assert!(poll("q", &["a", "b"], Some(0)).validate().is_err());
         assert!(poll("q", &["a", "b"], Some(169)).validate().is_err());
+        let p = poll("q", &["a", "b"], Some(1)).validate().unwrap();
+        assert!(still_open(p.ends_at, p.ends_at - 3_600_000).is_ok());
+        assert!(still_open(p.ends_at, p.ends_at - 1).is_ok());
+        assert!(still_open(p.ends_at, p.ends_at).is_err());
+        assert!(still_open(p.ends_at, p.ends_at + 1).is_err());
     }
 
     #[test]
