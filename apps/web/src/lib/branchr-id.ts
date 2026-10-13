@@ -221,6 +221,19 @@ export async function transferHost(instanceId: string, handle: string): Promise<
   if (!r.ok) throw new Error(await errorOf(r));
 }
 
+/** A call to branchr ID as the signed-in account (JSON in and out). */
+export async function branchrApi<T = void>(method: string, path: string, body?: unknown): Promise<T> {
+  const at = await accessToken();
+  if (!at) throw new Error("sign in to branchr first");
+  const r = await fetch(`${ID_URL}${path}`, {
+    method,
+    headers: { authorization: `Bearer ${at}`, ...(body !== undefined && { "content-type": "application/json" }) },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(await errorOf(r));
+  return (r.status === 204 ? undefined : await r.json()) as T;
+}
+
 export async function ownedHosts(): Promise<OwnedHost[]> {
   const at = await accessToken();
   if (!at) return [];

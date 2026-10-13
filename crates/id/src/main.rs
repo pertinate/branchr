@@ -9,6 +9,11 @@ async fn main() -> anyhow::Result<()> {
     // A separate schema keeps e.g. end-to-end test data apart from real accounts.
     let schema = std::env::var("DATABASE_SCHEMA").ok().filter(|s| !s.is_empty());
     let db = id::connect(&config.database_url, schema.as_deref()).await?;
+    // `branchr-id staff add <handle> admin`: manage branchr's staff from the server itself.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().is_some_and(|a| a == "staff") {
+        return id::network::cli(&db, &args[1..]).await;
+    }
     tokio::spawn(id::gc(db.clone()));
     let bind = config.bind;
     tracing::info!("branchr ID on {bind}, public at {}", config.public_url);

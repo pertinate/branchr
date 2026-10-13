@@ -115,3 +115,10 @@ export async function openUserSettings(page: Page) {
     await expect(page.getByRole("dialog")).toBeVisible({ timeout: 2000 });
   }).toPass({ timeout: 20_000 });
 }
+
+/** On the login screen: shows the hub field (behind "Other ways to sign in" unless already open). */
+export async function showHubField(page: Page) {
+  await page.getByRole("heading").first().waitFor();
+  const other = page.getByRole("button", { name: "Other ways to sign in" });
+  if (await other.isVisible()) await other.click();
+}

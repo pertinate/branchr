@@ -1,5 +1,7 @@
 import { type Browser, expect, test } from "@playwright/test";
 
+import { showHubField } from "./helpers";
+
 /** A hub with no public address of its own, reached through branchr-relay (relay-stack.sh). */
 const BRANCH = "http://localhost:18800/h/relayed";
 
@@ -18,6 +20,7 @@ async function user(browser: Browser, name: string) {
   const page = await ctx.newPage();
   await page.goto("/#/login");
   await page.getByRole("button", { name: "Register" }).click();
+  await showHubField(page);
   await page.getByLabel("Hub", { exact: true }).fill(BRANCH);
   await page.getByLabel("Username").fill(`${name}_${Date.now().toString(36)}`);
   await page.getByLabel("Password").fill("correct horse battery");

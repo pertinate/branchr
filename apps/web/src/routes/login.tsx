@@ -59,6 +59,10 @@ function Login() {
   }, [server]);
   const branchr = !!info && info.authMode !== "local";
   const passwords = !info || info.authMode !== "federated";
+  // Signing in is just Discord, into the default hub (others you've used come along).
+  // Naming a hub, a password account, or adding a hub opens the full form.
+  const [expanded, setExpanded] = useState(adding || !!wanted);
+  const full = expanded || (!!info && info.authMode === "local");
 
   const withBranchr = async () => {
     setBusy(true);
@@ -111,6 +115,35 @@ function Login() {
                 : "Join your self-hosted community."}
           </p>
         </div>
+        {!full ? (
+          <>
+            <Button type="button" size="lg" className="w-full bg-[#5865F2] text-white hover:bg-[#4752c4]" disabled={busy} onClick={() => void withBranchr()}>
+              Sign in with Discord
+            </Button>
+            <div className="space-y-1 text-center text-sm text-muted-foreground">
+              <p>
+                <button type="button" className="hover:text-foreground hover:underline" onClick={() => setExpanded(true)}>
+                  Other ways to sign in
+                </button>{" "}
+                (a password account, or another hub)
+              </p>
+              <p>
+                Need an account on this hub?{" "}
+                <button
+                  type="button"
+                  className="text-primary hover:underline"
+                  onClick={() => {
+                    setMode("register");
+                    setExpanded(true);
+                  }}
+                >
+                  Register
+                </button>
+              </p>
+            </div>
+          </>
+        ) : (
+        <>
         <div className="space-y-2">
           <Label htmlFor="server" className="text-xs font-bold uppercase text-muted-foreground">Hub</Label>
           <Input id="server" value={server} onChange={(e) => setServer(e.target.value)} placeholder="https://chat.example.com" />
@@ -157,6 +190,24 @@ function Login() {
           </button>
         </p>
         </>
+        )}
+        </>
+        )}
+        {full && !adding && !(info && info.authMode === "local") && (
+          <p className="text-center text-sm">
+            <button
+              type="button"
+              className="text-muted-foreground hover:text-foreground hover:underline"
+              onClick={() => {
+                setExpanded(false);
+                setMode("login");
+                setError(null);
+                setServer(useAuth.getState().serverUrl);
+              }}
+            >
+              ← Back to Discord sign-in
+            </button>
+          </p>
         )}
         {error && <p className="text-sm text-destructive">{error}</p>}
         {adding && (

@@ -4,6 +4,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { NetworkStaff } from "@/components/network-staff";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -177,6 +178,7 @@ function BranchrAccount() {
         </div>
       )}
       {account && <OwnedHosts />}
+      {account && <NetworkStaff />}
       {account && (
         <form
           className="space-y-1"

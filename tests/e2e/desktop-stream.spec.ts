@@ -5,7 +5,7 @@ import path from "node:path";
 
 import { _electron as electron, expect, test } from "@playwright/test";
 
-import { joinServer, joinVoice, register } from "./helpers";
+import { joinServer, joinVoice, register, showHubField } from "./helpers";
 
 // Real desktop app on the real GPU (needs a display): stream + camera soak test.
 // Opt-in: SOAK_SECONDS=90 pnpm test desktop-stream
@@ -32,6 +32,8 @@ test("desktop streamer stays connected while streaming with camera", async ({ br
   await s.getByRole("button", { name: "Register" }).click();
 
   // The bundled app suggests the dev host; tests run their own.
+
+  await showHubField(s);
 
   await s.getByLabel("Hub", { exact: true }).fill("http://localhost:18080");
   await s.getByLabel("Username").fill(`soak_${Date.now().toString(36)}`);

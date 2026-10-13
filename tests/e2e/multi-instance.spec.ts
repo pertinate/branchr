@@ -1,6 +1,6 @@
 import { type Browser, type Page, expect, test } from "@playwright/test";
 
-import { createServer, joinServer, register, sessions } from "./helpers";
+import { createServer, joinServer, register, sessions, showHubField } from "./helpers";
 
 const HOME = "http://localhost:18080";
 const AWAY = "http://localhost:18081";
@@ -10,6 +10,7 @@ const run = Date.now().toString(36);
 async function registerOn(browser: Browser, server: string, name: string): Promise<Page> {
   const page = await (await browser.newContext({ viewport: { width: 1400, height: 900 } })).newPage();
   await page.goto("/#/login");
+  await showHubField(page);
   await page.getByLabel("Hub", { exact: true }).fill(server);
   await page.getByRole("button", { name: "Register" }).click();
   await page.getByLabel("Username").fill(`${name}_${run}`);

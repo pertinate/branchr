@@ -41,6 +41,11 @@ impl Hub {
         last
     }
 
+    /// Ends every live session of an account (its senders go, so each connection closes).
+    pub fn kick(&self, account: Uuid) {
+        self.sessions.remove(&account);
+    }
+
     pub fn online(&self, account: Uuid) -> bool {
         self.sessions.contains_key(&account)
     }

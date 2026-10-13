@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { createServer, forgetSessions, register, session, sessions, openUserSettings } from "./helpers";
+import { createServer, forgetSessions, register, session, sessions, openUserSettings, showHubField } from "./helpers";
 
 test.skip(!process.env.TEST_DATABASE_URL, "branchr ID needs TEST_DATABASE_URL (Postgres)");
 
@@ -46,6 +46,7 @@ test("federated server: sign in with Discord from the login screen, claim it, co
   const ctx = await browser.newContext();
   const page = await ctx.newPage();
   await page.goto("/#/login");
+  await showHubField(page);
   await page.getByLabel("Hub", { exact: true }).fill(FED);
   // Not signed in to branchr yet: Discord first, then straight on into the server.
   await page.getByRole("button", { name: "Sign in with Discord" }).click();
@@ -72,6 +73,7 @@ test("federated server: sign in with Discord from the login screen, claim it, co
   const run = Date.now().toString(36);
   const bad = await (await browser.newContext()).newPage();
   await bad.goto("/#/login");
+  await showHubField(bad);
   await bad.getByLabel("Hub", { exact: true }).fill(FED);
   await bad.getByRole("button", { name: "Register" }).click();
   await bad.getByLabel("Username").fill(`spammer_${run}`);
@@ -100,6 +102,7 @@ test("federated server: sign in with Discord from the login screen, claim it, co
   await row.getByRole("button", { name: "Ban" }).click();
   await expect(row.getByText("Banned")).toBeVisible();
   await expect(bad.getByRole("heading", { name: /Welcome back|Create an account/ })).toBeVisible({ timeout: 30_000 });
+  await showHubField(bad);
   await bad.getByLabel("Hub", { exact: true }).fill(FED);
   await bad.getByLabel("Username").fill(`spammer_${run}`);
   await bad.getByLabel("Password").fill("correct horse battery");
@@ -138,6 +141,7 @@ test("federated server: sign in with Discord from the login screen, claim it, co
   await forgetSessions(page);
   await page.goto("/#/login");
   await page.reload();
+  await showHubField(page);
   await page.getByLabel("Hub", { exact: true }).fill(FED);
   await page.getByRole("button", { name: "Sign in with Discord" }).click();
   await expect(page.getByRole("heading", { name: "Welcome to #general!" })).toBeVisible();
@@ -172,6 +176,7 @@ test("federated server: a password account links to branchr and is reached by Di
   const ctx = await browser.newContext();
   const page = await ctx.newPage();
   await page.goto("/#/login");
+  await showHubField(page);
   await page.getByLabel("Hub", { exact: true }).fill(FED);
   await page.getByRole("button", { name: "Register" }).click();
   await page.getByLabel("Username").fill(`pw_${run}`);
@@ -220,6 +225,7 @@ test("federated server: a password account links to branchr and is reached by Di
   await forgetSessions(page);
   await page.goto("/#/login");
   await page.reload();
+  await showHubField(page);
   await page.getByLabel("Hub", { exact: true }).fill(FED);
   await page.getByRole("button", { name: "Sign in with Discord" }).click();
   await expect(page.getByRole("heading", { name: "Welcome to #general!" })).toBeVisible();
@@ -247,6 +253,7 @@ test("a new device reconnects to every host used with the branchr account", asyn
   // First device: Discord into one host, then connect a second the same way.
   const one = await (await browser.newContext()).newPage();
   await one.goto("/#/login");
+  await showHubField(one);
   await one.getByLabel("Hub", { exact: true }).fill(FED);
   await one.getByRole("button", { name: "Sign in with Discord" }).click();
   await expect(one.getByRole("heading", { name: "No communities yet" })).toBeVisible();
@@ -262,6 +269,7 @@ test("a new device reconnects to every host used with the branchr account", asyn
   // A new device: sign in to one host, and the other comes along.
   const two = await (await browser.newContext()).newPage();
   await two.goto("/#/login");
+  await showHubField(two);
   await two.getByLabel("Hub", { exact: true }).fill(FED);
   await two.getByRole("button", { name: "Sign in with Discord" }).click();
   await expect(two.getByRole("heading", { name: "No communities yet" })).toBeVisible();
@@ -277,6 +285,7 @@ test("a new device reconnects to every host used with the branchr account", asyn
   await expect(two.getByTestId("host-section")).toHaveCount(1);
   const three = await (await browser.newContext()).newPage();
   await three.goto("/#/login");
+  await showHubField(three);
   await three.getByLabel("Hub", { exact: true }).fill(FED);
   await three.getByRole("button", { name: "Sign in with Discord" }).click();
   await expect(three.getByRole("heading", { name: "No communities yet" })).toBeVisible();
@@ -284,4 +293,33 @@ test("a new device reconnects to every host used with the branchr account", asyn
   expect((await sessions(three)).map((s) => s.url)).toEqual([FED]);
 
   await fetch("http://localhost:18071/next-user", { method: "POST" });
+});
+
+test("signing in is just Discord: no hub to pick, straight into the default one", async ({ browser }) => {
+  const HOME = "http://localhost:18080";
+  const ctx = await browser.newContext();
+  const run = Date.now().toString(36);
+  await ctx.addCookies([{ name: "mock_discord_user", value: encodeURIComponent(JSON.stringify({ id: `7${Date.now()}`, username: `e2e_plain_${run}`, global_name: "Plain" })), domain: "localhost", path: "/" }]);
+  const page = await ctx.newPage();
+  await page.goto("/#/login");
+  await expect(page.getByRole("button", { name: "Sign in with Discord" })).toBeVisible();
+  await expect(page.getByLabel("Hub", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Sign in with Discord" }).click();
+  await expect(page.getByRole("heading", { name: "No communities yet" })).toBeVisible();
+  expect((await sessions(page)).map((s) => s.url)).toEqual([HOME]);
+  // The hub field and password accounts are a click away.
+  await forgetSessions(page);
+  await page.goto("/#/login");
+  await page.reload();
+  await page.getByRole("button", { name: "Other ways to sign in" }).click();
+  await expect(page.getByLabel("Hub", { exact: true })).toHaveValue(HOME);
+  await expect(page.getByLabel("Username")).toBeVisible();
+  // And back again; Register opens the form too, with the same way back.
+  await page.getByRole("button", { name: "← Back to Discord sign-in" }).click();
+  await expect(page.getByLabel("Hub", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Register" }).click();
+  await expect(page.getByLabel("Display name")).toBeVisible();
+  await page.getByRole("button", { name: "← Back to Discord sign-in" }).click();
+  await expect(page.getByRole("button", { name: "Sign in with Discord" })).toBeVisible();
+  await ctx.close();
 });

@@ -11,6 +11,7 @@ pub mod hosts;
 pub mod hub;
 pub mod instances;
 pub mod keys;
+pub mod network;
 pub mod oauth;
 pub mod social;
 
@@ -36,6 +37,8 @@ pub struct AppState {
     pub calls: Arc<calls::Calls>,
     /// Snowflakes for DM channels and messages.
     pub ids: Arc<proto::id::IdGen>,
+    /// Accounts banned network-wide (network.rs), checked on every request.
+    pub banned: Arc<dashmap::DashSet<uuid::Uuid>>,
 }
 
 /// Connects and migrates. `schema` (tests) keeps everything in its own Postgres schema.
@@ -64,7 +67,9 @@ pub async fn state(config: Config, db: PgPool) -> anyhow::Result<AppState> {
     let keys = Keys::load(&db).await?;
     let http = reqwest::Client::builder().user_agent(discord::USER_AGENT).timeout(Duration::from_secs(10)).build()?;
     let worker = std::env::var("WORKER_ID").ok().and_then(|w| w.parse().ok()).unwrap_or(0);
-    Ok(AppState { config: Arc::new(config), db, keys: Arc::new(keys), http, hub: Default::default(), calls: Default::default(), ids: Arc::new(proto::id::IdGen::new(worker)) })
+    let state = AppState { config: Arc::new(config), db, keys: Arc::new(keys), http, hub: Default::default(), calls: Default::default(), ids: Arc::new(proto::id::IdGen::new(worker)), banned: Default::default() };
+    network::load_bans(&state).await?;
+    Ok(state)
 }
 
 pub fn router(state: AppState) -> Router {
@@ -108,6 +113,11 @@ pub fn router(state: AppState) -> Router {
         .route("/instances/{id}", get(instances::status))
         .route("/instances/{id}/claim", axum::routing::delete(instances::release))
         .route("/instances/{id}/transfer", post(instances::transfer))
+        .route("/network/me", get(network::me))
+        .route("/network/staff", get(network::staff))
+        .route("/network/staff/{handle}", axum::routing::put(network::set_staff).delete(network::remove_staff))
+        .route("/network/bans", get(network::bans))
+        .route("/network/bans/{handle}", axum::routing::put(network::ban).delete(network::unban))
         .route("/instances/{id}/listings", axum::routing::put(discovery::publish))
         .route("/.well-known/jwks.json", get(|s: axum::extract::State<AppState>| async move { axum::Json(s.keys.jwks()) }))
         .route("/health", get(|| async { "ok" }))

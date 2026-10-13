@@ -37,7 +37,7 @@ async fn identify(ws: &mut WebSocket, s: &AppState) -> anyhow::Result<Option<Uui
     let WsMsg::Text(t) = msg else { return Ok(None) };
     let Ok(SocialOp::Identify { token }) = serde_json::from_str::<SocialOp>(&t) else { return Ok(None) };
     let claims: Option<AccessClaims> = s.keys.verify(&token, &s.config.public_url, AUDIENCE);
-    Ok(claims.and_then(|c| c.sub.parse().ok()))
+    Ok(claims.and_then(|c| c.sub.parse().ok()).filter(|id| !s.banned.contains(id)))
 }
 
 async fn set_presence(s: &AppState, me: Uuid, online: bool) {

@@ -5,6 +5,8 @@ import path from "node:path";
 
 import { _electron as electron, expect, test } from "@playwright/test";
 
+import { showHubField } from "./helpers";
+
 const require = createRequire(import.meta.url);
 const desktopDir = path.resolve(import.meta.dirname, "../../apps/desktop");
 
@@ -37,6 +39,7 @@ test("desktop: switching channels and disconnect are stable", async () => {
   win.on("console", (m) => m.type() === "warning" && warnings.push(m.text()));
   await win.getByRole("button", { name: "Register" }).click();
   // The bundled app suggests the dev host; tests run their own.
+  await showHubField(win);
   await win.getByLabel("Hub", { exact: true }).fill("http://localhost:18080");
   await win.getByLabel("Username").fill(`dv_${Date.now().toString(36)}`);
   await win.getByLabel("Password").fill("correct horse battery");

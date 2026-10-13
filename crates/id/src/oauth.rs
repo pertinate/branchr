@@ -142,6 +142,9 @@ pub async fn discord_callback(State(s): State<AppState>, Query(q): Query<Callbac
 
     let user = discord::user_for_code(&s.http, &s.config, &code).await?;
     let account = upsert_discord_account(&s, &user).await?;
+    if s.banned.contains(&account) {
+        return Ok(error_page("This branchr account is banned."));
+    }
 
     let our_code = random_token();
     sqlx::query(
@@ -323,6 +326,9 @@ pub async fn token(State(s): State<AppState>, Form(f): Form<TokenForm>) -> Resul
         }
         _ => return Err(bad("unsupported_grant_type", "use authorization_code or refresh_token")),
     };
+    if s.banned.contains(&account_id) {
+        return Err(bad("access_denied", "this branchr account is banned"));
+    }
 
     let refresh_token = random_token();
     sqlx::query(
@@ -360,7 +366,11 @@ pub async fn authed(s: &AppState, headers: &HeaderMap) -> Result<Uuid> {
         .and_then(|v| v.strip_prefix("Bearer "))
         .ok_or(Error::Unauthorized)?;
     let claims: AccessClaims = s.keys.verify(token, &s.config.public_url, AUDIENCE).ok_or(Error::Unauthorized)?;
-    claims.sub.parse().map_err(|_| Error::Unauthorized)
+    let id: Uuid = claims.sub.parse().map_err(|_| Error::Unauthorized)?;
+    if s.banned.contains(&id) {
+        return Err(Error::Forbidden("this branchr account is banned".into()));
+    }
+    Ok(id)
 }
 
 pub async fn me(State(s): State<AppState>, headers: HeaderMap) -> Result<Json<Account>> {
