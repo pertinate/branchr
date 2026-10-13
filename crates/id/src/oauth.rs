@@ -59,10 +59,32 @@ pub struct AuthorizeQuery {
     state: String,
 }
 
+/// The app of a hub this service fronts (`<public url>/h/<name>/app/`): same origin as us.
+fn fronted_hub_app(public_url: &str, uri: &str) -> bool {
+    uri.strip_prefix(public_url)
+        .and_then(|r| r.strip_prefix("/h/"))
+        .and_then(|r| r.strip_suffix("/app/"))
+        .is_some_and(|name| !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'))
+}
+
+#[cfg(test)]
+mod fronted_tests {
+    #[test]
+    fn only_fronted_hub_apps() {
+        let ok = |u| super::fronted_hub_app("https://branchr.us", u);
+        assert!(ok("https://branchr.us/h/overseers/app/"));
+        assert!(!ok("https://branchr.us/h/../app/"));
+        assert!(!ok("https://branchr.us/h//app/"));
+        assert!(!ok("https://branchr.us.evil.com/h/x/app/"));
+        assert!(!ok("https://evil.com/h/x/app/"));
+        assert!(!ok("https://branchr.us/h/x/app/extra"));
+    }
+}
+
 /// Starts a sign-in: remembers the client's PKCE challenge and sends the user to Discord.
 pub async fn authorize(State(s): State<AppState>, Query(q): Query<AuthorizeQuery>) -> Result<Redirect> {
     // Exact match only: the code goes wherever this points.
-    if !s.config.redirects.iter().any(|r| *r == q.redirect_uri) || url::Url::parse(&q.redirect_uri).is_err() {
+    if !(s.config.redirects.iter().any(|r| *r == q.redirect_uri) || fronted_hub_app(&s.config.public_url, &q.redirect_uri)) || url::Url::parse(&q.redirect_uri).is_err() {
         return Err(bad("invalid_request", "redirect_uri is not allowed"));
     }
     if q.code_challenge_method != "S256" || q.code_challenge.len() != 43 {

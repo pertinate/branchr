@@ -40,6 +40,7 @@ async fn main() -> anyhow::Result<()> {
             let mut branches = server::load_branches(&dir)?;
             branches.retain(|b| b.name != *name);
             let host = if host == "-" { String::new() } else { host.to_lowercase() };
+            let name = &name.to_lowercase();
             if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
                 anyhow::bail!("a hub name is letters, digits and dashes (it goes in the address)");
             }

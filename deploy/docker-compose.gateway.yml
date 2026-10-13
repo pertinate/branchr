@@ -1,0 +1,13 @@
+# The droplet as branchr.us only: branchr ID (with the site and app) and the relay, without a
+# hub of its own (hubs are reached through the relay). deploy-image.sh adds this when the
+# host's .env says HUB=off. The old hub address leads to branchr.us.
+services:
+  api:
+    profiles: ["hub"]
+  sfu:
+    profiles: ["hub"]
+  caddy:
+    depends_on: !reset []
+    volumes: !override
+      - ./deploy/Caddyfile.gateway:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data

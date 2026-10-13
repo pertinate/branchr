@@ -1,0 +1,7 @@
+# branchr.us without a hub of its own (deploy/docker-compose.gateway.yml): its site is
+# deploy/Caddyfile.id; the old hub address leads there.
+import /etc/caddy/sites/*.caddy
+
+{$DOMAIN} {
+	redir https://{$ID_DOMAIN}{uri} permanent
+}

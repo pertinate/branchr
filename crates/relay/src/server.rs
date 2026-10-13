@@ -63,7 +63,8 @@ struct State {
 
 impl State {
     fn by_name(&self, name: &str) -> Option<quinn::Connection> {
-        self.live.lock().unwrap().get(name).cloned()
+        let live = self.live.lock().unwrap();
+        live.iter().find(|(n, _)| n.eq_ignore_ascii_case(name)).map(|(_, c)| c.clone())
     }
 
     fn by_host(&self, host: &str) -> Option<quinn::Connection> {
