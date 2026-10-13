@@ -28,6 +28,26 @@ test("search and pins: find messages by words, pin one, see it in Pinned Message
   await bob.getByLabel("Close search").click();
   await expect(panel).toHaveCount(0);
 
+  // Filters: from:, has:, in:, and a name that isn't there.
+  const search = async (q: string) => {
+    await bob.getByLabel("Search messages").fill(q);
+    await bob.getByLabel("Search messages").press("Enter");
+  };
+  await bob.getByPlaceholder("Message #general").fill(`alpha${run} see https://example.invalid/page`);
+  await bob.getByPlaceholder("Message #general").press("Enter");
+  await search(`alpha${run}`);
+  await expect(panel.getByTestId("found-message")).toHaveCount(3);
+  await search(`alpha${run} from:srch_a`);
+  await expect(panel.getByTestId("found-message")).toHaveCount(2);
+  await search("has:link");
+  await expect(panel.getByTestId("found-message")).toHaveCount(1);
+  await expect(panel).toContainText("example.invalid");
+  await search(`charlie in:general`);
+  await expect(panel.getByTestId("found-message")).toHaveCount(1);
+  await search("from:nobody_here");
+  await expect(panel).toContainText("No one here called nobody_here.");
+  await bob.getByLabel("Close search").click();
+
   // Only people who manage messages can pin.
   await bob.getByText("charlie delta").click({ button: "right" });
   await expect(menu(bob).getByRole("menuitem", { name: "Copy Text" })).toBeVisible();

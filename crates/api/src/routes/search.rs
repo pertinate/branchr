@@ -25,8 +25,29 @@ pub struct SearchQuery {
     q: String,
     author: Option<Id>,
     channel: Option<Id>,
+    has: Option<Has>,
     #[serde(default)]
     offset: i64,
+}
+
+/// `has:` in a search: messages with a link, any attachment, or an image attachment.
+#[derive(Deserialize, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+pub enum Has {
+    Link,
+    File,
+    Image,
+}
+
+impl Has {
+    /// A fixed SQL condition on `m` (nothing from the request goes in it).
+    fn sql(self) -> &'static str {
+        match self {
+            Has::Link => "(m.content LIKE '%http://%' OR m.content LIKE '%https://%')",
+            Has::File => "EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = m.id)",
+            Has::Image => "EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = m.id AND a.content_type LIKE 'image/%')",
+        }
+    }
 }
 
 /// Words to look for: letters, digits and underscores only (no query syntax gets through).
@@ -42,7 +63,7 @@ fn terms(q: &str) -> Vec<String> {
 pub async fn search(State(state): State<AppState>, Auth(user): Auth, Path(gid): Path<Id>, Query(q): Query<SearchQuery>) -> AppResult<Json<Vec<Message>>> {
     let gp = require_perm(&state, gid, user, 0).await?;
     let words = terms(&q.q);
-    if words.is_empty() && q.author.is_none() {
+    if words.is_empty() && q.author.is_none() && q.channel.is_none() && q.has.is_none() {
         return Err(bad("search for some words, or for someone's messages"));
     }
     let visible: Vec<i64> = db::channels(&state.db, gid)
@@ -52,7 +73,7 @@ pub async fn search(State(state): State<AppState>, Auth(user): Auth, Path(gid): 
         .filter(|c| q.channel.is_none_or(|only| only == c.id))
         .map(|c| c.id.0)
         .collect();
-    find(&state, user, &visible, &words, q.author, q.offset).await.map(Json)
+    find(&state, user, &visible, &words, q.author, q.has, q.offset).await.map(Json)
 }
 
 #[derive(Deserialize)]
@@ -81,11 +102,11 @@ pub async fn search_everywhere(State(state): State<AppState>, Auth(user): Auth, 
                 .map(|c| c.id.0),
         );
     }
-    find(&state, user, &visible, &words, None, q.offset).await.map(Json)
+    find(&state, user, &visible, &words, None, None, q.offset).await.map(Json)
 }
 
 /// The search itself, over `visible` channels.
-async fn find(state: &AppState, user: Id, visible: &[i64], words: &[String], author: Option<Id>, offset: i64) -> AppResult<Vec<Message>> {
+async fn find(state: &AppState, user: Id, visible: &[i64], words: &[String], author: Option<Id>, has: Option<Has>, offset: i64) -> AppResult<Vec<Message>> {
     if visible.is_empty() {
         return Ok(Vec::new());
     }
@@ -104,9 +125,10 @@ async fn find(state: &AppState, user: Id, visible: &[i64], words: &[String], aut
     } else {
         words.iter().map(|w| format!("\"{w}\"*")).collect::<Vec<_>>().join(" ")
     };
+    let has = has.map_or("TRUE", Has::sql);
     let sql = format!(
         "SELECT m.id FROM {from} WHERE {matches} AND m.channel_id IN ({channels}) AND m.kind = 'default'
-         AND ($2 = 0 OR m.author_id = $2) ORDER BY m.id DESC LIMIT $3 OFFSET $4"
+         AND ($2 = 0 OR m.author_id = $2) AND {has} ORDER BY m.id DESC LIMIT $3 OFFSET $4"
     );
     let ids: Vec<(i64,)> = sqlx::query_as(AssertSqlSafe(sql))
         .bind(&query)
