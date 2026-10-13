@@ -80,13 +80,15 @@ pub fn spawn(index: usize, config: &Config, shared: Arc<Shared>, rx: mpsc::Unbou
     socket.bind(&bind.into())?;
     let std_socket: std::net::UdpSocket = socket.into();
 
-    let public = SocketAddr::new(config.public_ip, config.public_udp_port + index as u16);
+    let public_port = config.public_udp_port + index as u16;
+    // Same port at the LAN address (no router in between).
+    let lan = config.lan_ip.filter(|ip| *ip != config.public_ip || config.public_auto).map(|ip| SocketAddr::new(ip, port));
     let initial_bwe = config.initial_bwe_bps;
     std::thread::Builder::new().name(format!("sfu-worker-{index}")).spawn(move || {
         let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().expect("worker runtime");
         rt.block_on(async move {
             let socket = UdpSocket::from_std(std_socket).expect("tokio udp socket");
-            Worker::new(index, shared, socket, public, initial_bwe).run(rx).await;
+            Worker::new(index, shared, socket, public_port, lan, initial_bwe).run(rx).await;
         });
     })?;
     Ok(())
@@ -285,7 +287,10 @@ struct Worker {
     index: usize,
     shared: Arc<Shared>,
     socket: UdpSocket,
-    public: SocketAddr,
+    /// Advertised port at the (current) public IP.
+    public_port: u16,
+    /// Also advertised: this machine's LAN address, for clients on the same network.
+    lan: Option<SocketAddr>,
     initial_bwe: u64,
     peers: HashMap<PeerId, Peer>,
     addrs: HashMap<SocketAddr, PeerId>,
@@ -297,13 +302,39 @@ struct Worker {
     prof: Prof,
 }
 
+/// The start of a reachability probe (from branchr ID's check); echoed back as is.
+pub const PROBE: &[u8] = b"BRANCHR-PROBE";
+
+/// Addresses that only make sense on the same network (so a packet from one came in on our
+/// LAN address, not through the router).
+fn local_network(ip: std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(v4) => v4.is_private() || v4.is_link_local() || v4.is_loopback(),
+        std::net::IpAddr::V6(v6) => v6.is_loopback() || (v6.segments()[0] & 0xfe00) == 0xfc00 || (v6.segments()[0] & 0xffc0) == 0xfe80,
+    }
+}
+
 impl Worker {
-    fn new(index: usize, shared: Arc<Shared>, socket: UdpSocket, public: SocketAddr, initial_bwe: u64) -> Self {
+    /// The address clients reach us at from the internet (its IP can change).
+    fn public(&self) -> SocketAddr {
+        SocketAddr::new(*self.shared.public_ip.read(), self.public_port)
+    }
+
+    /// Which of our addresses a packet from `source` was sent to (we're bound to all of them).
+    fn local_for(&self, source: SocketAddr) -> SocketAddr {
+        match self.lan {
+            Some(lan) if local_network(source.ip()) => lan,
+            _ => self.public(),
+        }
+    }
+
+    fn new(index: usize, shared: Arc<Shared>, socket: UdpSocket, public_port: u16, lan: Option<SocketAddr>, initial_bwe: u64) -> Self {
         Self {
             index,
             shared,
             socket,
-            public,
+            public_port,
+            lan,
             initial_bwe,
             peers: HashMap::new(),
             addrs: HashMap::new(),
@@ -372,9 +403,15 @@ impl Worker {
             self.buf.resize(2000, 0);
             match self.socket.try_recv_from(&mut self.buf) {
                 Ok((n, source)) => {
+                    // branchr's reachability check: say it back.
+                    if self.buf[..n].starts_with(PROBE) {
+                        let _ = self.socket.try_send_to(&self.buf[..n], source);
+                        continue;
+                    }
                     let now = Instant::now();
+                    let destination = self.local_for(source);
                     let Ok(contents) = self.buf[..n].try_into() else { continue };
-                    let input = Input::Receive(now, Receive { proto: Protocol::Udp, source, destination: self.public, contents });
+                    let input = Input::Receive(now, Receive { proto: Protocol::Udp, source, destination, contents });
                     let peer_id = match self.addrs.get(&source) {
                         Some(p) => Some(*p),
                         // First contact (or address change): only STUN can introduce a new address.
@@ -576,11 +613,13 @@ impl Worker {
             .set_send_buffer_video(8000)
             .set_reordering_size_video(60)
             .build(Instant::now());
-        match Candidate::host(self.public, "udp") {
-            Ok(c) => {
-                rtc.add_local_candidate(c);
+        for addr in std::iter::once(self.public()).chain(self.lan) {
+            match Candidate::host(addr, "udp") {
+                Ok(c) => {
+                    rtc.add_local_candidate(c);
+                }
+                Err(e) => tracing::error!("bad candidate {addr}: {e:?}"),
             }
-            Err(e) => tracing::error!("bad candidate {}: {e:?}", self.public),
         }
 
         let (tracks, dups) = {

@@ -12,6 +12,7 @@ pub mod hub;
 pub mod instances;
 pub mod keys;
 pub mod network;
+pub mod reach;
 pub mod oauth;
 pub mod social;
 
@@ -89,6 +90,8 @@ pub fn router(state: AppState) -> Router {
         .layer(axum::middleware::from_fn_with_state(throttle::IpLimit::new(30, 60.0, trust_proxy), throttle::ip_limit));
     let explore = Router::new()
         .route("/discover", get(discovery::search))
+        .route("/ip", get(reach::ip))
+        .route("/probe", post(reach::probe))
         .layer(axum::middleware::from_fn_with_state(throttle::IpLimit::new(60, 60.0, trust_proxy), throttle::ip_limit));
     let router = Router::new()
         .merge(open)

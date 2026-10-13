@@ -301,6 +301,25 @@ wire! {
         pub ok: bool,
         /// Round trip of its health check.
         pub ms: Option<u32>,
+        /// Where clients send it media, and how it found that (its /status).
+        #[serde(default)]
+        pub public_ip: Option<String>,
+        #[serde(default)]
+        pub lan_ip: Option<String>,
+        #[serde(default)]
+        pub ports: Vec<u16>,
+        /// "fixed", "upnp" or "echo".
+        #[serde(default)]
+        pub via: Option<String>,
+        /// The router forwarded its ports (UPnP).
+        #[serde(default)]
+        pub forwarded: bool,
+        #[serde(default)]
+        pub warning: Option<String>,
+        /// Which ports answered branchr ID's probe from the internet (checked for hubs that
+        /// find their own address); none if not checked.
+        #[serde(default)]
+        pub reachable: Option<Vec<u16>>,
     }
 
     /// A user on the host, for its owner.

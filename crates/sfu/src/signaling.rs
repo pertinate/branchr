@@ -21,16 +21,19 @@ pub struct App {
     config: Config,
     shared: Arc<Shared>,
     next_peer: AtomicU64,
+    status: crate::addrs::SharedStatus,
 }
 
 impl App {
-    pub fn new(config: Config, shared: Arc<Shared>) -> Self {
-        Self { config, shared, next_peer: AtomicU64::new(1) }
+    pub fn new(config: Config, shared: Arc<Shared>, status: crate::addrs::SharedStatus) -> Self {
+        Self { config, shared, next_peer: AtomicU64::new(1), status }
     }
 }
 
 pub fn router(app: Arc<App>) -> Router {
-    Router::new().route("/ws", get(upgrade)).route("/health", get(|| async { "ok" })).with_state(app)
+    Router::new().route("/ws", get(upgrade)).route("/health", get(|| async { "ok" }))
+        // Where clients send media, and how that was found (for the hub's settings).
+        .route("/status", get(|a: axum::extract::State<Arc<App>>| async move { axum::Json(a.status.read().clone()) })).with_state(app)
 }
 
 async fn upgrade(ws: WebSocketUpgrade, State(app): State<Arc<App>>) -> Response {

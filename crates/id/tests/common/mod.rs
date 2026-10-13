@@ -21,7 +21,7 @@ pub const VERIFIER: &str = "a-pkce-verifier-that-is-long-enough-for-rfc-7636-012
 pub async fn serve(app: Router) -> SocketAddr {
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = l.local_addr().unwrap();
-    tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+    tokio::spawn(async move { axum::serve(l, app.into_make_service_with_connect_info::<std::net::SocketAddr>()).await.unwrap() });
     addr
 }
 
@@ -89,7 +89,7 @@ impl Harness {
             voice_secret: Some(b"test-voice-secret".to_vec()),
         };
         let app = id::router(id::state(config, db.clone()).await.unwrap());
-        tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+        tokio::spawn(async move { axum::serve(l, app.into_make_service_with_connect_info::<std::net::SocketAddr>()).await.unwrap() });
         let http = reqwest::Client::builder().redirect(Policy::none()).build().unwrap();
         Some(Self { base, http, db, schema })
     }

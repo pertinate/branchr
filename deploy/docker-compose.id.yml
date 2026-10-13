@@ -75,6 +75,9 @@ services:
       RELAY_QUIC: 0.0.0.0:7443
       RELAY_HTTP: 0.0.0.0:8800
       RELAY_PUBLIC: ${ID_DOMAIN}:7443
+      # Hubs take voice and video directly (branchr.us doesn't pay for their streams);
+      # RELAY_MEDIA=on carries it too, e.g. on a gateway of your own.
+      RELAY_MEDIA: ${RELAY_MEDIA:-off}
     volumes:
       - relay-data:/data/relay
     ports:

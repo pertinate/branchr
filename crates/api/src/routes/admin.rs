@@ -68,19 +68,61 @@ pub async fn overview(State(state): State<AppState>, Auth(user): Auth) -> AppRes
         attachment_bytes: bytes as u64,
         my_role,
         max_upload_mb: state.max_upload_bytes.load(Ordering::Relaxed) / 1024 / 1024,
-        sfus: sfu_health(&state.config.sfu_urls).await,
+        sfus: sfu_health(&state.config.sfu_urls, state.federation.as_ref().map(|f| format!("{}/probe", f.id_url()))).await,
     }))
 }
 
-/// Each voice server's `/health` (next to its `/ws`), at once, a few seconds at most.
-async fn sfu_health(urls: &[String]) -> Vec<proto::models::SfuHealth> {
+/// Each voice server's `/health` and `/status` (next to its `/ws`), at once, a few seconds at
+/// most; for one that finds its own address (a hub at home), whether the internet can reach it.
+async fn sfu_health(urls: &[String], probe: Option<String>) -> Vec<proto::models::SfuHealth> {
+    #[derive(serde::Deserialize, Default)]
+    #[serde(rename_all = "camelCase", default)]
+    struct Status {
+        public_ip: Option<String>,
+        lan_ip: Option<String>,
+        ports: Vec<u16>,
+        via: Option<String>,
+        forwarded: bool,
+        warning: Option<String>,
+    }
+    #[derive(serde::Deserialize)]
+    struct Probed {
+        reachable: Vec<u16>,
+    }
     static HTTP: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
-    let http = HTTP.get_or_init(|| reqwest::Client::builder().timeout(std::time::Duration::from_secs(3)).build().expect("http client"));
-    futures::future::join_all(urls.iter().map(|url| async move {
-        let health = url.replacen("ws", "http", 1).trim_end_matches("/ws").to_string() + "/health";
-        let started = std::time::Instant::now();
-        let ok = http.get(&health).send().await.is_ok_and(|r| r.status().is_success());
-        proto::models::SfuHealth { url: url.clone(), ok, ms: ok.then(|| started.elapsed().as_millis() as u32) }
+    let http = HTTP.get_or_init(|| reqwest::Client::builder().timeout(std::time::Duration::from_secs(4)).build().expect("http client"));
+    futures::future::join_all(urls.iter().map(|url| {
+        let probe = probe.clone();
+        async move {
+            let base = url.replacen("ws", "http", 1).trim_end_matches("/ws").to_string();
+            let started = std::time::Instant::now();
+            let ok = http.get(format!("{base}/health")).send().await.is_ok_and(|r| r.status().is_success());
+            let ms = ok.then(|| started.elapsed().as_millis() as u32);
+            let st: Status = match http.get(format!("{base}/status")).send().await {
+                Ok(r) if r.status().is_success() => r.json().await.unwrap_or_default(),
+                _ => Status::default(),
+            };
+            let finds_own = matches!(st.via.as_deref(), Some("upnp" | "echo"));
+            let reachable = match probe {
+                Some(probe) if ok && finds_own && !st.ports.is_empty() => match http.post(probe).json(&serde_json::json!({ "ports": st.ports })).send().await {
+                    Ok(r) if r.status().is_success() => r.json::<Probed>().await.ok().map(|p| p.reachable),
+                    _ => None,
+                },
+                _ => None,
+            };
+            proto::models::SfuHealth {
+                url: url.clone(),
+                ok,
+                ms,
+                public_ip: st.public_ip,
+                lan_ip: st.lan_ip,
+                ports: st.ports,
+                via: st.via,
+                forwarded: st.forwarded,
+                warning: st.warning,
+                reachable,
+            }
+        }
     }))
     .await
 }

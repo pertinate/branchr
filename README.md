@@ -178,6 +178,7 @@ Configuration is all through the environment:
 | `LINK_PREVIEWS` | api | on | `0` turns off link previews (the server then never fetches links people post). |
 | `SFU_PUBLIC_UDP_PORT` | sfu | `SFU_UDP_PORT` | First UDP port advertised to clients, when a relay forwards other public ports to the sfu's own. |
 | `SITE_DIR` | api | `/srv/site` in the image | The product site (`apps/site`), served at `/`; the app is at `/app/`. Without it, `/` leads to the app. Old `/#/...` links (invites, sign-in) carry on to `/app/`. |
+| `SFU_PUBLIC_IP` | sfu | detected | The address clients send media to, or `auto` for a hub at home: the sfu asks the router to forward its UDP ports (UPnP; `SFU_UPNP=0` turns that off) and for its public IP, else asks `SFU_IP_ECHO` (`https://branchr.us/ip`), and keeps it current. It also offers its LAN address (`SFU_LAN_IP`, detected) so people on the same network connect locally. Manage Hub shows whether the internet can reach it (branchr probes the ports). |
 | `MAX_UPLOAD_MB` | api | `500` | Largest attachment. Sent to clients, which refuse bigger files up front. |
 | `SFU_PUBLIC_IP` | sfu | autodetected | IP put in ICE candidates. |
 | `SFU_UDP_PORT` / `SFU_WORKERS` | sfu | `50000` / #cores | Worker *i* uses `SFU_UDP_PORT + i`. |
@@ -215,7 +216,7 @@ branchr.us is the front door: branchr ID serves the product site at `/` and the 
 docker compose exec relay branchr-relay add home - 53000 2   # prints its token; media on UDP 53000-53001
 ```
 
-(`-` means no hostname of its own; give one instead to also reach it at that name.) Next to the Hub: `RELAY_TOKEN=<token> RELAY_API=http://api:8080 RELAY_SFU=http://sfu:8090 RELAY_SFU_UDP=sfu-host:50000 branchr-relay connect`. The Hub runs with `PUBLIC_URL=https://branchr.us/h/home`, `SFU_URLS=wss://branchr.us/h/home/sfu/ws` and `TRUST_PROXY=1` on the api, and `SFU_PUBLIC_IP=<gateway IP>` plus `SFU_PUBLIC_UDP_PORT=53000` on the sfu, so clients send media to the gateway. The connector trusts only the gateway certificate named in its token, and the gateway only the secret in it. Relayed media costs the gateway's bandwidth both ways; direct connections, when a Hub has them, come later.
+(`-` means no hostname of its own; give one instead to also reach it at that name.) Next to the Hub: `RELAY_TOKEN=<token> RELAY_API=http://api:8080 RELAY_SFU=http://sfu:8090 RELAY_SFU_UDP=sfu-host:50000 branchr-relay connect`. The Hub runs with `PUBLIC_URL=https://branchr.us/h/home`, `SFU_URLS=wss://branchr.us/h/home/sfu/ws` and `TRUST_PROXY=1` on the api, and `SFU_PUBLIC_IP=<gateway IP>` plus `SFU_PUBLIC_UDP_PORT=53000` on the sfu, so clients send media to the gateway. The connector trusts only the gateway certificate named in its token, and the gateway only the secret in it. On branchr.us the gateway carries web, chat and voice signaling only (`RELAY_MEDIA=off`): hubs take voice and video directly (`SFU_PUBLIC_IP=auto` on the sfu), so streams never cost the gateway's bandwidth. People in a call can see the hub's IP; a hub owner who wants it hidden runs a gateway of their own with `RELAY_MEDIA=on`. Hubs never see visitors' real addresses through the gateway, only a stand-in per visitor (`RELAY_PASS_IP=1` passes them on, for your own gateway).
 
 ## CI/CD
 

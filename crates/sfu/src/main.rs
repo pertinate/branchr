@@ -4,6 +4,7 @@
 //! as reference-counted buffers, so CPU cost is independent of stream resolution and
 //! the only practical limits are the publisher's encoder and the viewers' bandwidth.
 
+mod addrs;
 mod config;
 mod h264;
 mod shared;
@@ -31,6 +32,11 @@ async fn main() -> anyhow::Result<()> {
     let config = config::Config::from_env()?;
     let (txs, rxs): (Vec<_>, Vec<_>) = (0..config.workers).map(|_| tokio::sync::mpsc::unbounded_channel()).unzip();
     let shared = Arc::new(shared::Shared::new(txs));
+    *shared.public_ip.write() = config.public_ip;
+    let status = addrs::initial(&config);
+    if config.public_auto {
+        tokio::spawn(addrs::keep_current(config.clone(), shared.clone(), status.clone()));
+    }
     for (i, rx) in rxs.into_iter().enumerate() {
         worker::spawn(i, &config, shared.clone(), rx)?;
     }
@@ -41,7 +47,7 @@ async fn main() -> anyhow::Result<()> {
         "sfu started"
     );
 
-    let app = Arc::new(signaling::App::new(config.clone(), shared));
+    let app = Arc::new(signaling::App::new(config.clone(), shared, status));
     let listener = tokio::net::TcpListener::bind(config.bind).await?;
     tracing::info!("signaling listening on {}", config.bind);
     axum::serve(listener, signaling::router(app)).await?;

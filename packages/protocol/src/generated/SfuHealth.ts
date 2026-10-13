@@ -8,4 +8,21 @@ url: string, ok: boolean,
 /**
  * Round trip of its health check.
  */
-ms: number | null, };
+ms: number | null, 
+/**
+ * Where clients send it media, and how it found that (its /status).
+ */
+publicIp: string | null, lanIp: string | null, ports: Array<number>, 
+/**
+ * "fixed", "upnp" or "echo".
+ */
+via: string | null, 
+/**
+ * The router forwarded its ports (UPnP).
+ */
+forwarded: boolean, warning: string | null, 
+/**
+ * Which ports answered branchr ID's probe from the internet (checked for hubs that
+ * find their own address); none if not checked.
+ */
+reachable: Array<number> | null, };

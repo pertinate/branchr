@@ -2,7 +2,7 @@
 //! over QUIC; it hands each visitor's HTTP connection and media packets to the right branch.
 
 use std::collections::HashMap;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -59,6 +59,14 @@ struct State {
     live: Mutex<HashMap<String, quinn::Connection>>,
     /// Branch name -> its public media sockets (kept across reconnects).
     udp: Mutex<HashMap<String, Arc<Vec<Arc<UdpSocket>>>>>,
+    /// Carry hubs' voice and video too (RELAY_MEDIA; off where bandwidth is someone else's
+    /// bill, e.g. branchr.us: hubs take media directly).
+    media: bool,
+    /// Show hubs their visitors' real addresses (RELAY_PASS_IP=1); otherwise each visitor gets
+    /// a stand-in address per hub (stable, so rate limits work, but not traceable).
+    pass_ip: bool,
+    /// For the stand-in addresses (kept across restarts).
+    salt: Vec<u8>,
 }
 
 impl State {
@@ -67,9 +75,23 @@ impl State {
         live.iter().find(|(n, _)| n.eq_ignore_ascii_case(name)).map(|(_, c)| c.clone())
     }
 
-    fn by_host(&self, host: &str) -> Option<quinn::Connection> {
-        let name = load_branches(&self.dir).ok()?.into_iter().find(|b| b.host.eq_ignore_ascii_case(host))?.name;
-        self.live.lock().unwrap().get(&name).cloned()
+    fn by_host(&self, host: &str) -> Option<(String, quinn::Connection)> {
+        let name = load_branches(&self.dir).ok()?.into_iter().find(|b| !b.host.is_empty() && b.host.eq_ignore_ascii_case(host))?.name;
+        let conn = self.live.lock().unwrap().get(&name).cloned()?;
+        Some((name, conn))
+    }
+
+    /// The address a hub sees for a visitor: theirs (RELAY_PASS_IP), or a stand-in made from it.
+    fn shown_ip(&self, hub: &str, ip: IpAddr) -> IpAddr {
+        if self.pass_ip {
+            return ip;
+        }
+        let d = Sha256::new().chain_update(&self.salt).chain_update(hub.to_ascii_lowercase()).chain_update(ip.to_string()).finalize();
+        // A unique-local IPv6 address (fd00::/8): never anyone's real one.
+        let mut b = [0u8; 16];
+        b[0] = 0xfd;
+        b[1..].copy_from_slice(&d[..15]);
+        IpAddr::V6(b.into())
     }
 }
 
@@ -86,7 +108,21 @@ pub async fn serve(dir: PathBuf, quic: SocketAddr, http: SocketAddr) -> anyhow::
     let endpoint = quinn::Endpoint::server(config, quic)?;
     tracing::info!("branches connect on udp {quic}; visitors on http {http}");
 
-    let state = Arc::new(State { dir, ..Default::default() });
+    let flag = |k: &str, default: bool| std::env::var(k).ok().map_or(default, |v| !matches!(v.trim(), "0" | "off" | "false" | ""));
+    let salt_file = dir.join("ip-salt");
+    if !salt_file.exists() {
+        let mut salt = [0u8; 32];
+        rand::RngCore::fill_bytes(&mut rand::rng(), &mut salt);
+        std::fs::write(&salt_file, salt)?;
+    }
+    let state = Arc::new(State {
+        media: flag("RELAY_MEDIA", true),
+        pass_ip: flag("RELAY_PASS_IP", false),
+        salt: std::fs::read(&salt_file)?,
+        dir,
+        ..Default::default()
+    });
+    tracing::info!("relaying hubs' media: {}; visitors' addresses: {}", if state.media { "yes" } else { "no (direct)" }, if state.pass_ip { "passed on" } else { "stand-ins" });
     tokio::spawn(serve_http(state.clone(), http));
     while let Some(incoming) = endpoint.accept().await {
         let state = state.clone();
@@ -119,11 +155,11 @@ async fn branch(state: Arc<State>, conn: quinn::Connection) -> anyhow::Result<()
         conn.close(1u32.into(), b"refused");
         anyhow::bail!("refused {}", hello.name);
     };
-    let sockets = media_sockets(&state, &b).await?;
+    let sockets = if state.media { media_sockets(&state, &b).await? } else { Arc::new(Vec::new()) };
     if let Some(old) = state.live.lock().unwrap().insert(b.name.clone(), conn.clone()) {
         old.close(2u32.into(), b"replaced");
     }
-    let w = Welcome { ok: true, error: None, host: b.host.clone(), udp_base: b.udp_base, udp_ports: b.udp_ports };
+    let w = Welcome { ok: true, error: None, host: b.host.clone(), udp_base: b.udp_base, udp_ports: if state.media { b.udp_ports } else { 0 } };
     send.write_all(format!("{}\n", serde_json::to_string(&w)?).as_bytes()).await?;
     tracing::info!("branch {} connected from {} as https://{}", b.name, conn.remote_address(), b.host);
 
@@ -173,12 +209,12 @@ async fn media_sockets(state: &Arc<State>, b: &Branch) -> anyhow::Result<Arc<Vec
 async fn serve_http(state: Arc<State>, addr: SocketAddr) -> anyhow::Result<()> {
     let listener = TcpListener::bind(addr).await?;
     loop {
-        let (tcp, _) = listener.accept().await?;
+        let (tcp, peer) = listener.accept().await?;
         let state = state.clone();
         tokio::spawn(async move {
             let svc = service_fn(move |req| {
                 let state = state.clone();
-                async move { Ok::<_, std::convert::Infallible>(visitor(state, req).await) }
+                async move { Ok::<_, std::convert::Infallible>(visitor(state, peer, req).await) }
             });
             let _ = http1::Builder::new().serve_connection(TokioIo::new(tcp), svc).with_upgrades().await;
         });
@@ -186,7 +222,7 @@ async fn serve_http(state: Arc<State>, addr: SocketAddr) -> anyhow::Result<()> {
 }
 
 /// One visitor request: to the branch its Host names, over a fresh stream.
-async fn visitor(state: Arc<State>, req: Request<Incoming>) -> Response<Body> {
+async fn visitor(state: Arc<State>, peer: SocketAddr, req: Request<Incoming>) -> Response<Body> {
     // Caddy's on-demand TLS asks before getting a certificate for a name.
     if req.uri().path() == "/_relay/check" {
         let domain = req.uri().query().and_then(|q| q.split('&').find_map(|kv| kv.strip_prefix("domain="))).unwrap_or("");
@@ -200,7 +236,7 @@ async fn visitor(state: Arc<State>, req: Request<Incoming>) -> Response<Body> {
     let mut req = req;
     let routed = match path_hub(req.uri()) {
         Some((name, rest)) => {
-            let Some(conn) = state.by_name(&name) else {
+            let Some(conn) = state.by_name(&name).map(|c| (name.clone(), c)) else {
                 return text(StatusCode::BAD_GATEWAY, "this hub isn't connected right now");
             };
             if rest.is_empty() {
@@ -221,12 +257,19 @@ async fn visitor(state: Arc<State>, req: Request<Incoming>) -> Response<Body> {
         None => {
             let host = req.headers().get(hyper::header::HOST).and_then(|h| h.to_str().ok()).unwrap_or("").split(':').next().unwrap_or("").to_string();
             match state.by_host(&host) {
-                Some(conn) => conn,
+                Some(found) => found,
                 None => return text(StatusCode::BAD_GATEWAY, "this hub isn't connected right now"),
             }
         }
     };
-    let conn = routed;
+    let (hub, conn) = routed;
+    // The visitor, as the proxy in front of us (Caddy) saw them, then as the hub may see them.
+    let client = req.headers().get("x-forwarded-for").and_then(|v| v.to_str().ok()).and_then(|v| v.rsplit(',').next()).and_then(|v| v.trim().parse().ok()).unwrap_or(peer.ip());
+    let shown = state.shown_ip(&hub, client);
+    req.headers_mut().remove("x-real-ip");
+    if let Ok(v) = shown.to_string().parse() {
+        req.headers_mut().insert("x-forwarded-for", v);
+    }
     forward(req, |req| async move {
         let (send, recv) = conn.open_bi().await?;
         let (mut sender, c) = hyper::client::conn::http1::handshake(TokioIo::new(tokio::io::join(recv, send))).await?;
@@ -252,6 +295,19 @@ fn path_hub(uri: &hyper::Uri) -> Option<(String, String)> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn visitors_get_stand_in_addresses() {
+        let state = super::State { salt: b"salt".to_vec(), ..Default::default() };
+        let ip: std::net::IpAddr = "203.0.113.9".parse().unwrap();
+        let a = state.shown_ip("home", ip);
+        assert_eq!(a, state.shown_ip("HOME", ip), "stable per hub");
+        assert_ne!(a, state.shown_ip("other", ip), "not the same across hubs");
+        assert_ne!(a, state.shown_ip("home", "203.0.113.10".parse().unwrap()));
+        assert!(matches!(a, std::net::IpAddr::V6(v6) if v6.segments()[0] >> 8 == 0xfd));
+        let passing = super::State { pass_ip: true, ..Default::default() };
+        assert_eq!(passing.shown_ip("home", ip), ip);
+    }
+
     #[test]
     fn hubs_by_path() {
         let p = |u: &str| super::path_hub(&u.parse().unwrap());

@@ -1,4 +1,4 @@
-import type { HostGuild, HostOverview, HostRole, HostUser } from "@app/protocol";
+import type { HostGuild, HostOverview, HostRole, HostUser, SfuHealth } from "@app/protocol";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ban, Search, ShieldCheck, Trash2, Undo2 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -130,13 +130,42 @@ function Overview() {
         <Label>Voice servers</Label>
         {o.sfus.length === 0 && <p className="text-xs text-muted-foreground">None configured (SFU_URLS).</p>}
         {o.sfus.map((s) => (
-          <div key={s.url} data-testid="sfu-health" className="flex items-center gap-2 text-sm">
-            <span className={cn("size-2 shrink-0 rounded-full", s.ok ? "bg-online" : "bg-dnd")} />
-            <span className="truncate font-mono text-xs">{s.url}</span>
-            <span className="ml-auto shrink-0 text-xs text-muted-foreground">{s.ok ? `up · ${s.ms} ms` : "not answering"}</span>
+          <div key={s.url} className="space-y-0.5">
+            <div data-testid="sfu-health" className="flex items-center gap-2 text-sm">
+              <span className={cn("size-2 shrink-0 rounded-full", s.ok ? "bg-online" : "bg-dnd")} />
+              <span className="truncate font-mono text-xs">{s.url}</span>
+              <span className="ml-auto shrink-0 text-xs text-muted-foreground">{s.ok ? `up · ${s.ms} ms` : "not answering"}</span>
+            </div>
+            {s.ok && <Reach s={s} />}
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+/** How people reach a voice server for media, and whether that works from outside. */
+function Reach({ s }: { s: SfuHealth }) {
+  const range = s.ports.length ? (s.ports.length > 1 ? `${s.ports[0]}–${s.ports[s.ports.length - 1]}` : `${s.ports[0]}`) : "";
+  const all = s.reachable && s.reachable.length === s.ports.length;
+  const none = s.reachable && s.reachable.length === 0;
+  return (
+    <div data-testid="sfu-reach" className="space-y-0.5 pl-4 text-xs text-muted-foreground">
+      {s.publicIp && (
+        <div>
+          Media {s.via === "fixed" ? "at" : "directly at"} {s.publicIp}
+          {s.via === "upnp" ? " · ports opened on your router" : s.via === "echo" ? " · address found through branchr" : ""}
+          {s.lanIp && ` · on your network at ${s.lanIp}`}
+        </div>
+      )}
+      {all && <div className="text-online">Reachable from the internet: voice and video go straight to this hub.</div>}
+      {s.reachable && !all && (
+        <div className="text-dnd">
+          {none ? "Not reachable from the internet." : `Only ports ${s.reachable.join(", ")} answer.`} Forward UDP {range}
+          {s.lanIp ? ` to ${s.lanIp}` : ""} on your router (or turn on UPnP there), then reopen this.
+        </div>
+      )}
+      {s.warning && <div className="text-idle">{s.warning}</div>}
     </div>
   );
 }

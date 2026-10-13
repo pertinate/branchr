@@ -78,14 +78,7 @@ impl IpLimit {
 
     /// Whom to count a request against; None for requests that aren't limited.
     fn key(&self, peer: Option<SocketAddr>, headers: &HeaderMap) -> Option<IpAddr> {
-        let peer = peer?.ip();
-        let ip = if self.trust_proxy {
-            // The proxy appends the address it saw, so only the last entry is trustworthy.
-            let forwarded = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()).and_then(|v| v.rsplit(',').next()).and_then(|v| v.trim().parse().ok());
-            forwarded.unwrap_or(peer)
-        } else {
-            peer
-        };
+        let ip = client_ip(peer, headers, self.trust_proxy)?;
         // Loopback: tests, health checks, or a same-host proxy that isn't trusted (where every
         // client would otherwise share one bucket).
         if ip.is_loopback() {
@@ -100,6 +93,17 @@ impl IpLimit {
             v4 => v4,
         })
     }
+}
+
+/// The client's address: the connection's, or behind a trusted proxy the one it forwarded
+/// (only the last `X-Forwarded-For` entry: the proxy appends what it saw).
+pub fn client_ip(peer: Option<SocketAddr>, headers: &HeaderMap, trust_proxy: bool) -> Option<IpAddr> {
+    let peer = peer?.ip();
+    if !trust_proxy {
+        return Some(peer);
+    }
+    let forwarded = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()).and_then(|v| v.rsplit(',').next()).and_then(|v| v.trim().parse().ok());
+    Some(forwarded.unwrap_or(peer))
 }
 
 /// `axum::middleware::from_fn_with_state(limit, throttle::ip_limit)`; needs the server to run

@@ -24,6 +24,8 @@ pub struct Shared {
     pub workers: Vec<mpsc::UnboundedSender<Cmd>>,
     /// Peers per worker, for least-loaded placement.
     pub load: Vec<AtomicUsize>,
+    /// The address advertised to clients; it can change (a home connection's IP).
+    pub public_ip: parking_lot::RwLock<std::net::IpAddr>,
 }
 
 #[derive(Default)]
@@ -82,7 +84,7 @@ impl Track {
 impl Shared {
     pub fn new(workers: Vec<mpsc::UnboundedSender<Cmd>>) -> Self {
         let load = workers.iter().map(|_| AtomicUsize::new(0)).collect();
-        Self { rooms: Mutex::new(HashMap::new()), workers, load }
+        Self { rooms: Mutex::new(HashMap::new()), workers, load, public_ip: parking_lot::RwLock::new([127, 0, 0, 1].into()) }
     }
 
     pub fn least_loaded(&self) -> usize {
