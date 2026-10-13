@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { EmoteCard } from "@/components/chat/emote-card";
 import { GlobalDialogs } from "@/components/global-dialogs";
 import { IncomingCall } from "@/components/home/incoming-call";
+import { QuickSwitcher } from "@/components/quick-switcher";
 import { ServerRail } from "@/components/server-rail";
 import { AudioRenderer } from "@/components/voice/audio-renderer";
 import { startAway } from "@/lib/away";
@@ -51,6 +52,7 @@ function AppLayout() {
       <AudioRenderer />
       <EmoteCard />
       <GlobalDialogs />
+      <QuickSwitcher />
       <IncomingCall />
     </div>
   );
