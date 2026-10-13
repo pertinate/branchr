@@ -5,7 +5,7 @@ FROM node:24-bookworm-slim AS web
 WORKDIR /src
 RUN corepack enable
 COPY . .
-RUN pnpm install --frozen-lockfile --filter web... && pnpm --filter web build
+RUN pnpm install --frozen-lockfile --filter web... --filter site... && pnpm --filter web build && pnpm --filter site build
 
 FROM rust:1-bookworm AS rust
 WORKDIR /src
@@ -21,7 +21,8 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates ffmpeg && rm -rf /var/lib/apt/lists/*
 COPY --from=rust /usr/local/bin/api /usr/local/bin/sfu /usr/local/bin/branchr-id /usr/local/bin/branchr-relay /usr/local/bin/
 COPY --from=web /src/apps/web/dist /srv/web
-ENV WEB_DIR=/srv/web DATABASE_URL=sqlite:///data/discord.db
+COPY --from=web /src/apps/site/dist /srv/site
+ENV WEB_DIR=/srv/web SITE_DIR=/srv/site DATABASE_URL=sqlite:///data/discord.db
 VOLUME /data
 EXPOSE 8080 8090 50000-50015/udp
 CMD ["api"]

@@ -53,6 +53,7 @@ jobs:
         run: |
           pnpm --filter web typecheck
           pnpm --filter desktop typecheck
+          pnpm --filter site typecheck
       - name: Compose files are valid
         env:
           DOMAIN: chat.example.com

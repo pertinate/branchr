@@ -60,7 +60,8 @@ function random(): string {
 
 /** Where branchr ID sends the browser back to. */
 function redirectUri(): string {
-  return desktop ? DESKTOP_REDIRECT : `${location.origin}/`;
+  // The app's own page: `/` in development, `/app/` where a hub serves it.
+  return desktop ? DESKTOP_REDIRECT : `${location.origin}${location.pathname}`;
 }
 
 /** Opens Discord sign-in. Finishes in `completeSignIn` when the redirect comes back. */

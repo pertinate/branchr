@@ -21,6 +21,8 @@ pub struct Config {
     pub database_url: String,
     /// Directory with the built web client; served as an SPA when set.
     pub web_dir: Option<PathBuf>,
+    /// The product site, served at `/` (the app is at `/app/`).
+    pub site_dir: Option<PathBuf>,
     /// Shared secret used to sign voice tokens for the SFU(s).
     pub voice_secret: Vec<u8>,
     /// Public WebSocket urls of SFU instances; a voice channel is pinned to one by hash.
@@ -55,6 +57,7 @@ impl Config {
             bind: var("API_BIND").unwrap_or_else(|| "0.0.0.0:8080".into()).parse()?,
             database_url: var("DATABASE_URL").unwrap_or_else(|| "sqlite://data/discord.db".into()),
             web_dir: var("WEB_DIR").map(PathBuf::from),
+            site_dir: var("SITE_DIR").map(PathBuf::from),
             voice_secret,
             sfu_urls: var("SFU_URLS")
                 .unwrap_or_else(|| "ws://localhost:8090/ws".into())

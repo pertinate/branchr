@@ -177,6 +177,7 @@ Configuration is all through the environment:
 | `TRUST_PROXY` | api, id | unset | `1` behind a reverse proxy that sets `X-Forwarded-For` (the Caddy compose files set it). Sign-in, registration, invites and branchr ID's public endpoints are rate limited per client address; without this every client would look like the proxy. Loopback clients are never limited. |
 | `LINK_PREVIEWS` | api | on | `0` turns off link previews (the server then never fetches links people post). |
 | `SFU_PUBLIC_UDP_PORT` | sfu | `SFU_UDP_PORT` | First UDP port advertised to clients, when a relay forwards other public ports to the sfu's own. |
+| `SITE_DIR` | api | `/srv/site` in the image | The product site (`apps/site`), served at `/`; the app is at `/app/`. Without it, `/` leads to the app. Old `/#/...` links (invites, sign-in) carry on to `/app/`. |
 | `MAX_UPLOAD_MB` | api | `500` | Largest attachment. Sent to clients, which refuse bigger files up front. |
 | `SFU_PUBLIC_IP` | sfu | autodetected | IP put in ICE candidates. |
 | `SFU_UDP_PORT` / `SFU_WORKERS` | sfu | `50000` / #cores | Worker *i* uses `SFU_UDP_PORT + i`. |
@@ -244,6 +245,7 @@ pnpm install
 pnpm dev                    # Electron + Vite with HMR; also starts whatever isn't running yet:
                             # branchr ID (:8070), the api (:8080) and the sfu (:8090). DEV_SERVERS=0 skips.
 pnpm dev:web                # just the web client → http://localhost:5173
+pnpm dev:site               # the product site → http://localhost:5180
 
 pnpm gen:protocol           # regenerate TS types after changing crates/proto
 pnpm test:e2e               # Playwright: its own api, sfu, branchr ID and vite on 18xxx ports

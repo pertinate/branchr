@@ -10,7 +10,8 @@
     "gen:protocol": "cargo test -p proto --features ts,token --quiet",
     "dev:web": "pnpm --filter web dev",
     "appimage": "pnpm --filter desktop dist",
-    "test:e2e": "pnpm --filter e2e test"
+    "test:e2e": "pnpm --filter e2e test",
+    "dev:site": "pnpm --filter site dev"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

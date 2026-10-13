@@ -20,6 +20,7 @@ mod unfurl;
 use std::sync::Arc;
 
 use axum::Router;
+use axum::response::Redirect;
 use axum::extract::DefaultBodyLimit;
 use axum::routing::{delete, get, patch, post, put};
 use dashmap::DashMap;
@@ -170,15 +171,15 @@ async fn main() -> anyhow::Result<()> {
 
     let mut app = Router::new().nest("/api", api).route("/gateway", get(gateway::upgrade));
 
+    // The app at /app/, the product site (SITE_DIR) at /; without a site, / leads to the app.
     if let Some(dir) = &config.web_dir {
-        // Hashed assets never change: cache them forever. index.html is the SPA fallback.
-        let assets = Router::new().fallback_service(ServeDir::new(dir.join("assets"))).layer(
-            SetResponseHeaderLayer::overriding(CACHE_CONTROL, HeaderValue::from_static("public, max-age=31536000, immutable")),
-        );
-        let index = dir.join("index.html");
-        app = app
-            .nest("/assets", assets)
-            .fallback_service(ServeDir::new(dir).fallback(ServeFile::new(index)));
+        app = app.nest_service("/app", static_site(dir)).layer(axum::middleware::from_fn(app_slash));
+        if config.site_dir.is_none() {
+            app = app.route("/", get(|| async { Redirect::temporary("/app/") }));
+        }
+    }
+    if let Some(dir) = &config.site_dir {
+        app = app.fallback_service(static_site(dir));
     }
 
     // Layers last so they also wrap the static file services.
@@ -188,6 +189,23 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("api listening on {}", config.bind);
     axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>()).with_graceful_shutdown(shutdown()).await?;
     Ok(())
+}
+
+/// A built Vite site: hashed assets cached forever, anything else falls back to index.html.
+fn static_site(dir: &std::path::Path) -> Router {
+    let assets = Router::new().fallback_service(ServeDir::new(dir.join("assets"))).layer(
+        SetResponseHeaderLayer::overriding(CACHE_CONTROL, HeaderValue::from_static("public, max-age=31536000, immutable")),
+    );
+    Router::new().nest("/assets", assets).fallback_service(ServeDir::new(dir).fallback(ServeFile::new(dir.join("index.html"))))
+}
+
+/// `/app` → `/app/`, so the app's relative asset paths resolve under it.
+async fn app_slash(req: axum::extract::Request, next: axum::middleware::Next) -> axum::response::Response {
+    if req.uri().path() == "/app" {
+        let q = req.uri().query().map(|q| format!("?{q}")).unwrap_or_default();
+        return axum::response::IntoResponse::into_response(Redirect::permanent(&format!("/app/{q}")));
+    }
+    next.run(req).await
 }
 
 async fn shutdown() {

@@ -16,16 +16,18 @@ async function signIn(page: Page, as?: { id: string; username: string; global_na
 test("friends and DMs: request, accept, chat live, edit, block", async ({ browser }) => {
   const run = Date.now().toString(36);
   const bobName = `E2E Bob ${run}`;
+  // Its own accounts: the shared E2E Nelly picks up friends and hosts from other specs.
+  const nelly = `e2e_nelly_${run}`;
   const alice = await register(browser, "soc_a");
-  await signIn(alice); // E2E Nelly
+  await signIn(alice, { id: `8${Date.now()}`, username: nelly, global_name: "E2E Nelly" });
   const bob = await register(browser, "soc_b");
   await signIn(bob, { id: `9${Date.now()}`, username: `e2e_bob_${run}`, global_name: bobName });
 
   // Bob asks Nelly by handle.
   await bob.getByRole("tab", { name: "Add Friend" }).click();
-  await bob.getByLabel("Friend's handle").fill("e2e_nelly");
+  await bob.getByLabel("Friend's handle").fill(nelly);
   await bob.getByRole("button", { name: "Send Friend Request" }).click();
-  await expect(bob.getByText("Friend request sent to e2e_nelly")).toBeVisible();
+  await expect(bob.getByText(`Friend request sent to ${nelly}`)).toBeVisible();
 
   // Nelly sees it under Pending and accepts.
   await alice.getByRole("tab", { name: /^Pending/ }).click();

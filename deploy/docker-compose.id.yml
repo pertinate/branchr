@@ -35,7 +35,7 @@ services:
       DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:?set DISCORD_CLIENT_ID}
       DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET:?set DISCORD_CLIENT_SECRET}
       # The desktop app, and the web client this host serves.
-      ALLOWED_REDIRECTS: branchr://auth/callback,https://${DOMAIN}/
+      ALLOWED_REDIRECTS: branchr://auth/callback,https://${DOMAIN}/app/,https://${DOMAIN}/
       # DM calls go through id-sfu (below); off unless ID_VOICE_SECRET is set.
       ID_SFU_URL: wss://${ID_DOMAIN}/sfu/ws
       ID_VOICE_SECRET: ${ID_VOICE_SECRET:-}

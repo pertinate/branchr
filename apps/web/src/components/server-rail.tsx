@@ -17,7 +17,7 @@ import { type Instance, hostOf, instance, instanceKey, useActive, useInstanceLis
 import { isUnread, useSocial } from "@/lib/social";
 import { cn } from "@/lib/utils";
 
-/** Accepts a bare code or a link like `https://host/#/invite/CODE`. */
+/** Accepts a bare code or a link like `https://host/app/#/invite/CODE`. */
 export function parseInvite(input: string): { code: string; server: string | null } {
   const raw = input.trim();
   try {

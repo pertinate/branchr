@@ -161,7 +161,7 @@ function Overview({ guildId }: { guildId: string }) {
       <div className="space-y-2">
         <Label htmlFor="vanity-code">Vanity invite code</Label>
         <Input id="vanity-code" value={vanity} onChange={(e) => setVanity(e.target.value)} maxLength={32} placeholder="my-community" className="font-mono" />
-        <p className="text-xs text-muted-foreground">A permanent invite anyone can use, like {inst.url}/#/invite/my-community.</p>
+        <p className="text-xs text-muted-foreground">A permanent invite anyone can use, like {inst.url}/app/#/invite/my-community.</p>
       </div>
       <div className="space-y-2 rounded-md border border-border p-3">
         <div className="flex items-start justify-between gap-4">

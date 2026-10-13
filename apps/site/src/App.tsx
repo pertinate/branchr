@@ -4,7 +4,6 @@ import {
   Download,
   Gauge,
   GitBranch,
-  Github,
   Hash,
   KeyRound,
   Leaf,
@@ -20,6 +19,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
 const REPO = "https://github.com/pertinate/branchr";
+
+/** GitHub's mark (lucide no longer ships brand icons). */
+function GithubMark({ className = "size-4" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden className={className}>
+      <path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.25.45-2.28 1.19-3.08-.12-.29-.52-1.46.11-3.04 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.58.23 2.75.11 3.04.74.8 1.19 1.83 1.19 3.08 0 4.41-2.69 5.38-5.25 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z" />
+    </svg>
+  );
+}
 const RELEASES = `${REPO}/releases/latest`;
 
 export function App() {
@@ -58,7 +66,7 @@ function Nav() {
         </nav>
         <div className="flex-1" />
         <a href={REPO} className="hidden text-muted-foreground hover:text-foreground sm:block" aria-label="Source on GitHub">
-          <Github className="size-5" />
+          <GithubMark className="size-5" />
         </a>
         <Button asChild>
           <a href="/app/">Open branchr</a>
@@ -79,8 +87,8 @@ function Hero() {
             Chat, voice and streaming <span className="text-primary">you run yourself</span>.
           </h1>
           <p className="mt-6 max-w-xl text-lg text-pretty text-muted-foreground">
-            branchr is the chat app you know, with uncapped, low-latency screen and game streaming. Run your own <b className="text-foreground">hub</b> at home or on a
-            server, grow <b className="text-foreground">communities</b> on it, and sign in everywhere with Discord.
+            branchr is the chat app you know, with uncapped, low-latency screen and game streaming. Run your own <b className="text-foreground">Hub</b> at home or on a
+            server, host <b className="text-foreground">Communities</b> on it, and sign in everywhere with Discord.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Button size="lg" asChild>
@@ -175,13 +183,13 @@ const FEATURES = [
   },
   {
     icon: GitBranch,
-    title: "Your own hub",
-    body: "A hub is a branchr server you run: Docker on a home server or a VPS, SQLite or Postgres, files on disk or in an S3 bucket.",
+    title: "Your own Hub",
+    body: "A Hub is a branchr server you run: Docker on a home server or a VPS, SQLite or Postgres, files on disk or in an S3 bucket.",
   },
   {
     icon: KeyRound,
     title: "One sign-in everywhere",
-    body: "Sign in with Discord once and use every hub. Friends, DMs and calls follow your branchr account across all of them.",
+    body: "Sign in with Discord once and use every Hub. Friends, DMs and calls follow your branchr account across all of them.",
   },
   {
     icon: Leaf,
@@ -250,9 +258,9 @@ function Numbers() {
 
 function HowItWorks() {
   const steps = [
-    { icon: Server, title: "A hub", body: "Your branchr server: chat, voice and streams for the communities on it. Yours, wherever it runs." },
-    { icon: Shield, title: "branchr ID", body: "One account (sign in with Discord) for every hub, plus friends, DMs and the Explore directory." },
-    { icon: GitBranch, title: "The relay", body: "No public IP at home? The hub dials out to the gateway, Plex-style, and people reach it at its own address." },
+    { icon: Server, title: "A Hub", body: "Your branchr server: chat, voice and streams for the Communities on it. Yours, wherever it runs." },
+    { icon: Shield, title: "branchr ID", body: "One account (sign in with Discord) for every Hub, plus friends, DMs and the Explore directory." },
+    { icon: GitBranch, title: "The relay", body: "No public IP at home? The Hub dials out to the gateway, Plex-style, and people reach it at its own address." },
   ];
   return (
     <section id="how" className="mx-auto max-w-6xl scroll-mt-16 px-4 py-20 sm:px-6">
@@ -280,7 +288,7 @@ function SelfHost() {
     <section id="self-host" className="scroll-mt-16 border-t border-white/5 bg-rail/60">
       <div className="mx-auto grid max-w-6xl gap-10 px-4 py-20 sm:px-6 lg:grid-cols-2 lg:items-center">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">Run a hub in minutes</h2>
+          <h2 className="text-3xl font-bold tracking-tight">Run a Hub in minutes</h2>
           <p className="mt-3 text-muted-foreground">
             One Docker image with the api, the SFU and the web app. Start it on a home server or a VPS, sign in with Discord, and claim it with the code it prints.
           </p>
@@ -290,7 +298,7 @@ function SelfHost() {
             </Button>
             <Button variant="secondary" asChild>
               <a href={REPO}>
-                <Github /> Source
+                <GithubMark /> Source
               </a>
             </Button>
           </div>
@@ -314,7 +322,7 @@ function Footer() {
   return (
     <footer className="mx-auto flex max-w-6xl flex-wrap items-center gap-4 px-4 py-10 text-sm text-muted-foreground sm:px-6">
       <Logo />
-      <span>Open source, MIT licensed.</span>
+      <span>Open source.</span>
       <div className="flex-1" />
       <a href="/app/" className="hover:text-foreground">Open the app</a>
       <a href={RELEASES} className="hover:text-foreground">Downloads</a>

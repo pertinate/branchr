@@ -96,8 +96,8 @@ function InviteDialog({ guildId, onClose }: { guildId: string; onClose: () => vo
       onClose();
     });
   }, [guildId, onClose, maxAge, maxUses]);
-  const link = invite ? `${inst.url}/#/invite/${invite.code}` : "";
-  const vanity = guild?.vanityCode ? `${inst.url}/#/invite/${guild.vanityCode}` : null;
+  const link = invite ? `${inst.url}/app/#/invite/${invite.code}` : "";
+  const vanity = guild?.vanityCode ? `${inst.url}/app/#/invite/${guild.vanityCode}` : null;
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
