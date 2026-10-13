@@ -1,12 +1,14 @@
-# Builds the desktop app: Linux AppImage and Windows installer. Artifacts are attached to
-# every run; pushing a `v*` tag also publishes them as a GitHub release.
+# Builds the desktop app: Linux AppImage and Windows installer. When the app changes on main
+# (the desktop shell, the web client it bundles, or shared packages) the build is published
+# as the latest GitHub release, which the site's download button points at. Pushing a `v*`
+# tag publishes a versioned release the same way.
 name: Desktop
 
 on:
   push:
     branches: [main]
     tags: ["v*"]
-    paths-ignore: ["crates/**", "deploy/**", "Dockerfile", "docker-compose.yml", "**.md"]
+    paths: ["apps/desktop/**", "apps/web/**", "packages/**", "pnpm-lock.yaml", ".github/workflows/desktop.yml"]
   pull_request:
     paths: ["apps/**", "packages/**", "pnpm-lock.yaml", ".github/workflows/desktop.yml"]
   workflow_dispatch:
@@ -56,17 +58,36 @@ jobs:
           if-no-files-found: error
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     needs: build
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+    # One release at a time, in push order.
+    concurrency:
+      group: desktop-release
+      cancel-in-progress: false
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
+      - name: Name it
+        id: name
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "title=branchr ${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            # Builds from main: numbered by run, newest marked latest.
+            echo "tag=desktop-${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+            echo "title=branchr desktop (build ${GITHUB_RUN_NUMBER}, ${GITHUB_SHA::7})" >> "$GITHUB_OUTPUT"
+          fi
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.name.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ steps.name.outputs.title }}
           files: dist/*
           generate_release_notes: true
+          make_latest: true
