@@ -4,7 +4,8 @@
 #
 #   PUBLIC_IP=203.0.113.10 scripts/deploy-docker.sh root@your-server
 #
-# Env: PUBLIC_IP (required, address clients send media to), API_PORT (8740), SFU_PORT (8741),
+# Env: PUBLIC_IP (required: the address clients send media to, or "auto" for a hub at home,
+#      which then finds it and opens its ports on the router itself), API_PORT (8740), SFU_PORT (8741),
 #      UDP_PORT (51000), SFU_WORKERS (8), APPDIR (/mnt/user/appdata/branchr),
 #      SFU_URL (default ws://PUBLIC_IP:SFU_PORT/ws; use wss://... behind a TLS proxy),
 #      SFU_PUBLIC_UDP_PORT (ports advertised for media, when a relay forwards others to ours).
@@ -39,10 +40,17 @@ docker rm -f branchr-api branchr-sfu branchr-relay >/dev/null 2>&1 || true
 docker run -d --name branchr-api --restart unless-stopped --ulimit nofile=1048576 --env-file .env \
   -e API_BIND=0.0.0.0:8080 -e VOICE_SECRET=\$VOICE_SECRET -e SFU_URLS=$SFU_URL \
   -v $APPDIR/data:/data -p $API_PORT:8080 branchr:latest api >/dev/null
-docker run -d --name branchr-sfu --restart unless-stopped --ulimit nofile=1048576 \
-  -e SFU_BIND=0.0.0.0:8090 -e VOICE_SECRET=\$VOICE_SECRET -e SFU_PUBLIC_IP=$PUBLIC_IP \
-  -e SFU_UDP_PORT=$UDP_PORT -e SFU_PUBLIC_UDP_PORT=$SFU_PUBLIC_UDP_PORT -e SFU_WORKERS=$SFU_WORKERS \
-  -p $SFU_PORT:8090 -p $UDP_PORT-$UDP_END:$UDP_PORT-$UDP_END/udp branchr:latest sfu >/dev/null
+if [ "$PUBLIC_IP" = auto ]; then
+  # Host networking: it sees its LAN address and can talk UPnP to the router.
+  docker run -d --name branchr-sfu --restart unless-stopped --ulimit nofile=1048576 --network host \
+    -e SFU_BIND=0.0.0.0:$SFU_PORT -e VOICE_SECRET=\$VOICE_SECRET -e SFU_PUBLIC_IP=auto \
+    -e SFU_UDP_PORT=$UDP_PORT -e SFU_WORKERS=$SFU_WORKERS branchr:latest sfu >/dev/null
+else
+  docker run -d --name branchr-sfu --restart unless-stopped --ulimit nofile=1048576 \
+    -e SFU_BIND=0.0.0.0:8090 -e VOICE_SECRET=\$VOICE_SECRET -e SFU_PUBLIC_IP=$PUBLIC_IP \
+    -e SFU_UDP_PORT=$UDP_PORT -e SFU_PUBLIC_UDP_PORT=$SFU_PUBLIC_UDP_PORT -e SFU_WORKERS=$SFU_WORKERS \
+    -p $SFU_PORT:8090 -p $UDP_PORT-$UDP_END:$UDP_PORT-$UDP_END/udp branchr:latest sfu >/dev/null
+fi
 if [ -f relay.env ]; then
   # Host networking: it reaches the api, the sfu and its UDP ports on localhost.
   docker run -d --name branchr-relay --restart unless-stopped --network host --env-file relay.env \
@@ -51,4 +59,4 @@ if [ -f relay.env ]; then
 fi
 docker image prune -f >/dev/null
 REMOTE
-echo "deployed: http://$PUBLIC_IP:$API_PORT (sfu $SFU_URL, udp $UDP_PORT-$UDP_END)"
+echo "deployed: api :$API_PORT, sfu :$SFU_PORT ($SFU_URL), media on udp $UDP_PORT-$UDP_END (public address: $PUBLIC_IP)"
