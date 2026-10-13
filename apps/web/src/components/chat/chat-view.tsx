@@ -44,7 +44,7 @@ export function ChatView({ guildId, channelId }: { guildId: string; channelId: s
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-black/20 px-4 shadow-sm">
         {parent && (
           <>
-            <Link to="/$instance/$guildId/$channelId" params={{ instance: inst.id, guildId, channelId: parent.id }} className="flex items-center gap-1 text-muted-foreground hover:text-foreground">
+            <Link to="/$guildId/$channelId" params={{ guildId, channelId: parent.id }} className="flex items-center gap-1 text-muted-foreground hover:text-foreground">
               <Hash className="size-5" />
               {parent.name}
             </Link>

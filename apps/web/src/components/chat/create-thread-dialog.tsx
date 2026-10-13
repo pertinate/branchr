@@ -21,7 +21,7 @@ export function CreateThreadDialog({ channelId, messageId, suggested, onClose }:
       const t = await inst.api<Channel>("POST", `/channels/${channelId}/threads`, { name: name.trim() || undefined, messageId });
       inst.app.getState().apply({ t: "CHANNEL_CREATE", d: t });
       onClose();
-      void navigate({ to: "/$instance/$guildId/$channelId", params: { instance: inst.id, guildId: t.guildId, channelId: t.id } });
+      void navigate({ to: "/$guildId/$channelId", params: { guildId: t.guildId, channelId: t.id } });
     } catch (err) {
       toast.error((err as Error).message);
       setBusy(false);

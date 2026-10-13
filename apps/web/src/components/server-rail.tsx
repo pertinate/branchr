@@ -75,7 +75,7 @@ function AddServerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
     onOpenChange(false);
     setName("");
     setInvite("");
-    void navigate({ to: "/$instance/$guildId", params: { instance: inst.id, guildId: g.guild.id } });
+    void navigate({ to: "/$guildId", params: { guildId: g.guild.id } });
   };
 
   const create = async (e: React.FormEvent) => {

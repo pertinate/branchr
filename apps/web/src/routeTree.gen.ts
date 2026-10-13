@@ -12,15 +12,15 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
-import { Route as AppInstanceRouteImport } from './routes/_app/$instance'
+import { Route as AppGuildIdRouteImport } from './routes/_app/$guildId'
 import { Route as AppExploreRouteImport } from './routes/_app/explore'
 import { Route as AppHomeRouteImport } from './routes/_app/home'
-import { Route as AppInstanceIndexRouteImport } from './routes/_app/$instance/index'
-import { Route as AppInstanceGuildIdRouteImport } from './routes/_app/$instance/$guildId'
+import { Route as AppGuildIdIndexRouteImport } from './routes/_app/$guildId/index'
+import { Route as AppGuildIdChannelIdRouteImport } from './routes/_app/$guildId/$channelId'
 import { Route as AppHomeIndexRouteImport } from './routes/_app/home/index'
 import { Route as AppHomeChannelIdRouteImport } from './routes/_app/home/$channelId'
-import { Route as AppInstanceGuildIdIndexRouteImport } from './routes/_app/$instance/$guildId/index'
-import { Route as AppInstanceGuildIdChannelIdRouteImport } from './routes/_app/$instance/$guildId/$channelId'
+import { Route as AppHubInstanceRouteImport } from './routes/_app/hub/$instance'
+import { Route as AppHubInstanceIndexRouteImport } from './routes/_app/hub/$instance/index'
 
 const AppRoute = AppRouteImport.update({
   id: '/_app',
@@ -36,9 +36,9 @@ const AppIndexRoute = AppIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppRoute,
 } as any)
-const AppInstanceRoute = AppInstanceRouteImport.update({
-  id: '/$instance',
-  path: '/$instance',
+const AppGuildIdRoute = AppGuildIdRouteImport.update({
+  id: '/$guildId',
+  path: '/$guildId',
   getParentRoute: () => AppRoute,
 } as any)
 const AppExploreRoute = AppExploreRouteImport.update({
@@ -51,15 +51,15 @@ const AppHomeRoute = AppHomeRouteImport.update({
   path: '/home',
   getParentRoute: () => AppRoute,
 } as any)
-const AppInstanceIndexRoute = AppInstanceIndexRouteImport.update({
+const AppGuildIdIndexRoute = AppGuildIdIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => AppInstanceRoute,
+  getParentRoute: () => AppGuildIdRoute,
 } as any)
-const AppInstanceGuildIdRoute = AppInstanceGuildIdRouteImport.update({
-  id: '/$guildId',
-  path: '/$guildId',
-  getParentRoute: () => AppInstanceRoute,
+const AppGuildIdChannelIdRoute = AppGuildIdChannelIdRouteImport.update({
+  id: '/$channelId',
+  path: '/$channelId',
+  getParentRoute: () => AppGuildIdRoute,
 } as any)
 const AppHomeIndexRoute = AppHomeIndexRouteImport.update({
   id: '/',
@@ -71,94 +71,93 @@ const AppHomeChannelIdRoute = AppHomeChannelIdRouteImport.update({
   path: '/$channelId',
   getParentRoute: () => AppHomeRoute,
 } as any)
-const AppInstanceGuildIdIndexRoute = AppInstanceGuildIdIndexRouteImport.update({
+const AppHubInstanceRoute = AppHubInstanceRouteImport.update({
+  id: '/hub/$instance',
+  path: '/hub/$instance',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppHubInstanceIndexRoute = AppHubInstanceIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => AppInstanceGuildIdRoute,
+  getParentRoute: () => AppHubInstanceRoute,
 } as any)
-const AppInstanceGuildIdChannelIdRoute =
-  AppInstanceGuildIdChannelIdRouteImport.update({
-    id: '/$channelId',
-    path: '/$channelId',
-    getParentRoute: () => AppInstanceGuildIdRoute,
-  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/login': typeof LoginRoute
-  '/$instance': typeof AppInstanceRouteWithChildren
+  '/$guildId': typeof AppGuildIdRouteWithChildren
   '/explore': typeof AppExploreRoute
   '/home': typeof AppHomeRouteWithChildren
-  '/$instance/$guildId': typeof AppInstanceGuildIdRouteWithChildren
+  '/$guildId/$channelId': typeof AppGuildIdChannelIdRoute
   '/home/$channelId': typeof AppHomeChannelIdRoute
-  '/$instance/': typeof AppInstanceIndexRoute
+  '/hub/$instance': typeof AppHubInstanceRouteWithChildren
+  '/$guildId/': typeof AppGuildIdIndexRoute
   '/home/': typeof AppHomeIndexRoute
-  '/$instance/$guildId/$channelId': typeof AppInstanceGuildIdChannelIdRoute
-  '/$instance/$guildId/': typeof AppInstanceGuildIdIndexRoute
+  '/hub/$instance/': typeof AppHubInstanceIndexRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/explore': typeof AppExploreRoute
   '/': typeof AppIndexRoute
+  '/$guildId/$channelId': typeof AppGuildIdChannelIdRoute
   '/home/$channelId': typeof AppHomeChannelIdRoute
-  '/$instance': typeof AppInstanceIndexRoute
+  '/$guildId': typeof AppGuildIdIndexRoute
   '/home': typeof AppHomeIndexRoute
-  '/$instance/$guildId/$channelId': typeof AppInstanceGuildIdChannelIdRoute
-  '/$instance/$guildId': typeof AppInstanceGuildIdIndexRoute
+  '/hub/$instance': typeof AppHubInstanceIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
-  '/_app/$instance': typeof AppInstanceRouteWithChildren
+  '/_app/$guildId': typeof AppGuildIdRouteWithChildren
   '/_app/explore': typeof AppExploreRoute
   '/_app/home': typeof AppHomeRouteWithChildren
   '/_app/': typeof AppIndexRoute
-  '/_app/$instance/$guildId': typeof AppInstanceGuildIdRouteWithChildren
+  '/_app/$guildId/$channelId': typeof AppGuildIdChannelIdRoute
   '/_app/home/$channelId': typeof AppHomeChannelIdRoute
-  '/_app/$instance/': typeof AppInstanceIndexRoute
+  '/_app/hub/$instance': typeof AppHubInstanceRouteWithChildren
+  '/_app/$guildId/': typeof AppGuildIdIndexRoute
   '/_app/home/': typeof AppHomeIndexRoute
-  '/_app/$instance/$guildId/$channelId': typeof AppInstanceGuildIdChannelIdRoute
-  '/_app/$instance/$guildId/': typeof AppInstanceGuildIdIndexRoute
+  '/_app/hub/$instance/': typeof AppHubInstanceIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/login'
-    | '/$instance'
+    | '/$guildId'
     | '/explore'
     | '/home'
-    | '/$instance/$guildId'
+    | '/$guildId/$channelId'
     | '/home/$channelId'
-    | '/$instance/'
+    | '/hub/$instance'
+    | '/$guildId/'
     | '/home/'
-    | '/$instance/$guildId/$channelId'
-    | '/$instance/$guildId/'
+    | '/hub/$instance/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
     | '/explore'
     | '/'
+    | '/$guildId/$channelId'
     | '/home/$channelId'
-    | '/$instance'
+    | '/$guildId'
     | '/home'
-    | '/$instance/$guildId/$channelId'
-    | '/$instance/$guildId'
+    | '/hub/$instance'
   id:
     | '__root__'
     | '/_app'
     | '/login'
-    | '/_app/$instance'
+    | '/_app/$guildId'
     | '/_app/explore'
     | '/_app/home'
     | '/_app/'
-    | '/_app/$instance/$guildId'
+    | '/_app/$guildId/$channelId'
     | '/_app/home/$channelId'
-    | '/_app/$instance/'
+    | '/_app/hub/$instance'
+    | '/_app/$guildId/'
     | '/_app/home/'
-    | '/_app/$instance/$guildId/$channelId'
-    | '/_app/$instance/$guildId/'
+    | '/_app/hub/$instance/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -189,11 +188,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppIndexRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/$instance': {
-      id: '/_app/$instance'
-      path: '/$instance'
-      fullPath: '/$instance'
-      preLoaderRoute: typeof AppInstanceRouteImport
+    '/_app/$guildId': {
+      id: '/_app/$guildId'
+      path: '/$guildId'
+      fullPath: '/$guildId'
+      preLoaderRoute: typeof AppGuildIdRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/explore': {
@@ -210,19 +209,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppHomeRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/$instance/': {
-      id: '/_app/$instance/'
+    '/_app/$guildId/': {
+      id: '/_app/$guildId/'
       path: '/'
-      fullPath: '/$instance/'
-      preLoaderRoute: typeof AppInstanceIndexRouteImport
-      parentRoute: typeof AppInstanceRoute
+      fullPath: '/$guildId/'
+      preLoaderRoute: typeof AppGuildIdIndexRouteImport
+      parentRoute: typeof AppGuildIdRoute
     }
-    '/_app/$instance/$guildId': {
-      id: '/_app/$instance/$guildId'
-      path: '/$guildId'
-      fullPath: '/$instance/$guildId'
-      preLoaderRoute: typeof AppInstanceGuildIdRouteImport
-      parentRoute: typeof AppInstanceRoute
+    '/_app/$guildId/$channelId': {
+      id: '/_app/$guildId/$channelId'
+      path: '/$channelId'
+      fullPath: '/$guildId/$channelId'
+      preLoaderRoute: typeof AppGuildIdChannelIdRouteImport
+      parentRoute: typeof AppGuildIdRoute
     }
     '/_app/home/': {
       id: '/_app/home/'
@@ -238,48 +237,35 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppHomeChannelIdRouteImport
       parentRoute: typeof AppHomeRoute
     }
-    '/_app/$instance/$guildId/': {
-      id: '/_app/$instance/$guildId/'
-      path: '/'
-      fullPath: '/$instance/$guildId/'
-      preLoaderRoute: typeof AppInstanceGuildIdIndexRouteImport
-      parentRoute: typeof AppInstanceGuildIdRoute
+    '/_app/hub/$instance': {
+      id: '/_app/hub/$instance'
+      path: '/hub/$instance'
+      fullPath: '/hub/$instance'
+      preLoaderRoute: typeof AppHubInstanceRouteImport
+      parentRoute: typeof AppRoute
     }
-    '/_app/$instance/$guildId/$channelId': {
-      id: '/_app/$instance/$guildId/$channelId'
-      path: '/$channelId'
-      fullPath: '/$instance/$guildId/$channelId'
-      preLoaderRoute: typeof AppInstanceGuildIdChannelIdRouteImport
-      parentRoute: typeof AppInstanceGuildIdRoute
+    '/_app/hub/$instance/': {
+      id: '/_app/hub/$instance/'
+      path: '/'
+      fullPath: '/hub/$instance/'
+      preLoaderRoute: typeof AppHubInstanceIndexRouteImport
+      parentRoute: typeof AppHubInstanceRoute
     }
   }
 }
 
-interface AppInstanceGuildIdRouteChildren {
-  AppInstanceGuildIdChannelIdRoute: typeof AppInstanceGuildIdChannelIdRoute
-  AppInstanceGuildIdIndexRoute: typeof AppInstanceGuildIdIndexRoute
+interface AppGuildIdRouteChildren {
+  AppGuildIdChannelIdRoute: typeof AppGuildIdChannelIdRoute
+  AppGuildIdIndexRoute: typeof AppGuildIdIndexRoute
 }
 
-const AppInstanceGuildIdRouteChildren: AppInstanceGuildIdRouteChildren = {
-  AppInstanceGuildIdChannelIdRoute: AppInstanceGuildIdChannelIdRoute,
-  AppInstanceGuildIdIndexRoute: AppInstanceGuildIdIndexRoute,
+const AppGuildIdRouteChildren: AppGuildIdRouteChildren = {
+  AppGuildIdChannelIdRoute: AppGuildIdChannelIdRoute,
+  AppGuildIdIndexRoute: AppGuildIdIndexRoute,
 }
 
-const AppInstanceGuildIdRouteWithChildren =
-  AppInstanceGuildIdRoute._addFileChildren(AppInstanceGuildIdRouteChildren)
-
-interface AppInstanceRouteChildren {
-  AppInstanceGuildIdRoute: typeof AppInstanceGuildIdRouteWithChildren
-  AppInstanceIndexRoute: typeof AppInstanceIndexRoute
-}
-
-const AppInstanceRouteChildren: AppInstanceRouteChildren = {
-  AppInstanceGuildIdRoute: AppInstanceGuildIdRouteWithChildren,
-  AppInstanceIndexRoute: AppInstanceIndexRoute,
-}
-
-const AppInstanceRouteWithChildren = AppInstanceRoute._addFileChildren(
-  AppInstanceRouteChildren,
+const AppGuildIdRouteWithChildren = AppGuildIdRoute._addFileChildren(
+  AppGuildIdRouteChildren,
 )
 
 interface AppHomeRouteChildren {
@@ -295,18 +281,32 @@ const AppHomeRouteChildren: AppHomeRouteChildren = {
 const AppHomeRouteWithChildren =
   AppHomeRoute._addFileChildren(AppHomeRouteChildren)
 
+interface AppHubInstanceRouteChildren {
+  AppHubInstanceIndexRoute: typeof AppHubInstanceIndexRoute
+}
+
+const AppHubInstanceRouteChildren: AppHubInstanceRouteChildren = {
+  AppHubInstanceIndexRoute: AppHubInstanceIndexRoute,
+}
+
+const AppHubInstanceRouteWithChildren = AppHubInstanceRoute._addFileChildren(
+  AppHubInstanceRouteChildren,
+)
+
 interface AppRouteChildren {
-  AppInstanceRoute: typeof AppInstanceRouteWithChildren
+  AppGuildIdRoute: typeof AppGuildIdRouteWithChildren
   AppExploreRoute: typeof AppExploreRoute
   AppHomeRoute: typeof AppHomeRouteWithChildren
   AppIndexRoute: typeof AppIndexRoute
+  AppHubInstanceRoute: typeof AppHubInstanceRouteWithChildren
 }
 
 const AppRouteChildren: AppRouteChildren = {
-  AppInstanceRoute: AppInstanceRouteWithChildren,
+  AppGuildIdRoute: AppGuildIdRouteWithChildren,
   AppExploreRoute: AppExploreRoute,
   AppHomeRoute: AppHomeRouteWithChildren,
   AppIndexRoute: AppIndexRoute,
+  AppHubInstanceRoute: AppHubInstanceRouteWithChildren,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)

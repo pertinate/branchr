@@ -220,13 +220,12 @@ const TextChannelRow = memo(function TextChannelRow({ channel, thread }: { chann
     (s) => !!channel.lastMessageId && (!s.lastRead[channel.id] || compareIds(channel.lastMessageId, s.lastRead[channel.id]) > 0),
   );
   const pings = useApp((s) => s.pings[channel.id] ?? 0);
-  const instance = useInstance().id;
   return (
     <Menu items={<ChannelMenuItems channelId={channel.id} />}>
     <Link
       draggable={false}
-      to="/$instance/$guildId/$channelId"
-      params={{ instance, guildId: channel.guildId, channelId: channel.id }}
+      to="/$guildId/$channelId"
+      params={{ guildId: channel.guildId, channelId: channel.id }}
       data-thread={thread || undefined}
       className={cn(
         "relative flex items-center gap-1.5 rounded px-2 py-1.5 text-[15px] font-medium",
@@ -249,15 +248,14 @@ const VoiceChannelRow = memo(function VoiceChannelRow({ channel, hidden }: { cha
   const join = useVoice((s) => s.join);
   const instanceId = useInstance().id;
   const connected = useVoice((s) => s.channelId === channel.id && s.instanceId === instanceId);
-  const instance = useInstance().id;
   if (hidden && states.length === 0) return null;
   return (
     <div>
       <Menu items={<ChannelMenuItems channelId={channel.id} />}>
       <Link
         draggable={false}
-        to="/$instance/$guildId/$channelId"
-        params={{ instance, guildId: channel.guildId, channelId: channel.id }}
+        to="/$guildId/$channelId"
+        params={{ guildId: channel.guildId, channelId: channel.id }}
         onClick={() => {
           if (!connected) void join(channel.guildId, channel.id, instanceId);
         }}

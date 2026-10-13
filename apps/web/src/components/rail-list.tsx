@@ -137,8 +137,8 @@ const GuildIcon = memo(function GuildIcon({ guildId, active, inFolder }: { guild
       >
         <TooltipTrigger asChild>
           <Link
-            to="/$instance/$guildId"
-            params={{ instance: instanceId, guildId }}
+            to="/$guildId"
+            params={{ guildId }}
             aria-label={guild.name}
             draggable={false}
             className="group relative flex w-full justify-center"

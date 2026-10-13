@@ -35,9 +35,9 @@ function Login() {
   const [info, setInfo] = useState<InstanceInfo | null>(null);
 
   const land = (to: Landing) => {
-    if (to.guildId) void navigate({ to: "/$instance/$guildId", params: { instance: to.instance, guildId: to.guildId } });
+    if (to.guildId) void navigate({ to: "/$guildId", params: { guildId: to.guildId } });
     else if (redirect && !adding) void navigate({ to: redirect });
-    else void navigate({ to: "/$instance", params: { instance: to.instance } });
+    else void navigate({ to: "/hub/$instance", params: { instance: to.instance } });
   };
 
   // Which logins does this server offer?

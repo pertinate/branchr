@@ -52,14 +52,14 @@ export function ExplorePage({ tab, onTab }: { tab: ExploreTab; onTab: (t: Explor
     }
     // Already in it: just go there.
     if (inst.app.getState().guilds[l.server.guildId]) {
-      void navigate({ to: "/$instance/$guildId", params: { instance: inst.id, guildId: l.server.guildId } });
+      void navigate({ to: "/$guildId", params: { guildId: l.server.guildId } });
       return;
     }
     setJoining(`${l.hostUrl}/${l.server.guildId}`);
     try {
       const g = await inst.api<ReadyGuild>("POST", `/invites/${encodeURIComponent(l.server.invite)}`);
       inst.app.getState().apply({ t: "GUILD_CREATE", d: g });
-      void navigate({ to: "/$instance/$guildId", params: { instance: inst.id, guildId: g.guild.id } });
+      void navigate({ to: "/$guildId", params: { guildId: g.guild.id } });
     } catch (e) {
       toast.error((e as Error).message);
     } finally {

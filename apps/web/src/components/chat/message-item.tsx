@@ -347,8 +347,8 @@ export const MessageItem = memo(function MessageItem({
           <Embeds items={m.embeds ?? []} />
           {thread && (
             <Link
-              to="/$instance/$guildId/$channelId"
-              params={{ instance: instanceId, guildId, channelId: thread.id }}
+              to="/$guildId/$channelId"
+              params={{ guildId, channelId: thread.id }}
               data-testid="thread-link"
               className="mt-1 flex w-fit max-w-full items-center gap-1.5 rounded bg-sidebar px-2 py-1 text-sm hover:bg-sidebar-accent"
             >

@@ -8,12 +8,10 @@ import { Markup } from "@/components/chat/markup";
 import { UserAvatar } from "@/components/user-avatar";
 import { emoteMap } from "@/lib/emotes";
 import { snowflakeTime } from "@/lib/ids";
-import { useInstance } from "@/lib/instances";
 import { useApp } from "@/stores/app";
 
 /** Messages from search or pins: who, where, when; click to go to the channel. */
 export function FoundMessages({ guildId, messages, onOpen, showServer }: { guildId: string; messages: Message[]; onOpen?: () => void; showServer?: boolean }) {
-  const inst = useInstance();
   const navigate = useNavigate();
   const channels = useApp((s) => s.channels);
   const members = useApp((s) => s.members[guildId]);
@@ -29,7 +27,7 @@ export function FoundMessages({ guildId, messages, onOpen, showServer }: { guild
           data-testid="found-message"
           onClick={() => {
             onOpen?.();
-            void navigate({ to: "/$instance/$guildId/$channelId", params: { instance: inst.id, guildId, channelId: m.channelId } });
+            void navigate({ to: "/$guildId/$channelId", params: { guildId, channelId: m.channelId } });
           }}
           className="flex w-full gap-3 rounded-md bg-sidebar p-2 text-left hover:bg-sidebar-accent"
         >

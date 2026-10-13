@@ -49,7 +49,10 @@ test("multiple instances: connect a second host, badges and voice across them, l
 
   // Creating a server lands on the host on screen.
   const code = await createServer(alice, "Away B");
-  expect(alice.url()).toContain("/localhost-18081/");
+  await alice.getByRole("link", { name: "Explore" }).click();
+  await expect(alice.getByTestId("host-section").filter({ hasText: "localhost:18081" }).getByTestId("guild-card").filter({ hasText: "Away B" })).toBeVisible();
+  await alice.getByRole("navigation", { name: "Communities" }).getByRole("link", { name: "Away B" }).click();
+  await expect(alice.getByPlaceholder("Message #general")).toBeVisible();
   await expect(alice.getByRole("link", { name: "Home A" })).toBeVisible();
   await expect(alice.getByRole("link", { name: "Away B" })).toBeVisible();
 
@@ -58,7 +61,6 @@ test("multiple instances: connect a second host, badges and voice across them, l
   await joinServer(bob, code);
   await alice.getByRole("link", { name: "Home A" }).click();
   await expect(alice.getByPlaceholder("Message #general")).toBeVisible();
-  expect(alice.url()).toContain("/localhost-18080/");
   const awayName = (await sessions(alice))[1].user.username;
   await bob.getByPlaceholder("Message #general").fill(`@${awayName} over here`);
   await bob.getByPlaceholder("Message #general").press("Enter");
@@ -81,7 +83,6 @@ test("multiple instances: connect a second host, badges and voice across them, l
   await expect(hit).toContainText("Home A");
   await hit.click();
   await expect(alice.getByPlaceholder("Message #general")).toBeVisible();
-  expect(alice.url()).toContain("/localhost-18080/");
 
   // Voice on the first host stays up while reading the second.
   await alice.getByRole("link", { name: "General", exact: true }).click();
@@ -122,7 +123,6 @@ test("multiple instances: connect a second host, badges and voice across them, l
   await alice.getByLabel("Password").fill("correct horse battery");
   await alice.getByRole("button", { name: "Log In" }).click();
   await expect(alice.getByText("over here")).toBeVisible();
-  expect(alice.url()).toContain("/localhost-18081/");
   await expect(alice.getByRole("link", { name: "Away B" })).toBeVisible();
   await expect(alice.getByRole("link", { name: "Home A" })).toBeVisible();
 });

@@ -14,5 +14,5 @@ function Home() {
   // Only while this is still where we're headed (see $instance/index).
   const here = useRouterState({ select: (s) => s.location.pathname === "/" });
   if (!target || !here) return null;
-  return <Navigate to="/$instance" params={{ instance: target }} replace />;
+  return <Navigate to="/hub/$instance" params={{ instance: target }} replace />;
 }

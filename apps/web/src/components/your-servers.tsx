@@ -94,7 +94,6 @@ function HostActions({ inst }: { inst: Instance }) {
 }
 
 function GuildCard({ guildId }: { guildId: string }) {
-  const inst = useInstance();
   const guild = useApp((s) => s.guilds[guildId]);
   const icon = useMediaUrl(guild?.iconUrl);
   const unread = useApp((s) => guildUnread(s, guildId));
@@ -102,8 +101,8 @@ function GuildCard({ guildId }: { guildId: string }) {
   if (!guild) return null;
   return (
     <Link
-      to="/$instance/$guildId"
-      params={{ instance: inst.id, guildId }}
+      to="/$guildId"
+      params={{ guildId }}
       data-testid="guild-card"
       className="flex items-center gap-3 rounded-lg bg-sidebar p-3 transition-colors hover:bg-accent"
     >

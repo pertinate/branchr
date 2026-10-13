@@ -31,7 +31,7 @@ export function CreateChannelDialog(props: {
       inst.app.getState().apply({ t: "CHANNEL_CREATE", d: c });
       props.onOpenChange(false);
       setName("");
-      if (c.kind === "text") void navigate({ to: "/$instance/$guildId/$channelId", params: { instance: inst.id, guildId: c.guildId, channelId: c.id } });
+      if (c.kind === "text") void navigate({ to: "/$guildId/$channelId", params: { guildId: c.guildId, channelId: c.id } });
     } catch (err) {
       toast.error((err as Error).message);
     }

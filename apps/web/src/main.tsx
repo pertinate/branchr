@@ -39,8 +39,8 @@ listenForSignIn((err) => {
     (to) => {
       void syncHosts();
       if (!to) return;
-      if (to.guildId) void router.navigate({ to: "/$instance/$guildId", params: { instance: to.instance, guildId: to.guildId } });
-      else void router.navigate({ to: "/$instance", params: { instance: to.instance } });
+      if (to.guildId) void router.navigate({ to: "/$guildId", params: { guildId: to.guildId } });
+      else void router.navigate({ to: "/hub/$instance", params: { instance: to.instance } });
     },
     (e: Error) => toast.error("Couldn't log in to the server", { description: e.message }),
   );
