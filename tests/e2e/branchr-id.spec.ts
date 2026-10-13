@@ -86,6 +86,11 @@ test("federated server: sign in with Discord from the login screen, claim it, co
   const admin = page.getByTestId("host-admin");
   await expect(admin.getByText("Open registration")).toBeVisible();
   await expect(admin.getByText("Discord or a password")).toBeVisible();
+  // Its voice server answers, and the upload limit can change.
+  await expect(admin.getByTestId("sfu-health")).toContainText(/up · \d+ ms/);
+  await admin.getByLabel("Upload limit").fill("3");
+  await admin.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("Upload limit is now 3 MB")).toBeVisible();
 
   // Ban: they're logged out at once and can't log back in.
   page.on("dialog", (d) => void d.accept(d.type() === "prompt" ? "spam" : undefined));
@@ -137,6 +142,20 @@ test("federated server: sign in with Discord from the login screen, claim it, co
   await page.getByRole("button", { name: "Sign in with Discord" }).click();
   await expect(page.getByRole("heading", { name: "Welcome to #general!" })).toBeVisible();
   expect((await current()).user.id).toBe(first.user.id);
+
+  // Releasing the claim: the hub leaves "Your hubs" (and shows a claim code again).
+  await openUserSettings(page);
+  const mine = page.getByTestId("owned-host").filter({ hasText: "localhost:18081" });
+  await expect(mine).toContainText("online");
+  // Records for the address: this run's, plus older ones earlier runs left behind.
+  const records = async () => {
+    const old = mine.getByTestId("old-claims");
+    const older = (await old.count()) ? Number((await old.textContent())?.match(/^(\d+)/)?.[1] ?? 0) : 0;
+    return (await mine.count()) + older;
+  };
+  const before = await records();
+  await mine.getByRole("button", { name: "Release e2e federated" }).click();
+  await expect.poll(records).toBe(before - 1);
 
   await ctx.close();
 });

@@ -43,6 +43,8 @@ pub struct Federation {
 }
 
 /// Refresh the claim code a little before branchr ID expires it.
+/// How often a claimed server checks its claim (also tells branchr ID it's still up).
+const CLAIMED_POLL: Duration = Duration::from_secs(300);
 const CLAIM_REFRESH: Duration = Duration::from_secs(23 * 3600);
 
 const REFETCH_EVERY: Duration = Duration::from_secs(60);
@@ -125,13 +127,14 @@ impl Federation {
         self.identity.read().clone()
     }
 
-    /// Registers (once), then waits for the claim. Runs for the life of the server.
+    /// Registers (once), waits for the claim, then keeps checking it now and then (an owner can
+    /// release it from their account). Runs for the life of the server.
     pub async fn run(&self, db: Db, config: Config) {
         let poll = Duration::from_secs(std::env::var("BRANCHR_POLL_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(30));
         let mut backoff = Duration::from_secs(2);
         loop {
             match self.step(&db, &config).await {
-                Ok(true) => return,
+                Ok(true) => backoff = CLAIMED_POLL,
                 Ok(false) => backoff = poll,
                 Err(e) => {
                     tracing::warn!("branchr ID ({}): {e:#}", self.id_url);
@@ -181,12 +184,20 @@ impl Federation {
             }
         }
         let id = self.identity().expect("set above");
-        if id.owner.is_some() {
-            let _ = std::fs::remove_file(&config.claim_file);
-            return Ok(true);
-        }
         let status_url = format!("{}/instances/{}", self.id_url, id.instance_id);
         let st: Status = self.http.get(&status_url).bearer_auth(&id.secret).send().await?.error_for_status()?.json().await?;
+        if st.claimed && st.owner_id == id.owner {
+            return Ok(true);
+        }
+        if !st.claimed && id.owner.is_some() {
+            // Released by its owner: claimable again.
+            sqlx::query("UPDATE federation SET owner_global_id = NULL WHERE id = 1").execute(db).await?;
+            if let Some(i) = self.identity.write().as_mut() {
+                i.owner = None;
+            }
+            *self.claim_issued.lock() = None;
+            tracing::info!("the claim on this server was released");
+        }
         if st.claimed {
             sqlx::query("UPDATE federation SET owner_global_id = $1 WHERE id = 1").bind(&st.owner_id).execute(db).await?;
             if let Some(i) = self.identity.write().as_mut() {

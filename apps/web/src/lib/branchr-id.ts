@@ -197,6 +197,16 @@ export interface OwnedHost {
   instanceId: string;
   name: string;
   publicUrl: string;
+  /** Unix ms; null if not heard from since it was first recorded. */
+  lastSeen: number | null;
+}
+
+/** Gives up a claim on a hub (it shows a claim code again). */
+export async function releaseHost(instanceId: string): Promise<void> {
+  const at = await accessToken();
+  if (!at) throw new Error("sign in to branchr first");
+  const r = await fetch(`${ID_URL}/instances/${encodeURIComponent(instanceId)}/claim`, { method: "DELETE", headers: { authorization: `Bearer ${at}` } });
+  if (!r.ok) throw new Error(await errorOf(r));
 }
 
 export async function ownedHosts(): Promise<OwnedHost[]> {

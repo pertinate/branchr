@@ -1,7 +1,7 @@
 import type { HostGuild, HostOverview, HostRole, HostUser } from "@app/protocol";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ban, Search, ShieldCheck, Trash2, Undo2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { UserAvatar } from "@/components/user-avatar";
 import { type Instance, hostOf, useInstance } from "@/lib/instances";
 import { formatBytes } from "@/lib/upload";
+import { cn } from "@/lib/utils";
 
 const ROLE_NAMES: Record<HostRole, string> = { owner: "Owner", admin: "Admin", moderator: "Moderator" };
 const RANK: Record<HostRole, number> = { moderator: 0, admin: 1, owner: 2 };
@@ -84,11 +85,13 @@ function Overview() {
   const q = useQuery({ queryKey: ["host-overview", inst.id], queryFn: () => inst.api<HostOverview>("GET", "/admin/overview"), refetchOnMount: "always" });
   if (!q.data) return <p className="pt-4 text-sm text-muted-foreground">{q.isError ? (q.error as Error).message : "Loading…"}</p>;
   const o = q.data;
-  const setOpen = async (openRegistration: boolean) => {
+  const save = async (patch: { openRegistration?: boolean; maxUploadMb?: number }) => {
     try {
-      qc.setQueryData(["host-overview", inst.id], await inst.api<HostOverview>("PATCH", "/admin/settings", { openRegistration }));
+      qc.setQueryData(["host-overview", inst.id], await inst.api<HostOverview>("PATCH", "/admin/settings", patch));
+      return true;
     } catch (e) {
       toast.error((e as Error).message);
+      return false;
     }
   };
   const signIn = o.authMode === "both" ? "Discord or a password" : o.authMode === "federated" ? "Discord only" : "Passwords only";
@@ -119,9 +122,49 @@ function Overview() {
           <Label htmlFor="open-registration">Open registration</Label>
           <p className="mt-1 text-xs text-muted-foreground">When off, only people who already have an account here can log in.</p>
         </div>
-        <Switch id="open-registration" checked={o.openRegistration} disabled={o.myRole === "moderator"} onCheckedChange={(v) => void setOpen(v)} />
+        <Switch id="open-registration" checked={o.openRegistration} disabled={o.myRole === "moderator"} onCheckedChange={(v) => void save({ openRegistration: v })} />
+      </div>
+      <UploadLimit mb={o.maxUploadMb} disabled={o.myRole === "moderator"} onSave={(maxUploadMb) => save({ maxUploadMb })} />
+      <div className="space-y-2 border-t border-border pt-4">
+        <Label>Voice servers</Label>
+        {o.sfus.length === 0 && <p className="text-xs text-muted-foreground">None configured (SFU_URLS).</p>}
+        {o.sfus.map((s) => (
+          <div key={s.url} data-testid="sfu-health" className="flex items-center gap-2 text-sm">
+            <span className={cn("size-2 shrink-0 rounded-full", s.ok ? "bg-online" : "bg-dnd")} />
+            <span className="truncate font-mono text-xs">{s.url}</span>
+            <span className="ml-auto shrink-0 text-xs text-muted-foreground">{s.ok ? `up · ${s.ms} ms` : "not answering"}</span>
+          </div>
+        ))}
       </div>
     </div>
+  );
+}
+
+/** The largest file people can attach, in MB. */
+function UploadLimit({ mb, disabled, onSave }: { mb: number; disabled: boolean; onSave: (mb: number) => Promise<boolean> }) {
+  const [value, setValue] = useState(String(mb));
+  useEffect(() => setValue(String(mb)), [mb]);
+  const n = Number(value);
+  const valid = Number.isInteger(n) && n >= 1 && n <= 10240;
+  return (
+    <form
+      className="flex max-w-md items-end justify-between gap-4 border-t border-border pt-4"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (valid && n !== mb) void onSave(n).then((ok) => ok && toast.success(`Upload limit is now ${n} MB`));
+      }}
+    >
+      <div>
+        <Label htmlFor="upload-limit">Upload limit</Label>
+        <p className="mt-1 text-xs text-muted-foreground">Largest file people can attach, in MB. Applies from their next connection.</p>
+      </div>
+      <div className="flex shrink-0 gap-2">
+        <Input id="upload-limit" type="number" min={1} max={10240} value={value} disabled={disabled} onChange={(e) => setValue(e.target.value)} className="w-24" />
+        <Button type="submit" size="sm" disabled={disabled || !valid || n === mb}>
+          Save
+        </Button>
+      </div>
+    </form>
   );
 }
 

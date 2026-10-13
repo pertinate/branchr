@@ -106,6 +106,7 @@ pub fn router(state: AppState) -> Router {
         .route("/dms/{cid}/messages/{mid}", axum::routing::patch(social::edit).delete(social::delete))
         .route("/gateway", get(gateway::upgrade))
         .route("/instances/{id}", get(instances::status))
+        .route("/instances/{id}/claim", axum::routing::delete(instances::release))
         .route("/instances/{id}/listings", axum::routing::put(discovery::publish))
         .route("/.well-known/jwks.json", get(|s: axum::extract::State<AppState>| async move { axum::Json(s.keys.jwks()) }))
         .route("/health", get(|| async { "ok" }))

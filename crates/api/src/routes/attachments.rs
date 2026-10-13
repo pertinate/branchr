@@ -77,8 +77,8 @@ pub async fn upload(
     let (width, height) = (dim("x-width"), dim("x-height"));
     // Refuse before reading anything: bailing mid-stream leaves the client sending into a
     // closed socket (and a proxy reporting 502) instead of seeing this error.
-    let too_large = || AppError::PayloadTooLarge(format!("file is larger than {} MB", state.config.max_upload_bytes / 1024 / 1024));
-    if header_str(&headers, header::CONTENT_LENGTH.as_str()).and_then(|v| v.parse::<u64>().ok()).is_some_and(|n| n > state.config.max_upload_bytes) {
+    let too_large = || AppError::PayloadTooLarge(format!("file is larger than {} MB", state.max_upload_bytes.load(std::sync::atomic::Ordering::Relaxed) / 1024 / 1024));
+    if header_str(&headers, header::CONTENT_LENGTH.as_str()).and_then(|v| v.parse::<u64>().ok()).is_some_and(|n| n > state.max_upload_bytes.load(std::sync::atomic::Ordering::Relaxed)) {
         return Err(too_large());
     }
 
@@ -89,7 +89,7 @@ pub async fn upload(
 
     let key = key(id);
     let mut seen: u64 = 0;
-    let limit = state.config.max_upload_bytes;
+    let limit = state.max_upload_bytes.load(std::sync::atomic::Ordering::Relaxed);
     // Images we can preview are also kept in memory as they stream past.
     let copy = Arc::new(Mutex::new(thumbs::previewable(&content_type).then(Vec::<Bytes>::new)));
     let stream = body.into_data_stream().map({

@@ -82,7 +82,7 @@ async fn run(mut ws: WebSocket, state: AppState) -> anyhow::Result<()> {
         try_join_all(guild_ids.iter().map(|g| ready_guild(&state, *g, user))),
         async { Ok(db::read_states(&state.db, user).await?) },
     )?;
-    let ready = Ready { user: me, session_id: key.to_string(), guilds, max_upload_bytes: state.config.max_upload_bytes, read_states };
+    let ready = Ready { user: me, session_id: key.to_string(), guilds, max_upload_bytes: state.max_upload_bytes.load(std::sync::atomic::Ordering::Relaxed), read_states };
     send(&mut ws, &ServerEvent::Ready(ready)).await?;
 
     if first {

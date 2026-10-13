@@ -286,6 +286,21 @@ wire! {
         pub attachment_bytes: u64,
         /// What you may do here.
         pub my_role: HostRole,
+        /// Largest attachment, in MB (owner-adjustable; starts from MAX_UPLOAD_MB).
+        #[serde(default)]
+        #[cfg_attr(feature = "ts", ts(type = "number"))]
+        pub max_upload_mb: u64,
+        /// Whether each voice server answers, checked when the overview loads.
+        #[serde(default)]
+        pub sfus: Vec<SfuHealth>,
+    }
+
+    pub struct SfuHealth {
+        /// Its signaling address, as clients get it.
+        pub url: String,
+        pub ok: bool,
+        /// Round trip of its health check.
+        pub ms: Option<u32>,
     }
 
     /// A user on the host, for its owner.

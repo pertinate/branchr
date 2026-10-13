@@ -89,6 +89,7 @@ async fn main() -> anyhow::Result<()> {
         unfurl: (std::env::var("LINK_PREVIEWS").as_deref() != Ok("0"))
             .then(|| unfurl::Unfurler::new(std::env::var("EMBED_ALLOW_PRIVATE").as_deref() == Ok("1"))),
         open_registration: std::sync::atomic::AtomicBool::new(config.open_registration),
+        max_upload_bytes: std::sync::atomic::AtomicU64::new(config.max_upload_bytes),
         federation: (config.auth_mode != config::AuthMode::Local).then(|| Arc::new(federation::Federation::new(&config))),
         config: config.clone(),
     });

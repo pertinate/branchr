@@ -40,6 +40,8 @@ pub struct State {
     pub last_sent: DashMap<(Id, Id), std::time::Instant>,
     /// Link previews, unless turned off.
     pub unfurl: Option<crate::unfurl::Unfurler>,
+    /// Largest attachment in bytes (owner-adjustable; starts from MAX_UPLOAD_MB).
+    pub max_upload_bytes: std::sync::atomic::AtomicU64,
     /// Whether new people may join (owner-adjustable; starts from OPEN_REGISTRATION).
     pub open_registration: std::sync::atomic::AtomicBool,
     /// Set when this server accepts branchr accounts.

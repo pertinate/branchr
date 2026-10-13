@@ -15,7 +15,7 @@ import { PicturePicker } from "@/components/picture-picker";
 import { MicTest } from "@/components/voice/mic-test";
 import { setStatus } from "@/lib/actions";
 import { api } from "@/lib/api";
-import { claimServer, ownedHosts, signOut, startSignIn, useBranchrId } from "@/lib/branchr-id";
+import { type OwnedHost, claimServer, ownedHosts, releaseHost, signOut, startSignIn, useBranchrId } from "@/lib/branchr-id";
 import { desktop } from "@/lib/desktop";
 import { hostOf, instanceKey, normalizeUrl, useActive, useInstance, useInstanceList } from "@/lib/instances";
 import { uploadPicture } from "@/lib/media";
@@ -378,13 +378,38 @@ function Advanced() {
 }
 
 /** Hosts this branchr account has claimed: manage the ones we're connected to, connect to the rest. */
+/** "seen 5 minutes ago" and friends. */
+function lastSeen(at: number | null) {
+  if (at === null) return "not seen lately";
+  const mins = Math.round((Date.now() - at) / 60000);
+  if (mins < 10) return "online";
+  if (mins < 120) return `seen ${mins} minutes ago`;
+  const hours = Math.round(mins / 60);
+  return hours < 48 ? `seen ${hours} hours ago` : `seen ${Math.round(hours / 24)} days ago`;
+}
+
 function OwnedHosts() {
   const owned = useQuery({ queryKey: ["owned-hosts"], queryFn: ownedHosts });
   const connected = useInstanceList((s) => s.ids);
   const navigate = useNavigate();
-  // A host that registered again (e.g. its data was wiped) leaves older claims for the
-  // same address behind; show each address once, newest first.
-  const hosts = [...new Map((owned.data ?? []).map((h) => [h.publicUrl ? normalizeUrl(h.publicUrl) : h.instanceId, h])).values()].reverse();
+  const qc = useQueryClient();
+  // A hub that registered again (e.g. its data was wiped) leaves older claims for the same
+  // address behind: newest first, the older ones marked so they can be released.
+  const groups = new Map<string, OwnedHost[]>();
+  for (const h of [...(owned.data ?? [])].reverse()) {
+    const key = h.publicUrl ? normalizeUrl(h.publicUrl) : h.instanceId;
+    groups.set(key, [...(groups.get(key) ?? []), h]);
+  }
+  const hosts = [...groups.values()].map((g) => ({ ...g[0], older: g.slice(1) }));
+  const release = async (list: OwnedHost[], what: string) => {
+    if (!confirm(`Release your claim on ${what}? ${list.length > 1 ? "They show" : "It shows"} a claim code again, for you or someone else to claim.`)) return;
+    try {
+      for (const h of list) await releaseHost(h.instanceId);
+      await qc.invalidateQueries({ queryKey: ["owned-hosts"] });
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  };
   if (!hosts.length) return null;
   return (
     <div className="space-y-1" data-testid="owned-hosts">
@@ -393,10 +418,12 @@ function OwnedHosts() {
         const id = h.publicUrl ? instanceKey(normalizeUrl(h.publicUrl)) : null;
         const here = !!id && connected.includes(id);
         return (
-          <div key={h.instanceId} data-testid="owned-host" className="flex items-center gap-3 rounded-md bg-muted px-3 py-2">
+          <div key={h.instanceId} data-testid="owned-host" className="flex flex-wrap items-center gap-3 rounded-md bg-muted px-3 py-2">
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-medium">{h.name}</div>
-              <div className="truncate text-xs text-muted-foreground">{h.publicUrl ? hostOf(h.publicUrl) : "address unknown"}</div>
+              <div className="truncate text-xs text-muted-foreground">
+                {h.publicUrl ? hostOf(h.publicUrl) : "address unknown"} · {lastSeen(h.lastSeen)}
+              </div>
             </div>
             {here ? (
               <Button size="sm" variant="outline" onClick={() => useDialogs.getState().open({ instanceId: id!, kind: "host-admin" })}>
@@ -407,6 +434,17 @@ function OwnedHosts() {
                 Connect
               </Button>
             ) : null}
+            <Button size="sm" variant="ghost" aria-label={`Release ${h.name}`} title="Release your claim" onClick={() => void release([h], h.name)}>
+              Release
+            </Button>
+            {h.older.length > 0 && (
+              <div data-testid="old-claims" className="basis-full text-xs text-muted-foreground">
+                {h.older.length} older record{h.older.length === 1 ? "" : "s"} for this address (it registered again).{" "}
+                <button className="underline hover:text-foreground" onClick={() => void release(h.older, `${h.older.length} older record${h.older.length === 1 ? "" : "s"}`)}>
+                  Release {h.older.length === 1 ? "it" : "them"}
+                </button>
+              </div>
+            )}
           </div>
         );
       })}

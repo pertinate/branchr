@@ -93,7 +93,13 @@ pub async fn instance_auth(s: &AppState, id: Uuid, headers: &HeaderMap) -> Resul
         .ok_or(Error::Unauthorized)?;
     let ok: Option<(i32,)> =
         sqlx::query_as("SELECT 1 FROM instances WHERE id = $1 AND secret_hash = $2").bind(id).bind(hash(secret)).fetch_optional(&s.db).await?;
-    ok.map(|_| ()).ok_or(Error::Unauthorized)
+    ok.ok_or(Error::Unauthorized)?;
+    // At most once a minute: it's a heartbeat, not a log.
+    sqlx::query("UPDATE instances SET last_seen_at = now() WHERE id = $1 AND (last_seen_at IS NULL OR last_seen_at < now() - interval '1 minute')")
+        .bind(id)
+        .execute(&s.db)
+        .await?;
+    Ok(())
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -235,12 +241,29 @@ pub struct Owned {
     pub instance_id: Uuid,
     pub name: String,
     pub public_url: String,
+    /// Unix milliseconds; none if it hasn't been heard from since this was recorded.
+    pub last_seen: Option<i64>,
 }
 
 /// The servers the signed-in account has claimed.
 pub async fn owned(State(s): State<AppState>, headers: HeaderMap) -> Result<Json<Vec<Owned>>> {
     let account = authed(&s, &headers).await?;
-    let rows: Vec<(Uuid, String, String)> =
-        sqlx::query_as("SELECT id, name, public_url FROM instances WHERE owner_id = $1 ORDER BY created_at").bind(account).fetch_all(&s.db).await?;
-    Ok(Json(rows.into_iter().map(|(instance_id, name, public_url)| Owned { instance_id, name, public_url }).collect()))
+    let rows: Vec<(Uuid, String, String, Option<i64>)> = sqlx::query_as(
+        "SELECT id, name, public_url, (EXTRACT(EPOCH FROM last_seen_at) * 1000)::BIGINT FROM instances WHERE owner_id = $1 ORDER BY created_at",
+    )
+    .bind(account)
+    .fetch_all(&s.db)
+    .await?;
+    Ok(Json(rows.into_iter().map(|(instance_id, name, public_url, last_seen)| Owned { instance_id, name, public_url, last_seen }).collect()))
+}
+
+/// Gives up a claim: the server shows a claim code again (a wiped server's old record, or one
+/// you're handing to someone else).
+pub async fn release(State(s): State<AppState>, Path(id): Path<Uuid>, headers: HeaderMap) -> Result<axum::http::StatusCode> {
+    let account = authed(&s, &headers).await?;
+    let r = sqlx::query("UPDATE instances SET owner_id = NULL WHERE id = $1 AND owner_id = $2").bind(id).bind(account).execute(&s.db).await?;
+    if r.rows_affected() == 0 {
+        return Err(Error::NotFound);
+    }
+    Ok(axum::http::StatusCode::NO_CONTENT)
 }

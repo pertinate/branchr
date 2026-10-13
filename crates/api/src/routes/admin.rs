@@ -67,13 +67,29 @@ pub async fn overview(State(state): State<AppState>, Auth(user): Auth) -> AppRes
         messages: messages as u64,
         attachment_bytes: bytes as u64,
         my_role,
+        max_upload_mb: state.max_upload_bytes.load(Ordering::Relaxed) / 1024 / 1024,
+        sfus: sfu_health(&state.config.sfu_urls).await,
     }))
+}
+
+/// Each voice server's `/health` (next to its `/ws`), at once, a few seconds at most.
+async fn sfu_health(urls: &[String]) -> Vec<proto::models::SfuHealth> {
+    static HTTP: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    let http = HTTP.get_or_init(|| reqwest::Client::builder().timeout(std::time::Duration::from_secs(3)).build().expect("http client"));
+    futures::future::join_all(urls.iter().map(|url| async move {
+        let health = url.replacen("ws", "http", 1).trim_end_matches("/ws").to_string() + "/health";
+        let started = std::time::Instant::now();
+        let ok = http.get(&health).send().await.is_ok_and(|r| r.status().is_success());
+        proto::models::SfuHealth { url: url.clone(), ok, ms: ok.then(|| started.elapsed().as_millis() as u32) }
+    }))
+    .await
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PatchSettings {
     open_registration: Option<bool>,
+    max_upload_mb: Option<u64>,
 }
 
 pub async fn settings(State(state): State<AppState>, Auth(user): Auth, Json(body): Json<PatchSettings>) -> AppResult<Json<HostOverview>> {
@@ -85,6 +101,16 @@ pub async fn settings(State(state): State<AppState>, Auth(user): Auth, Json(body
             .await?;
         state.open_registration.store(open, Ordering::Relaxed);
     }
+    if let Some(mb) = body.max_upload_mb {
+        if !(1..=10 * 1024).contains(&mb) {
+            return Err(crate::error::bad("an upload limit is 1 MB to 10 GB"));
+        }
+        sqlx::query("INSERT INTO instance_settings (key, value) VALUES ('max_upload_mb', $1) ON CONFLICT (key) DO UPDATE SET value = $1")
+            .bind(mb.to_string())
+            .execute(&state.db)
+            .await?;
+        state.max_upload_bytes.store(mb * 1024 * 1024, Ordering::Relaxed);
+    }
     overview(State(state), Auth(user)).await
 }
 
@@ -93,6 +119,10 @@ pub async fn load_settings(state: &AppState) -> anyhow::Result<()> {
     let open: Option<(String,)> = sqlx::query_as("SELECT value FROM instance_settings WHERE key = 'open_registration'").fetch_optional(&state.db).await?;
     if let Some((v,)) = open {
         state.open_registration.store(v == "true", Ordering::Relaxed);
+    }
+    let mb: Option<(String,)> = sqlx::query_as("SELECT value FROM instance_settings WHERE key = 'max_upload_mb'").fetch_optional(&state.db).await?;
+    if let Some(mb) = mb.and_then(|(v,)| v.parse::<u64>().ok()) {
+        state.max_upload_bytes.store(mb * 1024 * 1024, Ordering::Relaxed);
     }
     Ok(())
 }
