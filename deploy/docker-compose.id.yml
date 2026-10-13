@@ -40,6 +40,11 @@ services:
       # in the image), opening this hub by default (e.g. https://$ID_DOMAIN/h/home through
       # the relay).
       DEFAULT_HUB: ${DEFAULT_HUB:-https://${DOMAIN}}
+      # Hubs with RELAY=1 learn the gateway from us (its certificate is in the relay's data).
+      RELAY_QUIC: ${ID_DOMAIN}:7443
+      RELAY_CERT: /relay/cert.der
+    volumes:
+      - relay-data:/relay:ro
       # DM calls go through id-sfu (below); off unless ID_VOICE_SECRET is set.
       ID_SFU_URL: wss://${ID_DOMAIN}/sfu/ws
       ID_VOICE_SECRET: ${ID_VOICE_SECRET:-}
@@ -75,6 +80,8 @@ services:
       RELAY_QUIC: 0.0.0.0:7443
       RELAY_HTTP: 0.0.0.0:8800
       RELAY_PUBLIC: ${ID_DOMAIN}:7443
+      # Hubs are let in by a pass from branchr ID naming their key (claimed hubs only).
+      RELAY_ID_URL: https://${ID_DOMAIN}
       # Hubs take voice and video directly (branchr.us doesn't pay for their streams);
       # RELAY_MEDIA=on carries it too, e.g. on a gateway of your own.
       RELAY_MEDIA: ${RELAY_MEDIA:-off}

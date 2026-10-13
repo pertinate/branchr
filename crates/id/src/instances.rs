@@ -221,6 +221,57 @@ pub async fn token(State(s): State<AppState>, Path(id): Path<Uuid>, headers: Hea
     Ok(Json(InstanceToken { token, expires_in: INSTANCE_TOKEN_TTL_SECS }))
 }
 
+#[derive(Serialize)]
+struct RelayClaims {
+    iss: String,
+    aud: &'static str,
+    /// The hub's key.
+    sub: String,
+    /// Whether someone owns it (gateways may admit only owned hubs).
+    claimed: bool,
+    iat: u64,
+    exp: u64,
+}
+
+/// A short-lived pass a hub shows a branchr-relay gateway to be let in under its key.
+pub async fn relay_pass(State(s): State<AppState>, Path(id): Path<Uuid>, headers: HeaderMap) -> Result<Json<InstanceToken>> {
+    instance_auth(&s, id, &headers).await?;
+    let owner: Option<(Option<Uuid>,)> = sqlx::query_as("SELECT owner_id FROM instances WHERE id = $1").bind(id).fetch_optional(&s.db).await?;
+    let owner = owner.and_then(|(o,)| o);
+    if owner.is_some_and(|o| s.banned.contains(&o)) {
+        return Err(Error::Forbidden("this hub's owner is banned from branchr".into()));
+    }
+    let iat = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).expect("clock").as_secs();
+    const TTL: u64 = 300;
+    let token = s.keys.sign(&RelayClaims { iss: s.config.public_url.clone(), aud: "branchr-relay", sub: id.to_string(), claimed: owner.is_some(), iat, exp: iat + TTL })?;
+    Ok(Json(InstanceToken { token, expires_in: TTL }))
+}
+
+#[derive(Serialize)]
+pub struct RelayInfo {
+    /// Where hubs connect (QUIC), `host:port`.
+    pub quic: String,
+    /// sha256 of its certificate, so a hub trusts only it.
+    pub fp: String,
+    /// Where visitors reach relayed hubs (`<web>/h/<key>`): this service's own address unless
+    /// the gateway is elsewhere.
+    pub web: String,
+}
+
+/// The gateway next to this branchr ID, for hubs that want to be reached through it
+/// (RELAY_QUIC, and RELAY_FP or the gateway's certificate file in RELAY_CERT).
+pub async fn relay_info(State(s): State<AppState>) -> Result<Json<RelayInfo>> {
+    let var = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
+    let fp = var("RELAY_FP").or_else(|| {
+        let der = std::fs::read(var("RELAY_CERT")?).ok()?;
+        Some(Sha256::digest(&der).iter().map(|b| format!("{b:02x}")).collect())
+    });
+    match (var("RELAY_QUIC"), fp) {
+        (Some(quic), Some(fp)) => Ok(Json(RelayInfo { quic, fp, web: var("RELAY_WEB").unwrap_or_else(|| s.config.public_url.clone()) })),
+        _ => Err(Error::NotFound),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

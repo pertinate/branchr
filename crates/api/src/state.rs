@@ -44,11 +44,26 @@ pub struct State {
     pub max_upload_bytes: std::sync::atomic::AtomicU64,
     /// Whether new people may join (owner-adjustable; starts from OPEN_REGISTRATION).
     pub open_registration: std::sync::atomic::AtomicBool,
+    /// The address the gateway gave us (RELAY=1), once it has: `https://<branchr ID>/h/<key>`.
+    pub relayed: parking_lot::RwLock<Option<String>>,
     /// Set when this server accepts branchr accounts.
     pub federation: Option<Arc<crate::federation::Federation>>,
 }
 
 impl State {
+    /// Where people reach this hub: through the gateway once it let us in, else PUBLIC_URL.
+    pub fn public_url(&self) -> String {
+        self.relayed.read().clone().unwrap_or_else(|| self.config.public_url.clone())
+    }
+
+    /// Voice server signaling as clients should dial it: through the gateway when relayed.
+    pub fn sfu_urls(&self) -> Vec<String> {
+        match self.relayed.read().as_deref() {
+            Some(base) => vec![format!("{}/sfu/ws", base.replacen("http", "ws", 1))],
+            None => self.config.sfu_urls.clone(),
+        }
+    }
+
     pub async fn slowmode_of(&self, channel: Id) -> sqlx::Result<u32> {
         if let Some(s) = self.slowmode.get(&channel) {
             return Ok(*s);

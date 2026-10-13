@@ -67,6 +67,65 @@ struct State {
     pass_ip: bool,
     /// For the stand-in addresses (kept across restarts).
     salt: Vec<u8>,
+    /// Checks hubs' passes from branchr ID (RELAY_ID_URL); none means names and secrets only.
+    passes: Option<Passes>,
+}
+
+/// What a relay pass from branchr ID says.
+#[derive(Deserialize)]
+struct PassClaims {
+    /// The hub's key.
+    sub: String,
+    #[serde(default)]
+    claimed: bool,
+}
+
+/// Verifies relay passes against branchr ID's published keys (refetched for unknown key ids,
+/// at most once a minute).
+pub struct Passes {
+    id_url: String,
+    require_claimed: bool,
+    http: reqwest::Client,
+    keys: Mutex<HashMap<String, jsonwebtoken::DecodingKey>>,
+    fetched: Mutex<Option<std::time::Instant>>,
+}
+
+impl Passes {
+    async fn verify(&self, pass: &str) -> anyhow::Result<String> {
+        let kid = jsonwebtoken::decode_header(pass)?.kid.ok_or_else(|| anyhow::anyhow!("pass without a key id"))?;
+        if !self.keys.lock().unwrap().contains_key(&kid) {
+            let due = self.fetched.lock().unwrap().is_none_or(|t| t.elapsed() > std::time::Duration::from_secs(60));
+            if due {
+                *self.fetched.lock().unwrap() = Some(std::time::Instant::now());
+                #[derive(Deserialize)]
+                struct Jwks {
+                    keys: Vec<Jwk>,
+                }
+                #[derive(Deserialize)]
+                struct Jwk {
+                    kid: String,
+                    x: String,
+                }
+                let jwks: Jwks = self.http.get(format!("{}/.well-known/jwks.json", self.id_url)).send().await?.error_for_status()?.json().await?;
+                let mut keys = self.keys.lock().unwrap();
+                for k in jwks.keys {
+                    keys.insert(k.kid, jsonwebtoken::DecodingKey::from_ed_components(&k.x)?);
+                }
+            }
+        }
+        let key = self.keys.lock().unwrap().get(&kid).cloned().ok_or_else(|| anyhow::anyhow!("pass signed with an unknown key"))?;
+        let mut v = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::EdDSA);
+        v.set_issuer(&[&self.id_url]);
+        v.set_audience(&["branchr-relay"]);
+        let c = jsonwebtoken::decode::<PassClaims>(pass, &key, &v)?.claims;
+        if self.require_claimed && !c.claimed {
+            anyhow::bail!("claim this hub first (sign in and enter its claim code), then it can be reached through here");
+        }
+        if !c.sub.chars().all(|ch| ch.is_ascii_hexdigit() || ch == '-') || c.sub.is_empty() {
+            anyhow::bail!("odd hub key in pass");
+        }
+        Ok(c.sub.to_ascii_lowercase())
+    }
 }
 
 impl State {
@@ -119,6 +178,13 @@ pub async fn serve(dir: PathBuf, quic: SocketAddr, http: SocketAddr) -> anyhow::
         media: flag("RELAY_MEDIA", true),
         pass_ip: flag("RELAY_PASS_IP", false),
         salt: std::fs::read(&salt_file)?,
+        passes: std::env::var("RELAY_ID_URL").ok().filter(|u| !u.is_empty()).map(|u| Passes {
+            id_url: u.trim_end_matches('/').to_string(),
+            require_claimed: flag("RELAY_REQUIRE_CLAIMED", true),
+            http: reqwest::Client::builder().timeout(std::time::Duration::from_secs(10)).build().expect("http client"),
+            keys: Default::default(),
+            fetched: Default::default(),
+        }),
         dir,
         ..Default::default()
     });
@@ -146,20 +212,34 @@ async fn branch(state: Arc<State>, conn: quinn::Connection) -> anyhow::Result<()
     let mut line = String::new();
     BufReader::new(recv.take(4096)).read_line(&mut line).await?;
     let hello: Hello = serde_json::from_str(&line)?;
-    let known = load_branches(&state.dir)?.into_iter().find(|b| b.name == hello.name && b.secret_hash == hash(&hello.secret));
-    let Some(b) = known else {
-        let w = Welcome { ok: false, error: Some("unknown branch or wrong secret".into()), host: String::new(), udp_base: 0, udp_ports: 0 };
+    // A pass from branchr ID admits a hub by its key; otherwise it must be on our list.
+    let admitted = match &hello.pass {
+        Some(pass) => match state.passes.as_ref() {
+            Some(p) => p.verify(pass).await.map(|name| Branch { name, secret_hash: String::new(), host: String::new(), udp_base: 0, udp_ports: 0 }),
+            None => Err(anyhow::anyhow!("this gateway doesn't take branchr passes")),
+        },
+        None => load_branches(&state.dir)?
+            .into_iter()
+            .find(|b| b.name == hello.name && b.secret_hash == hash(&hello.secret))
+            .ok_or_else(|| anyhow::anyhow!("unknown hub or wrong secret")),
+    };
+    let b = match admitted {
+        Ok(b) => b,
+        Err(e) => {
+        let w = Welcome { ok: false, error: Some(format!("{e:#}")), host: String::new(), udp_base: 0, udp_ports: 0, name: String::new() };
         send.write_all(format!("{}\n", serde_json::to_string(&w)?).as_bytes()).await?;
         let _ = send.finish();
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         conn.close(1u32.into(), b"refused");
-        anyhow::bail!("refused {}", hello.name);
+        anyhow::bail!("refused {}: {e:#}", if hello.name.is_empty() { "a pass" } else { &hello.name });
+        }
     };
-    let sockets = if state.media { media_sockets(&state, &b).await? } else { Arc::new(Vec::new()) };
+    // Hubs admitted by pass have no ports set aside here: their media goes direct.
+    let sockets = if state.media && b.udp_ports > 0 { media_sockets(&state, &b).await? } else { Arc::new(Vec::new()) };
     if let Some(old) = state.live.lock().unwrap().insert(b.name.clone(), conn.clone()) {
         old.close(2u32.into(), b"replaced");
     }
-    let w = Welcome { ok: true, error: None, host: b.host.clone(), udp_base: b.udp_base, udp_ports: if state.media { b.udp_ports } else { 0 } };
+    let w = Welcome { ok: true, error: None, host: b.host.clone(), udp_base: b.udp_base, udp_ports: if state.media { b.udp_ports } else { 0 }, name: b.name.clone() };
     send.write_all(format!("{}\n", serde_json::to_string(&w)?).as_bytes()).await?;
     tracing::info!("branch {} connected from {} as https://{}", b.name, conn.remote_address(), b.host);
 

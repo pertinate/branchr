@@ -115,6 +115,8 @@ pub fn router(state: AppState) -> Router {
         .route("/gateway", get(gateway::upgrade))
         .route("/instances/{id}", get(instances::status))
         .route("/instances/{id}/claim", axum::routing::delete(instances::release))
+        .route("/instances/{id}/relay-pass", post(instances::relay_pass))
+        .route("/relay", get(instances::relay_info))
         .route("/instances/{id}/transfer", post(instances::transfer))
         .route("/network/me", get(network::me))
         .route("/network/staff", get(network::staff))

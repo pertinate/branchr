@@ -30,7 +30,35 @@ pub struct Targets {
     pub sfu_udp: SocketAddr,
 }
 
-pub async fn run(token: Token, targets: Targets) -> anyhow::Result<()> {
+/// Fetches a fresh pass from branchr ID (for each connection).
+pub type PassFn = Arc<dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<String>> + Send>> + Send + Sync>;
+
+pub enum Auth {
+    /// A name and secret from `branchr-relay add` (in a token).
+    Secret { name: String, secret: String },
+    /// A pass from branchr ID: the hub is admitted by its key.
+    Pass(PassFn),
+}
+
+/// Where to connect and how to prove who we are.
+pub struct Connect {
+    /// The gateway's QUIC address, `host:port`.
+    pub relay: String,
+    /// sha256 of its certificate.
+    pub fp: String,
+    pub auth: Auth,
+    /// Told what the gateway made of us, each time we're admitted.
+    pub on_welcome: Option<Arc<dyn Fn(&Welcome) + Send + Sync>>,
+}
+
+impl From<Token> for Connect {
+    fn from(t: Token) -> Self {
+        Connect { relay: t.relay, fp: t.fp, auth: Auth::Secret { name: t.name, secret: t.secret }, on_welcome: None }
+    }
+}
+
+pub async fn run(connect: impl Into<Connect>, targets: Targets) -> anyhow::Result<()> {
+    let token = connect.into();
     let mut tls = rustls::ClientConfig::builder_with_provider(crate::tls::provider())
         .with_safe_default_protocol_versions()?
         .dangerous()
@@ -59,18 +87,25 @@ pub async fn run(token: Token, targets: Targets) -> anyhow::Result<()> {
     }
 }
 
-async fn session(endpoint: &quinn::Endpoint, token: &Token, targets: &Targets, client: &Client<HttpConnector, Incoming>) -> anyhow::Result<()> {
+async fn session(endpoint: &quinn::Endpoint, token: &Connect, targets: &Targets, client: &Client<HttpConnector, Incoming>) -> anyhow::Result<()> {
     let addr = tokio::net::lookup_host(&token.relay).await?.next().ok_or_else(|| anyhow::anyhow!("can't resolve {}", token.relay))?;
     let conn = endpoint.connect(addr, SERVER_NAME)?.await?;
     let (mut send, recv) = conn.open_bi().await?;
-    send.write_all(format!("{}\n", serde_json::to_string(&Hello { name: token.name.clone(), secret: token.secret.clone() })?).as_bytes()).await?;
+    let hello = match &token.auth {
+        Auth::Secret { name, secret } => Hello { name: name.clone(), secret: secret.clone(), pass: None },
+        Auth::Pass(get) => Hello { pass: Some(get().await?), ..Default::default() },
+    };
+    send.write_all(format!("{}\n", serde_json::to_string(&hello)?).as_bytes()).await?;
     let mut line = String::new();
     BufReader::new(recv.take(4096)).read_line(&mut line).await?;
     let w: Welcome = serde_json::from_str(&line)?;
     if !w.ok {
         anyhow::bail!("refused: {}", w.error.unwrap_or_default());
     }
-    tracing::info!("relaying https://{} (media on {} UDP port(s) from {})", w.host, w.udp_ports, w.udp_base);
+    tracing::info!("relayed as /h/{}{}", w.name, if w.udp_ports > 0 { format!(" (media on {} UDP port(s) from {})", w.udp_ports, w.udp_base) } else { String::new() });
+    if let Some(f) = &token.on_welcome {
+        f(&w);
+    }
 
     let media = Media::new(conn.clone(), targets.sfu_udp);
     let datagrams = {

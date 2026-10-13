@@ -14,6 +14,7 @@ mod perms;
 mod routes;
 mod state;
 mod storage;
+mod relaying;
 mod thumbs;
 mod unfurl;
 
@@ -90,6 +91,7 @@ async fn main() -> anyhow::Result<()> {
             .then(|| unfurl::Unfurler::new(std::env::var("EMBED_ALLOW_PRIVATE").as_deref() == Ok("1"))),
         open_registration: std::sync::atomic::AtomicBool::new(config.open_registration),
         max_upload_bytes: std::sync::atomic::AtomicU64::new(config.max_upload_bytes),
+        relayed: Default::default(),
         federation: (config.auth_mode != config::AuthMode::Local).then(|| Arc::new(federation::Federation::new(&config))),
         config: config.clone(),
     });
@@ -169,6 +171,9 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(attachments::gc(state.clone()));
     tokio::spawn(audit::trim(state.clone()));
     tokio::spawn(discovery::run(state.clone()));
+    if config.relay {
+        tokio::spawn(relaying::run(state.clone()));
+    }
 
     let mut app = Router::new().nest("/api", api).route("/gateway", get(gateway::upgrade));
 

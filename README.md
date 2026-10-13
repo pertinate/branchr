@@ -179,6 +179,7 @@ Configuration is all through the environment:
 | `SFU_PUBLIC_UDP_PORT` | sfu | `SFU_UDP_PORT` | First UDP port advertised to clients, when a relay forwards other public ports to the sfu's own. |
 | `SITE_DIR` | api | `/srv/site` in the image | The product site (`apps/site`), served at `/`; the app is at `/app/`. Without it, `/` leads to the app. Old `/#/...` links (invites, sign-in) carry on to `/app/`. |
 | `SFU_PUBLIC_IP` | sfu | detected | The address clients send media to, or `auto` for a hub at home: the sfu asks the router to forward its UDP ports (UPnP; `SFU_UPNP=0` turns that off) and for its public IP, else asks `SFU_IP_ECHO` (`https://branchr.us/ip`), and keeps it current. It also offers its LAN address (`SFU_LAN_IP`, detected) so people on the same network connect locally. Manage Hub shows whether the internet can reach it (branchr probes the ports). |
+| `RELAY` | api | off | `1`: be reached through your branchr ID's gateway (branchr.us) at `https://branchr.us/h/<this hub's key>/`, with no domain or open web ports. The hub proves who it is with a pass from branchr ID; it must be claimed first. Use with `TRUST_PROXY=1`, and `SFU_PUBLIC_IP=auto` on the sfu so voice goes to it directly. |
 | `MAX_UPLOAD_MB` | api | `500` | Largest attachment. Sent to clients, which refuse bigger files up front. |
 | `SFU_PUBLIC_IP` | sfu | autodetected | IP put in ICE candidates. |
 | `SFU_UDP_PORT` / `SFU_WORKERS` | sfu | `50000` / #cores | Worker *i* uses `SFU_UDP_PORT + i`. |

@@ -6,11 +6,7 @@
 //!   branchr-relay remove <name>                           on the gateway: stop relaying a hub
 //!   branchr-relay connect                                 next to the branch (RELAY_TOKEN=...)
 
-mod agent;
-mod http;
-mod proto;
-mod server;
-mod tls;
+use relay::{agent, proto, server, tls};
 
 use std::path::PathBuf;
 

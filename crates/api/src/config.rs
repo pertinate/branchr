@@ -41,6 +41,8 @@ pub struct Config {
     pub public_url: String,
     /// Where the claim code is written for the owner (next to the database by default).
     pub claim_file: PathBuf,
+    /// Be reached through branchr ID's gateway (RELAY=1): no domain or open web ports needed.
+    pub relay: bool,
 }
 
 impl Config {
@@ -58,6 +60,7 @@ impl Config {
             database_url: var("DATABASE_URL").unwrap_or_else(|| "sqlite://data/discord.db".into()),
             web_dir: var("WEB_DIR").map(PathBuf::from),
             site_dir: var("SITE_DIR").map(PathBuf::from),
+            relay: var("RELAY").is_some_and(|v| matches!(v.trim(), "1" | "true" | "on" | "yes")),
             voice_secret,
             sfu_urls: var("SFU_URLS")
                 .unwrap_or_else(|| "ws://localhost:8090/ws".into())

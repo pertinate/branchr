@@ -234,7 +234,7 @@ async fn voice_state_update(state: &AppState, key: SessionKey, user: Id, u: Voic
             deny_video: allowed & proto::perms::VIDEO == 0,
             deny_stream: allowed & proto::perms::STREAM == 0,
         };
-        let urls = &state.config.sfu_urls;
+        let urls = &state.sfu_urls();
         let endpoint = urls[(channel_id.0 as u64 % urls.len() as u64) as usize].clone();
         hub.to_session(
             key,

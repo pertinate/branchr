@@ -106,6 +106,25 @@ impl Federation {
         }
     }
 
+    /// A short-lived pass for branchr ID's gateway, letting us in under our key.
+    pub async fn relay_pass(&self) -> anyhow::Result<String> {
+        #[derive(Deserialize)]
+        struct T {
+            token: String,
+        }
+        let id = self.identity().ok_or_else(|| anyhow::anyhow!("not registered with branchr ID yet"))?;
+        let t: T = self
+            .http
+            .post(format!("{}/instances/{}/relay-pass", self.id_url, id.instance_id))
+            .bearer_auth(&id.secret)
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+        Ok(t.token)
+    }
+
     pub fn id_url(&self) -> &str {
         &self.id_url
     }

@@ -16,11 +16,16 @@ pub const ALPN: &[u8] = b"branchr-relay/1";
 /// The name in the gateway's (self-signed) certificate; trust comes from its fingerprint.
 pub const SERVER_NAME: &str = "branchr-relay";
 
-/// The connector's introduction.
-#[derive(Serialize, Deserialize, Debug)]
+/// The connector's introduction: a name and secret the gateway was given (`branchr-relay
+/// add`), or a pass from branchr ID naming the hub by its key.
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub struct Hello {
+    #[serde(default)]
     pub name: String,
+    #[serde(default)]
     pub secret: String,
+    #[serde(default)]
+    pub pass: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -36,6 +41,9 @@ pub struct Welcome {
     pub udp_base: u16,
     #[serde(default)]
     pub udp_ports: u16,
+    /// The hub's name here: it's at `https://<gateway>/h/<name>/`.
+    #[serde(default)]
+    pub name: String,
 }
 
 /// Everything a connector needs, as one string (`branchr-relay add` prints it).

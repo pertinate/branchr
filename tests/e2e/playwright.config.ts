@@ -20,6 +20,9 @@ const s3 = process.env.E2E_S3_ENDPOINT;
 /** Fresh each run, so the federated server registers and gets claimed anew. Tests read it. */
 process.env.E2E_FEDERATED_DIR ??= `${SCRATCH}/federated-${Date.now().toString(36)}`;
 const fedDir = process.env.E2E_FEDERATED_DIR;
+/** The gateway that admits hubs by their branchr key (relay-key.spec); branchr ID reads its certificate. */
+process.env.E2E_RELAY_KEY_DIR ??= `${SCRATCH}/relay-key`;
+const relayKeyDir = process.env.E2E_RELAY_KEY_DIR;
 /**
  * Everything here runs on its own ports (18xxx, UDP 51000+) and the web client with its own
  * Vite cache, so a test run sits next to `pnpm dev` (8070/8080/8090, 5173) without touching it.
@@ -140,9 +143,15 @@ export default defineConfig({
               DISCORD_AUTHORIZE: "http://localhost:18071/oauth2/authorize",
               ALLOWED_REDIRECTS: `branchr://auth/callback,${web}/`,
               ID_SFU_URL: "ws://127.0.0.1:18091/ws",
+              // The gateway hubs can be reached through (relay-key-stack.sh).
+              RELAY_QUIC: "127.0.0.1:17543",
+              RELAY_CERT: `${relayKeyDir}/gateway/cert.der`,
+              RELAY_WEB: "http://localhost:18900",
               ID_VOICE_SECRET: "e2e-id-voice",
             },
           },
+          // A hub reached through a gateway by its branchr key (relay-key.spec).
+          { command: "./relay-key-stack.sh", url: "http://127.0.0.1:18280/api/health", reuseExistingServer: true, timeout: 300_000 },
         ]
       : []),
     // A hub reached only through branchr-relay (relay-gateway.spec).

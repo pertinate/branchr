@@ -25,17 +25,19 @@ struct Row {
 
 pub async fn run(state: AppState) {
     let Some(fed) = state.federation.clone() else { return };
-    if state.config.public_url.is_empty() {
+    if state.config.public_url.is_empty() && !state.config.relay {
         // branchr ID can't point people at a host without its address.
         tracing::info!("PUBLIC_URL isn't set, so servers here aren't listed in Explore");
         return;
     }
     let every = Duration::from_secs(std::env::var("DISCOVERY_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(300));
     loop {
-        if fed.identity().is_some() {
+        // Relayed hubs get their address from the gateway a moment after starting.
+        let public_url = state.public_url();
+        if fed.identity().is_some() && !public_url.is_empty() {
             match servers(&state).await {
                 Ok(list) => {
-                    if let Err(e) = fed.publish(&list, &state.config.public_url, &state.config.instance_name).await {
+                    if let Err(e) = fed.publish(&list, &public_url, &state.config.instance_name).await {
                         tracing::warn!("publishing to Explore: {e:#}");
                     }
                 }
@@ -65,7 +67,7 @@ async fn servers(state: &AppState) -> crate::error::AppResult<Vec<PublishedServe
         };
         let members: Vec<(i64,)> = sqlx::query_as("SELECT user_id FROM members WHERE guild_id = $1").bind(r.id).fetch_all(&state.db).await?;
         let online = members.iter().filter(|(u,)| state.hub.status(Id(*u)) != Status::Offline).count();
-        let icon_url = r.icon_url.map(|u| if u.starts_with('/') { format!("{}{u}", state.config.public_url.trim_end_matches('/')) } else { u });
+        let icon_url = r.icon_url.map(|u| if u.starts_with('/') { format!("{}{u}", state.public_url().trim_end_matches('/')) } else { u });
         out.push(PublishedServer {
             guild_id: Id(r.id),
             name: r.name,
