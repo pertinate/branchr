@@ -47,6 +47,13 @@ test("emotes: add from 7TV, FFZ and BetterTTV, render for other members", async 
     expect(await img.getAttribute("src")).toContain(cdn);
     await expect.poll(() => img.evaluate((i: HTMLImageElement) => i.naturalWidth)).toBeGreaterThan(0);
   }
+
+  // Pinned, its emotes still show.
+  await alice.getByText("and plain OMEGALUL stays text").click({ button: "right" });
+  await alice.getByRole("menuitem", { name: "Pin Message" }).click();
+  await alice.getByRole("button", { name: "Pinned Messages" }).click();
+  await expect(alice.getByTestId("found-message").locator('img[alt="OMEGALUL"]')).toBeVisible();
+  await expect(alice.getByTestId("found-message").locator('img[alt="bttvJAM"]')).toBeVisible();
 });
 
 test("emotes: usable across servers, with source shown and no forging", async ({ browser }) => {
@@ -78,7 +85,7 @@ test("emotes: usable across servers, with source shown and no forging", async ({
   await expect(bobImg).toBeVisible();
   expect(await bobImg.getAttribute("src")).toContain("cdn.frankerfacez.com/emote/128054/");
   await bobImg.click();
-  await expect(bob.getByRole("dialog", { name: "Emote OMEGALUL" })).toContainText("A leaflet you're not in");
+  await expect(bob.getByRole("dialog", { name: "Emote OMEGALUL" })).toContainText("A community you're not in");
   await bob.keyboard.press("Escape");
 
   // Alice's card names the source server.

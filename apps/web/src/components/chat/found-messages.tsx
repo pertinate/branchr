@@ -1,14 +1,15 @@
-import type { Emote, Message } from "@app/protocol";
+import type { Message } from "@app/protocol";
 import { useNavigate } from "@tanstack/react-router";
 import { Hash } from "lucide-react";
+import { useMemo } from "react";
+import { useShallow } from "zustand/react/shallow";
 
 import { Markup } from "@/components/chat/markup";
 import { UserAvatar } from "@/components/user-avatar";
+import { emoteMap } from "@/lib/emotes";
 import { snowflakeTime } from "@/lib/ids";
 import { useInstance } from "@/lib/instances";
 import { useApp } from "@/stores/app";
-
-const NO_EMOTES = new Map<string, Emote>();
 
 /** Messages from search or pins: who, where, when; click to go to the channel. */
 export function FoundMessages({ guildId, messages, onOpen, showServer }: { guildId: string; messages: Message[]; onOpen?: () => void; showServer?: boolean }) {
@@ -17,6 +18,9 @@ export function FoundMessages({ guildId, messages, onOpen, showServer }: { guild
   const channels = useApp((s) => s.channels);
   const members = useApp((s) => s.members[guildId]);
   const server = useApp((s) => s.guilds[guildId]?.name);
+  // `:name:` in a message means this community's emote of that name.
+  const emoteList = useApp(useShallow((s) => s.emotes[guildId] ?? []));
+  const emotes = useMemo(() => emoteMap(emoteList), [emoteList]);
   return (
     <div className="space-y-1">
       {messages.map((m) => (
@@ -41,7 +45,7 @@ export function FoundMessages({ guildId, messages, onOpen, showServer }: { guild
               <span>{new Date(snowflakeTime(m.id)).toLocaleString()}</span>
             </div>
             <div className="line-clamp-3 text-sm break-words">
-              <Markup content={m.content} emotes={NO_EMOTES} refs={m.emotes} guildId={guildId} mentions={m.mentions} everyone={m.mentionEveryone} />
+              <Markup content={m.content} emotes={emotes} refs={m.emotes} guildId={guildId} mentions={m.mentions} everyone={m.mentionEveryone} />
               {!m.content && m.attachments.length > 0 && <span className="text-muted-foreground italic">{m.attachments.length} attachment(s)</span>}
             </div>
           </div>

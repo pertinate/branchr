@@ -69,7 +69,7 @@ const MemberRow = memo(function MemberRow({ member, status, owner, color }: { me
       <span className="truncate text-[15px] font-medium text-sidebar-foreground" style={{ color }}>
         {member.nick ?? member.user.displayName}
       </span>
-      {owner && <span title="Leaflet Owner" className="text-idle">♛</span>}
+      {owner && <span title="Community Owner" className="text-idle">♛</span>}
     </div>
     </UserCardPopover>
     </Menu>

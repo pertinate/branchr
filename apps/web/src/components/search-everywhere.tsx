@@ -22,7 +22,7 @@ export function SearchEverywhere({ query }: { query: string }) {
       },
     })),
   });
-  if (!q) return <p className="px-8 py-6 text-muted-foreground">Search messages in every leaflet you're in.</p>;
+  if (!q) return <p className="px-8 py-6 text-muted-foreground">Search messages in every community you're in.</p>;
   const all = results
     .flatMap((r) => r.data ?? [])
     .sort((a, b) => snowflakeTime(b.m.id) - snowflakeTime(a.m.id));

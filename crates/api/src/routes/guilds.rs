@@ -373,7 +373,7 @@ pub async fn accept_invite(
     let r = resolve_invite(&state, &code).await?;
     let gid = r.guild;
     if super::bans::is_banned(&state, gid, user).await? {
-        return Err(AppError::Denied("you're banned from this leaflet".into()));
+        return Err(AppError::Denied("you're banned from this community".into()));
     }
     if db::is_member(&state.db, gid, user).await? {
         return Ok(Json(ready_guild(&state, gid, user).await?));

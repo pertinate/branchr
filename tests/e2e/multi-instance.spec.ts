@@ -10,7 +10,7 @@ const run = Date.now().toString(36);
 async function registerOn(browser: Browser, server: string, name: string): Promise<Page> {
   const page = await (await browser.newContext({ viewport: { width: 1400, height: 900 } })).newPage();
   await page.goto("/#/login");
-  await page.getByLabel("Branch", { exact: true }).fill(server);
+  await page.getByLabel("Hub", { exact: true }).fill(server);
   await page.getByRole("button", { name: "Register" }).click();
   await page.getByLabel("Username").fill(`${name}_${run}`);
   await page.getByLabel("Display name").fill(name);
@@ -21,12 +21,12 @@ async function registerOn(browser: Browser, server: string, name: string): Promi
 
 /** Adds another host from the rail's "Add a Server → Connect", registering there. */
 async function connectHost(page: Page, server: string, name: string) {
-  await page.getByRole("button", { name: "Add a Leaflet" }).click();
+  await page.getByRole("button", { name: "Add a Community" }).click();
   await page.getByRole("tab", { name: "Connect" }).click();
-  await page.getByLabel("Branch address").fill(server);
+  await page.getByLabel("Hub address").fill(server);
   await page.getByRole("button", { name: "Continue" }).click();
-  await expect(page.getByRole("heading", { name: "Connect another branch" })).toBeVisible();
-  await expect(page.getByLabel("Branch", { exact: true })).toHaveValue(server);
+  await expect(page.getByRole("heading", { name: "Connect another hub" })).toBeVisible();
+  await expect(page.getByLabel("Hub", { exact: true })).toHaveValue(server);
   await page.getByRole("button", { name: "Register" }).click();
   await page.getByLabel("Username").fill(`${name}_${run}`);
   await page.getByLabel("Display name").fill(name);
@@ -40,7 +40,7 @@ test("multiple instances: connect a second host, badges and voice across them, l
 
   // A second host, alongside the first.
   await connectHost(alice, AWAY, "multi_a_away");
-  await expect(alice.getByRole("heading", { name: "No leaflets yet" })).toBeVisible();
+  await expect(alice.getByRole("heading", { name: "No communities yet" })).toBeVisible();
   await expect(alice.getByText("localhost:18081")).toBeVisible();
   expect((await sessions(alice)).map((s) => s.url)).toEqual([HOME, AWAY]);
   // My Guilds lists both hosts.
@@ -74,9 +74,9 @@ test("multiple instances: connect a second host, badges and voice across them, l
   // Explore → Messages searches every server on every host.
   await alice.getByRole("link", { name: "Explore" }).click();
   await alice.getByRole("tab", { name: "Messages" }).click();
-  await alice.getByLabel("Search leaflets").fill("over");
+  await alice.getByLabel("Search communities").fill("over");
   await expect(alice.getByTestId("found-message").filter({ hasText: "over here" })).toContainText("Away B");
-  await alice.getByLabel("Search leaflets").fill("hello home");
+  await alice.getByLabel("Search communities").fill("hello home");
   const hit = alice.getByTestId("found-message").filter({ hasText: "hello home" });
   await expect(hit).toContainText("Home A");
   await hit.click();
@@ -97,7 +97,7 @@ test("multiple instances: connect a second host, badges and voice across them, l
   alice.on("dialog", (d) => void d.accept());
   await alice.getByRole("link", { name: "Explore" }).click();
   await alice.getByRole("button", { name: "Log Out of localhost:18081" }).click();
-  const rail = alice.getByRole("navigation", { name: "Leaflets" });
+  const rail = alice.getByRole("navigation", { name: "Communities" });
   await expect(rail.getByRole("link", { name: "Away B" })).toHaveCount(0);
   await expect(rail.getByRole("link", { name: "Home A" })).toBeVisible();
   await expect(alice.getByTestId("host-section")).toHaveCount(1);
@@ -113,11 +113,11 @@ test("multiple instances: connect a second host, badges and voice across them, l
     await bob.keyboard.press("Escape");
     return c;
   })();
-  await alice.getByRole("button", { name: "Add a Leaflet" }).click();
+  await alice.getByRole("button", { name: "Add a Community" }).click();
   await alice.getByRole("tab", { name: "Join" }).click();
   await alice.getByPlaceholder("Invite code or link").fill(`${AWAY}/#/invite/${invite}`);
-  await alice.getByRole("button", { name: "Join Leaflet" }).click();
-  await expect(alice.getByRole("heading", { name: "Connect another branch" })).toBeVisible();
+  await alice.getByRole("button", { name: "Join Community" }).click();
+  await expect(alice.getByRole("heading", { name: "Connect another hub" })).toBeVisible();
   await alice.getByLabel("Username").fill(`multi_a_away_${run}`);
   await alice.getByLabel("Password").fill("correct horse battery");
   await alice.getByRole("button", { name: "Log In" }).click();

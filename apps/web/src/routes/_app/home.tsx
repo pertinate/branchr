@@ -18,7 +18,7 @@ function HomeLayout() {
       <div className="grid flex-1 place-items-center bg-background p-8 text-center">
         <div className="max-w-sm space-y-3">
           <h1 className="text-xl font-semibold">Friends and direct messages</h1>
-          <p className="text-muted-foreground">They follow your branchr account across every branch, so sign in to it first.</p>
+          <p className="text-muted-foreground">They follow your branchr account across every hub, so sign in to it first.</p>
           <Button onClick={() => void startSignIn()}>Sign in with Discord</Button>
         </div>
       </div>

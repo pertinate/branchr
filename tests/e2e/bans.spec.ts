@@ -26,16 +26,16 @@ test("bans: ban with recent messages deleted, can't rejoin, unban, all in the au
   await expect(bob.getByRole("link", { name: "Strict" })).toHaveCount(0);
 
   // The invite no longer works for him.
-  await bob.getByRole("button", { name: "Add a Leaflet" }).click();
+  await bob.getByRole("button", { name: "Add a Community" }).click();
   await bob.getByRole("tab", { name: "Join" }).click();
   await bob.getByPlaceholder("Invite code or link").fill(code);
-  await bob.getByRole("button", { name: "Join Leaflet" }).click();
-  await expect(bob.getByText("you're banned from this leaflet")).toBeVisible();
+  await bob.getByRole("button", { name: "Join Community" }).click();
+  await expect(bob.getByText("you're banned from this community")).toBeVisible();
   await bob.keyboard.press("Escape");
 
   // Listed under Bans with the reason; unbanning lets him back.
   await alice.getByRole("button", { name: "Strict" }).click();
-  await alice.getByRole("menuitem", { name: "Leaflet Settings" }).click();
+  await alice.getByRole("menuitem", { name: "Community Settings" }).click();
   await alice.getByRole("tab", { name: "Bans" }).click();
   const banned = alice.getByTestId("ban-list");
   await expect(banned.getByText('"spamming"', { exact: false })).toBeVisible();

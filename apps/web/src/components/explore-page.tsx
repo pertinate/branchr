@@ -74,13 +74,13 @@ export function ExplorePage({ tab, onTab }: { tab: ExploreTab; onTab: (t: Explor
           <h1 className="flex items-center gap-2 text-2xl font-bold">
             <Compass /> Explore
           </h1>
-          <p className="mt-1 text-muted-foreground">Your leaflets on every branch, leaflets anyone can join, and messages everywhere you are.</p>
+          <p className="mt-1 text-muted-foreground">Your communities on every hub, communities anyone can join, and messages everywhere you are.</p>
           <div className="relative mt-4 max-w-xl">
             <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search leaflets" aria-label="Search leaflets" className="h-10 bg-background pl-9" />
+            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search communities" aria-label="Search communities" className="h-10 bg-background pl-9" />
           </div>
           <TabsList className="mt-4">
-            <TabsTrigger value="yours">Your Leaflets</TabsTrigger>
+            <TabsTrigger value="yours">Your Communities</TabsTrigger>
             <TabsTrigger value="discover">Discover</TabsTrigger>
             <TabsTrigger value="messages">Messages</TabsTrigger>
           </TabsList>
@@ -105,7 +105,7 @@ export function ExplorePage({ tab, onTab }: { tab: ExploreTab; onTab: (t: Explor
           </div>
       <div className="grid gap-4 p-8 sm:grid-cols-2 xl:grid-cols-3" data-testid="explore-results">
         {results.isError && <p className="text-destructive">{(results.error as Error).message}</p>}
-        {results.data?.length === 0 && <p className="text-muted-foreground">No leaflets match.</p>}
+        {results.data?.length === 0 && <p className="text-muted-foreground">No communities match.</p>}
         {results.data?.map((l) => {
           const key = `${l.hostUrl}/${l.server.guildId}`;
           return (

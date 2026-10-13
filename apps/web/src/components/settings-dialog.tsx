@@ -144,7 +144,7 @@ function BranchrAccount() {
       void qc.invalidateQueries({ queryKey: ["host-overview"] });
       toast.success(`You now own ${name}`);
     } catch (e) {
-      toast.error("Couldn't claim the branch", { description: (e as Error).message });
+      toast.error("Couldn't claim the hub", { description: (e as Error).message });
     }
   };
   return (
@@ -186,7 +186,7 @@ function BranchrAccount() {
           }}
         >
           <Label htmlFor="claim-code" className="text-xs text-muted-foreground">
-            Claim a branch you run (the code is in its log and in claim-code.txt next to its database)
+            Claim a hub you run (the code is in its log and in claim-code.txt next to its database)
           </Label>
           <div className="flex gap-2">
             <Input id="claim-code" value={code} onChange={(e) => setCode(e.target.value)} placeholder="ABCD-1234" className="w-40 font-mono uppercase" />
@@ -198,7 +198,7 @@ function BranchrAccount() {
       )}
       {account ? null : (
         <>
-          <p className="text-xs text-muted-foreground">One account for every branch. Sign in with Discord; we only see your name and avatar.</p>
+          <p className="text-xs text-muted-foreground">One account for every hub. Sign in with Discord; we only see your name and avatar.</p>
           <Button
             disabled={busy}
             className="bg-[#5865F2] text-white hover:bg-[#4752c4]"
@@ -388,7 +388,7 @@ function OwnedHosts() {
   if (!hosts.length) return null;
   return (
     <div className="space-y-1" data-testid="owned-hosts">
-      <div className="text-xs font-semibold text-muted-foreground uppercase">Your branches</div>
+      <div className="text-xs font-semibold text-muted-foreground uppercase">Your hubs</div>
       {hosts.map((h) => {
         const id = h.publicUrl ? instanceKey(normalizeUrl(h.publicUrl)) : null;
         const here = !!id && connected.includes(id);

@@ -1,13 +1,16 @@
 import type { Channel } from "@app/protocol";
 import { Link, useParams } from "@tanstack/react-router";
-import { ChevronDown, CornerDownRight, Hash, MicOff, Plus, Video, Volume2, HeadphoneOff } from "lucide-react";
+import { ChevronDown, CornerDownRight, FolderPlus, Hash, PlusCircle, UserPlus, MicOff, Plus, Video, Volume2, HeadphoneOff } from "lucide-react";
 import { memo, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 
 import { GuildMenu } from "@/components/guild/guild-menu";
 import { MentionBadge } from "@/components/mention-badge";
 import { ChannelMenuItems, Menu, UserMenuItems } from "@/components/menus";
+import { ContextMenuItem } from "@/components/ui/context-menu";
 import { UserAvatar } from "@/components/user-avatar";
+import { type ChannelDrop, reorder } from "@/lib/channel-order";
 import { compareIds } from "@/lib/ids";
 import { useInstance } from "@/lib/instances";
 import { cn } from "@/lib/utils";
@@ -23,6 +26,39 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
   const openDialog = useDialogs((s) => s.open);
   const instanceId = useInstance().id;
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const inst = useInstance();
+  // Dragging channels and categories around (people who can manage channels).
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [hint, setHint] = useState<ChannelDrop | null>(null);
+  const dnd = useMemo<Dnd>(
+    () => ({
+      enabled: isOwner,
+      dragging,
+      hint,
+      setHint,
+      start: setDragging,
+      end: () => {
+        setDragging(null);
+        setHint(null);
+      },
+      drop: (drop) => {
+        const id = dragging;
+        setDragging(null);
+        setHint(null);
+        if (!id) return;
+        const changes = reorder(channels, id, drop);
+        if (!changes.length) return;
+        // Shown at once; the server's updates follow.
+        const app = inst.app.getState();
+        for (const p of changes) {
+          const c = app.channels[p.id];
+          if (c) app.apply({ t: "CHANNEL_UPDATE", d: { ...c, position: p.position, parentId: p.parentId } });
+        }
+        void inst.api("PATCH", `/guilds/${guildId}/channels`, changes).catch((e: Error) => toast.error(e.message));
+      },
+    }),
+    [isOwner, dragging, hint, channels, inst, guildId],
+  );
 
   const groups = useMemo(() => {
     const sorted = [...channels].sort((a, b) => a.position - b.position || compareIds(a.id, b.id));
@@ -44,10 +80,12 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
     <aside className="flex w-60 shrink-0 flex-col bg-sidebar">
       <GuildMenu guildId={guildId} />
       <GuildBanner guildId={guildId} />
-      <div className="flex-1 space-y-0.5 overflow-y-auto px-2 pb-2">
+      <Menu items={<ChannelListMenuItems guildId={guildId} />}>
+      <div className="flex-1 space-y-0.5 overflow-y-auto px-2 pb-2" data-testid="channel-list">
         {groups.list.map(({ cat, items }) => (
           <div key={cat?.id ?? "root"} className={cat ? "pt-4" : "pt-2"}>
             {cat && (
+              <DragRow dnd={dnd} id={cat.id} category>
               <Menu items={<ChannelMenuItems channelId={cat.id} />}>
               <div className="group flex items-center pr-1">
                 <button
@@ -68,13 +106,18 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
                 )}
               </div>
               </Menu>
+              </DragRow>
             )}
             {items.map((c) =>
               c.kind === "voice" ? (
-                <VoiceChannelRow key={c.id} channel={c} hidden={!!(cat && collapsed[cat.id])} />
+                <DragRow key={c.id} dnd={dnd} id={c.id}>
+                  <VoiceChannelRow channel={c} hidden={!!(cat && collapsed[cat.id])} />
+                </DragRow>
               ) : cat && collapsed[cat.id] ? null : (
                 <div key={c.id}>
-                  <TextChannelRow channel={c} />
+                  <DragRow dnd={dnd} id={c.id}>
+                    <TextChannelRow channel={c} />
+                  </DragRow>
                   {groups.threads.get(c.id)?.slice(0, MAX_THREADS).map((t) => <TextChannelRow key={t.id} channel={t} thread />)}
                 </div>
               ),
@@ -82,12 +125,93 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
           </div>
         ))}
       </div>
+      </Menu>
     </aside>
+  );
+}
+
+interface Dnd {
+  enabled: boolean;
+  dragging: string | null;
+  hint: ChannelDrop | null;
+  setHint: (h: ChannelDrop | null) => void;
+  start: (id: string) => void;
+  end: () => void;
+  drop: (d: ChannelDrop) => void;
+}
+
+/** A draggable spot in the channel list, showing where a drop would land. */
+function DragRow({ dnd, id, category, children }: { dnd: Dnd; id: string; category?: boolean; children: React.ReactNode }) {
+  const mine = dnd.hint?.id === id ? dnd.hint.zone : null;
+  if (!dnd.enabled) return <>{children}</>;
+  return (
+    <div
+      data-channel-row={id}
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/x-branchr-channel", id);
+        dnd.start(id);
+      }}
+      onDragEnd={dnd.end}
+      onDragOver={(e) => {
+        if (!dnd.dragging || dnd.dragging === id) return;
+        e.preventDefault();
+        const r = e.currentTarget.getBoundingClientRect();
+        const lower = e.clientY - r.top > r.height / 2;
+        // A channel dropped on a category goes into it; categories line up with each other.
+        const draggingCategory = !!document.querySelector(`[data-channel-row="${dnd.dragging}"][data-category]`);
+        const zone = category && !draggingCategory ? "into" : lower ? "after" : "before";
+        if (mine !== zone) dnd.setHint({ id, zone });
+      }}
+      onDragLeave={(e) => {
+        if (mine && !e.currentTarget.contains(e.relatedTarget as Node)) dnd.setHint(null);
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        if (dnd.hint?.id === id) dnd.drop(dnd.hint);
+      }}
+      data-category={category || undefined}
+      className="relative"
+    >
+      {mine === "before" && <span className="pointer-events-none absolute -top-px right-1 left-1 h-0.5 rounded bg-primary" />}
+      {mine === "after" && <span className="pointer-events-none absolute right-1 -bottom-px left-1 h-0.5 rounded bg-primary" />}
+      {mine === "into" && <span className="pointer-events-none absolute inset-0 rounded ring-2 ring-primary" />}
+      {children}
+    </div>
   );
 }
 
 /** Threads shown under a channel (the most recently active). */
 const MAX_THREADS = 10;
+
+/** Right-click on the channel list's empty space. */
+function ChannelListMenuItems({ guildId }: { guildId: string }) {
+  const canChannels = useCan(guildId, P.MANAGE_CHANNELS);
+  const canInvite = useCan(guildId, P.CREATE_INVITE);
+  const instanceId = useInstance().id;
+  const open = useDialogs((s) => s.open);
+  return (
+    <>
+      {canChannels && (
+        <>
+          <ContextMenuItem onSelect={() => open({ instanceId, kind: "create-channel", guildId, parentId: null })}>
+            Create Channel <PlusCircle className="ml-auto" />
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => open({ instanceId, kind: "create-channel", guildId, parentId: null, channelKind: "category" })}>
+            Create Category <FolderPlus className="ml-auto" />
+          </ContextMenuItem>
+        </>
+      )}
+      {canInvite && (
+        <ContextMenuItem onSelect={() => open({ instanceId, kind: "invite", guildId })}>
+          Invite People <UserPlus className="ml-auto" />
+        </ContextMenuItem>
+      )}
+      {!canChannels && !canInvite && <ContextMenuItem disabled>Nothing to do here</ContextMenuItem>}
+    </>
+  );
+}
 
 const TextChannelRow = memo(function TextChannelRow({ channel, thread }: { channel: Channel; thread?: boolean }) {
   const params = useParams({ strict: false }) as { channelId?: string };
@@ -100,6 +224,7 @@ const TextChannelRow = memo(function TextChannelRow({ channel, thread }: { chann
   return (
     <Menu items={<ChannelMenuItems channelId={channel.id} />}>
     <Link
+      draggable={false}
       to="/$instance/$guildId/$channelId"
       params={{ instance, guildId: channel.guildId, channelId: channel.id }}
       data-thread={thread || undefined}
@@ -130,6 +255,7 @@ const VoiceChannelRow = memo(function VoiceChannelRow({ channel, hidden }: { cha
     <div>
       <Menu items={<ChannelMenuItems channelId={channel.id} />}>
       <Link
+        draggable={false}
         to="/$instance/$guildId/$channelId"
         params={{ instance, guildId: channel.guildId, channelId: channel.id }}
         onClick={() => {

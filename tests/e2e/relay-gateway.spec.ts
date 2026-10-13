@@ -1,6 +1,6 @@
 import { type Browser, expect, test } from "@playwright/test";
 
-/** A branch with no public address of its own, reached through branchr-relay (relay-stack.sh). */
+/** A hub with no public address of its own, reached through branchr-relay (relay-stack.sh). */
 const BRANCH = "http://relayed.localhost:18800";
 
 async function user(browser: Browser, name: string) {
@@ -18,17 +18,17 @@ async function user(browser: Browser, name: string) {
   const page = await ctx.newPage();
   await page.goto("/#/login");
   await page.getByRole("button", { name: "Register" }).click();
-  await page.getByLabel("Branch", { exact: true }).fill(BRANCH);
+  await page.getByLabel("Hub", { exact: true }).fill(BRANCH);
   await page.getByLabel("Username").fill(`${name}_${Date.now().toString(36)}`);
   await page.getByLabel("Password").fill("correct horse battery");
   await page.getByRole("button", { name: "Continue" }).click();
   return page;
 }
 
-test("a branch behind the relay: chat over its WebSocket, voice over its UDP", async ({ browser }) => {
+test("a hub behind the relay: chat over its WebSocket, voice over its UDP", async ({ browser }) => {
   const a = await user(browser, "ra");
-  await a.getByRole("button", { name: "Add a Leaflet" }).click();
-  await a.getByPlaceholder("Leaflet name").fill("Relayed");
+  await a.getByRole("button", { name: "Add a Community" }).click();
+  await a.getByPlaceholder("Community name").fill("Relayed");
   await a.getByRole("button", { name: "Create" }).click();
   await expect(a.getByRole("heading", { name: "Welcome to #general!" })).toBeVisible();
   await a.getByRole("button", { name: "Relayed" }).click();
@@ -38,10 +38,10 @@ test("a branch behind the relay: chat over its WebSocket, voice over its UDP", a
   await a.keyboard.press("Escape");
 
   const b = await user(browser, "rb");
-  await b.getByRole("button", { name: "Add a Leaflet" }).click();
+  await b.getByRole("button", { name: "Add a Community" }).click();
   await b.getByRole("tab", { name: "Join" }).click();
   await b.getByPlaceholder("Invite code or link").fill(code);
-  await b.getByRole("button", { name: "Join Leaflet" }).click();
+  await b.getByRole("button", { name: "Join Community" }).click();
   await expect(b.getByRole("heading", { name: "Welcome to #general!" })).toBeVisible();
 
   await a.getByPlaceholder("Message #general").fill("through the gateway");

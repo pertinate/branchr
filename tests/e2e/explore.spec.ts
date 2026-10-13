@@ -10,7 +10,7 @@ test("explore: list a server, find it by search and tag, join it, unlist it", as
   const alice = await register(browser, "exp_a");
   await createServer(alice, name);
   await alice.getByRole("button", { name }).click();
-  await alice.getByRole("menuitem", { name: "Leaflet Settings" }).click();
+  await alice.getByRole("menuitem", { name: "Community Settings" }).click();
   await alice.getByLabel("Description").fill("A quiet place to hang out");
   await alice.getByLabel("Show in Explore").click();
   await alice.getByLabel("Explore tags").fill("Chill, Testing");
@@ -22,7 +22,7 @@ test("explore: list a server, find it by search and tag, join it, unlist it", as
   const bob = await register(browser, "exp_b");
   await bob.getByRole("link", { name: "Explore" }).click();
   await bob.getByRole("tab", { name: "Discover" }).click();
-  await bob.getByLabel("Search leaflets").fill(run);
+  await bob.getByLabel("Search communities").fill(run);
   const card = bob.getByTestId("explore-card").filter({ hasText: name });
   await expect(card).toBeVisible({ timeout: 20_000 });
   await expect(card).toContainText("A quiet place to hang out");
@@ -33,25 +33,25 @@ test("explore: list a server, find it by search and tag, join it, unlist it", as
   await expect(bob.getByRole("link", { name })).toBeVisible();
   // Joined: it's under Your Servers, and Discover offers to open it.
   await bob.getByRole("link", { name: "Explore" }).click();
-  await bob.getByLabel("Search leaflets").fill(run);
+  await bob.getByLabel("Search communities").fill(run);
   await expect(bob.getByTestId("guild-card").filter({ hasText: name })).toBeVisible();
   await bob.getByRole("tab", { name: "Discover" }).click();
   await expect(bob.getByRole("button", { name: `Open ${name}` })).toBeVisible();
 
   // Unlisted: it's gone from Explore.
   await alice.getByRole("button", { name }).click();
-  await alice.getByRole("menuitem", { name: "Leaflet Settings" }).click();
+  await alice.getByRole("menuitem", { name: "Community Settings" }).click();
   await alice.getByLabel("Show in Explore").click();
   await alice.getByRole("button", { name: "Save Changes" }).click();
   await expect(alice.getByText("Saved")).toBeVisible();
   await bob.getByRole("link", { name: "Explore" }).click();
   await bob.getByRole("tab", { name: "Discover" }).click();
-  await bob.getByLabel("Search leaflets").fill(run);
+  await bob.getByLabel("Search communities").fill(run);
   await expect(async () => {
     // Another search in between, so coming back to this one fetches again.
-    await bob.getByLabel("Search leaflets").fill(`${run}x`);
+    await bob.getByLabel("Search communities").fill(`${run}x`);
     await bob.waitForTimeout(400);
-    await bob.getByLabel("Search leaflets").fill(run);
+    await bob.getByLabel("Search communities").fill(run);
     await expect(bob.getByTestId("explore-card").filter({ hasText: name })).toHaveCount(0, { timeout: 2000 });
   }).toPass({ timeout: 20_000 });
 });

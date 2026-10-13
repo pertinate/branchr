@@ -145,7 +145,7 @@ export default defineConfig({
           },
         ]
       : []),
-    // A branch reached only through branchr-relay (relay-gateway.spec).
+    // A hub reached only through branchr-relay (relay-gateway.spec).
     { command: "./relay-stack.sh", url: "http://127.0.0.1:18800/_relay/check?domain=relayed.localhost&connected", reuseExistingServer: true, timeout: 300_000 },
     {
       command: `pnpm --filter web dev --port ${webPort}`,

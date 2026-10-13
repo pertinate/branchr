@@ -7,7 +7,7 @@ export type DialogState = { instanceId: string } & (
   | { kind: "guild-settings"; guildId: string; tab: "overview" | "roles" | "emotes" | "bans" | "audit" | "webhooks" }
   | { kind: "ban"; guildId: string; userId: string }
   | { kind: "nickname"; guildId: string }
-  | { kind: "create-channel"; guildId: string; parentId: string | null }
+  | { kind: "create-channel"; guildId: string; parentId: string | null; channelKind?: "text" | "voice" | "category" }
   | { kind: "create-thread"; channelId: string; messageId?: string; suggested: string }
   | { kind: "edit-channel"; channelId: string }
   | { kind: "host-admin" }

@@ -44,9 +44,9 @@ export async function landAfterLogin(base: string, invite?: string): Promise<Lan
  */
 export async function loginWithBranchr(base: string, invite?: string, opts: { background?: boolean } = {}): Promise<Landing | null> {
   const info = await instanceInfo(base);
-  if (info.authMode === "local" || !info.branchrIdUrl) throw new Error("This branch doesn't accept branchr accounts");
-  if (info.branchrIdUrl.replace(/\/$/, "") !== ID_URL) throw new Error(`This branch uses a different branchr (${info.branchrIdUrl})`);
-  if (!info.instanceId) throw new Error("This branch is still connecting to branchr. Try again in a moment.");
+  if (info.authMode === "local" || !info.branchrIdUrl) throw new Error("This hub doesn't accept branchr accounts");
+  if (info.branchrIdUrl.replace(/\/$/, "") !== ID_URL) throw new Error(`This hub uses a different branchr (${info.branchrIdUrl})`);
+  if (!info.instanceId) throw new Error("This hub is still connecting to branchr. Try again in a moment.");
   if (!useBranchrId.getState().refreshToken) {
     if (opts.background) return null;
     localStorage.setItem(CONTINUE_KEY, JSON.stringify({ base, invite }));
@@ -61,7 +61,7 @@ export async function loginWithBranchr(base: string, invite?: string, opts: { ba
   });
   if (!r.ok) {
     const body = await r.json().catch(() => ({}));
-    throw new Error(r.status === 403 ? "This branch isn't taking new members" : (body.error ?? `login failed (${r.status})`));
+    throw new Error(r.status === 403 ? "This hub isn't taking new members" : (body.error ?? `login failed (${r.status})`));
   }
   const auth = (await r.json()) as AuthResponse;
   if (opts.background) useSessions.getState().add(base, auth.token, auth.user);
@@ -88,7 +88,7 @@ export async function continueServerLogin(): Promise<Landing | null> {
 export async function linkToBranchr() {
   const { serverUrl, token } = useAuth.getState();
   const info = await instanceInfo(serverUrl);
-  if (!info.instanceId) throw new Error("This branch isn't connected to branchr");
+  if (!info.instanceId) throw new Error("This hub isn't connected to branchr");
   const pass = await instancePass(info.instanceId);
   const r = await fetch(`${serverUrl}/api/auth/link`, {
     method: "POST",

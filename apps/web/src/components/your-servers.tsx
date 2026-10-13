@@ -49,7 +49,7 @@ function HostSection({ query }: { query: string }) {
         <HostActions inst={inst} />
       </header>
       {order.length === 0 ? (
-        <p className="text-sm text-muted-foreground">{query ? "No leaflets here match." : "No leaflets on this branch yet."}</p>
+        <p className="text-sm text-muted-foreground">{query ? "No communities here match." : "No communities on this hub yet."}</p>
       ) : (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
           {order.map((gid) => (
@@ -69,7 +69,7 @@ function HostActions({ inst }: { inst: Instance }) {
     <div className="flex gap-2">
       {owner && (
         <Button size="sm" variant="secondary" onClick={() => useDialogs.getState().open({ instanceId: inst.id, kind: "host-admin" })}>
-          <Settings /> Manage Branch
+          <Settings /> Manage Hub
         </Button>
       )}
       <Button size="sm" variant="secondary" onClick={() => void copy(inst.url, "Copied address")}>
@@ -80,7 +80,7 @@ function HostActions({ inst }: { inst: Instance }) {
         variant="destructive"
         aria-label={`Log Out of ${host}`}
         onClick={() => {
-          if (!confirm(`Log out of ${host}? Your other branches stay connected.`)) return;
+          if (!confirm(`Log out of ${host}? Your other hubs stay connected.`)) return;
           forgetHost(inst.url);
           void inst.api("POST", "/auth/logout").catch(() => {});
           inst.auth.getState().logout();

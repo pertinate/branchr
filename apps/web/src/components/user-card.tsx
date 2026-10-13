@@ -114,7 +114,7 @@ function UserCard({ guildId, user }: { guildId?: string; user: User }) {
           </div>
         )}
         {!self && !branchr && (
-          <p className="mt-4 text-xs text-muted-foreground">Uses a password account on this branch, so they can't be added as a friend.</p>
+          <p className="mt-4 text-xs text-muted-foreground">Uses a password account on this hub, so they can't be added as a friend.</p>
         )}
       </div>
     </>

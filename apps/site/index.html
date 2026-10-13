@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>branchr: chat, voice and streaming you run yourself</title>
+    <meta name="description" content="Self-hostable chat, voice and uncapped low-latency streaming. Run your own hub; sign in with Discord." />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <script>
+      // Links from before the app moved to /app/ (invites, sign-in returns) carry on there.
+      if (location.hash.startsWith("#/")) location.replace("/app/" + location.search + location.hash);
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

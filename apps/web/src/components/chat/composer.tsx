@@ -1,5 +1,5 @@
 import type { Attachment, Emote, Role, User } from "@app/protocol";
-import { FileIcon, Paperclip, Smile, Timer, X } from "lucide-react";
+import { FileIcon, Paperclip, SendHorizontal, Smile, Timer, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
@@ -44,7 +44,7 @@ type Mentionable =
   | { kind: "everyone"; name: "everyone" | "here"; hint: string };
 const EVERYONE: Mentionable[] = [
   { kind: "everyone", name: "here", hint: "Notifies everyone online" },
-  { kind: "everyone", name: "everyone", hint: "Notifies everyone in this leaflet" },
+  { kind: "everyone", name: "everyone", hint: "Notifies everyone in this community" },
 ];
 type Suggestion =
   | { kind: "emote"; start: number; end: number; matches: Emote[] }
@@ -421,7 +421,7 @@ export function Composer({ channelId, guildId, replyTo, clearReply }: { channelI
         />
         <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
           <PopoverTrigger asChild>
-            <button className="py-3 text-muted-foreground hover:text-foreground">
+            <button className="py-3 text-muted-foreground hover:text-foreground" aria-label="Emotes and emoji">
               <Smile className="size-6" />
             </button>
           </PopoverTrigger>
@@ -436,6 +436,16 @@ export function Composer({ channelId, guildId, replyTo, clearReply }: { channelI
             />
           </PopoverContent>
         </Popover>
+        <button
+          type="button"
+          aria-label="Send"
+          title="Send (Enter)"
+          onClick={send}
+          disabled={(!value.trim() && !uploads.some((u) => u.attachment)) || uploading || (held && wait > 0)}
+          className="py-3 text-primary transition-opacity hover:opacity-80 disabled:text-muted-foreground disabled:opacity-40"
+        >
+          <SendHorizontal className="size-6" />
+        </button>
       </div>
       <TypingIndicator channelId={channelId} guildId={guildId} />
     </div>

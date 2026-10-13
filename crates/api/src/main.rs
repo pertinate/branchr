@@ -143,7 +143,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/guilds/{gid}/members/{uid}/roles/{rid}", put(roles::add_member_role).delete(roles::remove_member_role))
         .route("/guilds/{gid}/roles", post(roles::create).patch(roles::reorder))
         .route("/guilds/{gid}/roles/{rid}", patch(roles::update).delete(roles::delete))
-        .route("/guilds/{gid}/channels", post(channels::create))
+        .route("/guilds/{gid}/channels", post(channels::create).patch(channels::reorder))
         .route("/guilds/{gid}/invites", post(guilds::create_invite))
         .route("/guilds/{gid}/emotes", post(emotes::add))
         .route("/guilds/{gid}/emotes/import", post(emotes::import_set))

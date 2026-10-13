@@ -13,10 +13,12 @@ import { cn } from "@/lib/utils";
 export function CreateChannelDialog(props: {
   guildId: string;
   parentId: string | null;
+  /** What's picked to start with. */
+  kind?: ChannelKind;
   open: boolean;
   onOpenChange: (o: boolean) => void;
 }) {
-  const [kind, setKind] = useState<ChannelKind>("text");
+  const [kind, setKind] = useState<ChannelKind>(props.kind ?? "text");
   const [name, setName] = useState("");
   const navigate = useNavigate();
   // The rail can open this for an instance other than the one on screen.

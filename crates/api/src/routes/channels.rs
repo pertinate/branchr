@@ -305,3 +305,51 @@ pub async fn create_thread(State(state): State<AppState>, Auth(user): Auth, Path
     state.to_channel(gid, id, &ServerEvent::ChannelCreate(c.clone())).await;
     Ok(Json(c))
 }
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Placement {
+    id: Id,
+    position: i32,
+    /// The category it's in (none at the top); categories themselves have none.
+    parent_id: Option<Id>,
+}
+
+/// Reorders channels and categories, and moves channels between categories, in one go
+/// (what a drag in the channel list sends).
+pub async fn reorder(State(state): State<AppState>, Auth(user): Auth, Path(gid): Path<Id>, Json(body): Json<Vec<Placement>>) -> AppResult<axum::http::StatusCode> {
+    require_perm(&state, gid, user, perms::MANAGE_CHANNELS).await?;
+    if body.is_empty() || body.len() > 500 {
+        return Err(bad("send 1-500 placements"));
+    }
+    let all: std::collections::HashMap<Id, Channel> = db::channels(&state.db, gid).await?.into_iter().map(|c| (c.id, c)).collect();
+    for p in &body {
+        let c = all.get(&p.id).ok_or_else(|| bad("unknown channel"))?;
+        match c.kind {
+            ChannelKind::Thread => return Err(bad("threads stay with their channel")),
+            ChannelKind::Category if p.parent_id.is_some() => return Err(bad("categories can't be nested")),
+            _ => {}
+        }
+        if let Some(parent) = p.parent_id
+            && all.get(&parent).is_none_or(|c| c.kind != ChannelKind::Category)
+        {
+            return Err(bad("channels go in categories"));
+        }
+    }
+    let mut tx = state.db.begin().await?;
+    for p in &body {
+        sqlx::query("UPDATE channels SET position = $1, parent_id = $2 WHERE id = $3 AND guild_id = $4")
+            .bind(p.position)
+            .bind(p.parent_id.map(|i| i.0))
+            .bind(p.id.0)
+            .bind(gid.0)
+            .execute(&mut *tx)
+            .await?;
+    }
+    tx.commit().await?;
+    for p in &body {
+        let c = db::channel(&state.db, p.id).await?;
+        state.to_channel(gid, p.id, &ServerEvent::ChannelUpdate(c)).await;
+    }
+    Ok(axum::http::StatusCode::NO_CONTENT)
+}

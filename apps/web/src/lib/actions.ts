@@ -90,7 +90,7 @@ export async function kick(inst: Instance, guildId: string, userId: string) {
   const s = inst.app.getState();
   const m = s.members[guildId]?.[userId];
   const name = m?.nick ?? m?.user.displayName ?? "this member";
-  if (!confirm(`Kick ${name} from ${s.guilds[guildId]?.name ?? "the leaflet"}? They can rejoin with an invite.`)) return;
+  if (!confirm(`Kick ${name} from ${s.guilds[guildId]?.name ?? "the community"}? They can rejoin with an invite.`)) return;
   if (await attempt(() => inst.api("DELETE", `/guilds/${guildId}/members/${userId}`))) toast.success(`Kicked ${name}`);
 }
 

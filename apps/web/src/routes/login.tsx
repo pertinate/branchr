@@ -102,7 +102,7 @@ function Login() {
     <div className="grid h-full place-items-center bg-[radial-gradient(ellipse_at_top,_var(--primary)_0%,_transparent_60%)]">
       <form onSubmit={submit} className="w-full max-w-md space-y-4 rounded-lg bg-background p-8 shadow-2xl">
         <div className="text-center">
-          <h1 className="text-2xl font-semibold">{adding ? "Connect another branch" : mode === "login" ? "Welcome back!" : "Create an account"}</h1>
+          <h1 className="text-2xl font-semibold">{adding ? "Connect another hub" : mode === "login" ? "Welcome back!" : "Create an account"}</h1>
           <p className="text-sm text-muted-foreground">
             {adding
               ? "Log in to another self-hosted branchr. You stay connected to the others."
@@ -112,7 +112,7 @@ function Login() {
           </p>
         </div>
         <div className="space-y-2">
-          <Label htmlFor="server" className="text-xs font-bold uppercase text-muted-foreground">Branch</Label>
+          <Label htmlFor="server" className="text-xs font-bold uppercase text-muted-foreground">Hub</Label>
           <Input id="server" value={server} onChange={(e) => setServer(e.target.value)} placeholder="https://chat.example.com" />
         </div>
         {branchr && (

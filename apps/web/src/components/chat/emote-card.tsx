@@ -87,7 +87,7 @@ export function EmoteCard() {
             <GuildBadge guild={guild} className="size-8 text-xs" />
             <div className="min-w-0">
               <div className="truncate text-sm font-semibold">{guild.name}</div>
-              <div className="text-xs text-muted-foreground">{guild.id === current ? "This leaflet" : "You're a member"}</div>
+              <div className="text-xs text-muted-foreground">{guild.id === current ? "This community" : "You're a member"}</div>
             </div>
           </Link>
         ) : (
@@ -95,7 +95,7 @@ export function EmoteCard() {
             <span className="grid size-8 place-items-center rounded bg-muted">
               <Lock className="size-4" />
             </span>
-            A leaflet you're not in
+            A community you're not in
           </div>
         )}
       </div>

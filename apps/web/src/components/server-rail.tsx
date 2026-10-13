@@ -33,7 +33,7 @@ export function parseInvite(input: string): { code: string; server: string | nul
 export function ServerRail() {
   const [open, setOpen] = useState(false);
   return (
-    <nav aria-label="Leaflets" className="relative flex w-[72px] shrink-0 flex-col items-center py-3">
+    <nav aria-label="Communities" className="relative flex w-[72px] shrink-0 flex-col items-center py-3">
       <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-2 overflow-y-auto pb-3">
         <HomeButton />
         <ExploreButton />
@@ -44,13 +44,13 @@ export function ServerRail() {
           <TooltipTrigger asChild>
             <button
               onClick={() => setOpen(true)}
-              aria-label="Add a Leaflet"
+              aria-label="Add a Community"
               className="grid size-12 shrink-0 place-items-center rounded-3xl bg-background text-online transition-all hover:rounded-2xl hover:bg-online hover:text-white"
             >
               <Plus />
             </button>
           </TooltipTrigger>
-          <TooltipContent side="right">Add a Leaflet</TooltipContent>
+          <TooltipContent side="right">Add a Community</TooltipContent>
         </Tooltip>
       </div>
       <UserPanel />
@@ -128,7 +128,7 @@ function AddServerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
   const picker =
     ids.length > 1 && on ? (
       <Select value={on.id} onValueChange={setTarget}>
-        <SelectTrigger className="w-full" aria-label="Branch">
+        <SelectTrigger className="w-full" aria-label="Hub">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -145,8 +145,8 @@ function AddServerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Add a leaflet</DialogTitle>
-          <DialogDescription>Create your own, join one with an invite, or connect to another branch.</DialogDescription>
+          <DialogTitle>Add a community</DialogTitle>
+          <DialogDescription>Create your own, join one with an invite, or connect to another hub.</DialogDescription>
         </DialogHeader>
         <Tabs defaultValue="create">
           <TabsList className="w-full">
@@ -157,7 +157,7 @@ function AddServerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
           <TabsContent value="create">
             <form onSubmit={create} className="space-y-3 pt-2">
               {picker}
-              <Input autoFocus placeholder="Leaflet name" value={name} onChange={(e) => setName(e.target.value)} required maxLength={100} />
+              <Input autoFocus placeholder="Community name" value={name} onChange={(e) => setName(e.target.value)} required maxLength={100} />
               <Button type="submit" className="w-full" disabled={busy || !name.trim()}>Create</Button>
             </form>
           </TabsContent>
@@ -165,13 +165,13 @@ function AddServerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
             <form onSubmit={join} className="space-y-3 pt-2">
               {!parseInvite(invite).server && picker}
               <Input placeholder="Invite code or link" value={invite} onChange={(e) => setInvite(e.target.value)} required />
-              <Button type="submit" className="w-full" disabled={busy || !invite.trim()}>Join Leaflet</Button>
+              <Button type="submit" className="w-full" disabled={busy || !invite.trim()}>Join Community</Button>
             </form>
           </TabsContent>
           <TabsContent value="connect">
             <form onSubmit={connect} className="space-y-3 pt-2">
               <p className="text-sm text-muted-foreground">Another self-hosted branchr, alongside the ones you're on now.</p>
-              <Input placeholder="chat.example.com" value={address} onChange={(e) => setAddress(e.target.value)} aria-label="Branch address" required />
+              <Input placeholder="chat.example.com" value={address} onChange={(e) => setAddress(e.target.value)} aria-label="Hub address" required />
               <Button type="submit" className="w-full" disabled={!address.trim()}>Continue</Button>
             </form>
           </TabsContent>

@@ -62,7 +62,7 @@ function DialogFor({ dialog, close }: { dialog: DialogState; close: () => void }
     case "ban":
       return <BanDialog guildId={dialog.guildId} userId={dialog.userId} onClose={close} />;
     case "create-channel":
-      return <CreateChannelDialog guildId={dialog.guildId} parentId={dialog.parentId} open onOpenChange={(o) => !o && close()} />;
+      return <CreateChannelDialog guildId={dialog.guildId} parentId={dialog.parentId} kind={dialog.channelKind} open onOpenChange={(o) => !o && close()} />;
     case "edit-channel":
       return <EditChannelDialog channelId={dialog.channelId} onClose={close} />;
     case "create-thread":
@@ -145,7 +145,7 @@ function InviteDialog({ guildId, onClose }: { guildId: string; onClose: () => vo
         </div>
         {vanity && (
           <p className="text-sm text-muted-foreground">
-            Or share the branch's own link:{" "}
+            Or share the hub's own link:{" "}
             <button className="font-mono text-primary hover:underline" onClick={() => void copy(vanity, "Copied invite link")}>
               {guild!.vanityCode}
             </button>

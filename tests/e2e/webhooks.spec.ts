@@ -11,7 +11,7 @@ test("webhooks post into a channel by URL; reset and delete revoke it", async ({
   await joinServer(bob, code);
 
   await alice.getByRole("button", { name: "Hooks" }).click();
-  await alice.getByRole("menuitem", { name: "Leaflet Settings" }).click();
+  await alice.getByRole("menuitem", { name: "Community Settings" }).click();
   await alice.getByRole("tab", { name: "Webhooks" }).click();
   await alice.getByLabel("Webhook name").fill("Deploy bot");
   await alice.getByRole("button", { name: "New Webhook" }).click();

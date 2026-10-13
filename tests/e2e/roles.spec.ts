@@ -22,12 +22,12 @@ test("roles: a moderator role can delete others' messages and is listed separate
   await expect(item(bob, "Delete Message")).toHaveCount(0);
   await bob.keyboard.press("Escape");
   await bob.getByRole("button", { name: "Ranks" }).click();
-  await expect(bob.getByRole("menuitem", { name: "Leaflet Settings" })).toHaveCount(0);
+  await expect(bob.getByRole("menuitem", { name: "Community Settings" })).toHaveCount(0);
   await bob.keyboard.press("Escape");
 
   // Alice makes a Mods role that can manage messages, shown separately, in a colour.
   await alice.getByRole("button", { name: "Ranks" }).click();
-  await alice.getByRole("menuitem", { name: "Leaflet Settings" }).click();
+  await alice.getByRole("menuitem", { name: "Community Settings" }).click();
   await alice.getByRole("tab", { name: "Roles" }).click();
   await alice.getByRole("button", { name: "Create Role" }).click();
   const editor = alice.getByTestId("role-editor");
