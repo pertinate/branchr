@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import type { Status } from "@app/protocol";
 
 import { type Instance, instances } from "@/lib/instances";
-import { useMyStatus } from "@/stores/ui";
+import { shownStatus, useMyStatus } from "@/stores/ui";
 
 export async function copy(text: string, what = "Copied") {
   try {
@@ -99,7 +99,13 @@ export async function kick(inst: Instance, guildId: string, userId: string) {
 export function setStatus(status: Status, custom = useMyStatus.getState().custom) {
   custom = custom.trim();
   useMyStatus.setState({ status, custom });
-  for (const i of instances()) i.gateway.send({ op: "set_status", d: { status, custom: custom || null } });
+  sendStatus();
+}
+
+/** Tells every instance what we show now. */
+export function sendStatus() {
+  const s = useMyStatus.getState();
+  for (const i of instances()) i.gateway.send({ op: "set_status", d: { status: shownStatus(s), custom: s.custom || null } });
 }
 
 export const setCustomStatus = (custom: string) => setStatus(useMyStatus.getState().status, custom);

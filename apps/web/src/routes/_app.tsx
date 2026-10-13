@@ -6,6 +6,7 @@ import { GlobalDialogs } from "@/components/global-dialogs";
 import { IncomingCall } from "@/components/home/incoming-call";
 import { ServerRail } from "@/components/server-rail";
 import { AudioRenderer } from "@/components/voice/audio-renderer";
+import { startAway } from "@/lib/away";
 import { syncHosts } from "@/lib/host-sync";
 import { startInstances, useSessions } from "@/lib/instances";
 import { startNotifications } from "@/lib/notify";
@@ -27,8 +28,10 @@ function AppLayout() {
     const stopInstances = startInstances();
     const stopNotifications = startNotifications();
     const stopSocial = startSocial();
+    const stopAway = startAway();
     void syncHosts();
     return () => {
+      stopAway();
       stopNotifications();
       stopInstances();
       stopSocial();

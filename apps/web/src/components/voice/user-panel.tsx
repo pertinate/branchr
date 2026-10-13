@@ -15,7 +15,7 @@ import { dmTitle, useSocial } from "@/lib/social";
 import { ALL_PERMS } from "@app/protocol";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/stores/app";
-import { useMyStatus } from "@/stores/ui";
+import { shownStatus, useMyStatus } from "@/stores/ui";
 import { useVoice } from "@/stores/voice";
 
 function IconButton({ label, onClick, active, danger, children }: { label: string; onClick: () => void; active?: boolean; danger?: boolean; children: React.ReactNode }) {
@@ -40,7 +40,7 @@ function IconButton({ label, onClick, active, danger, children }: { label: strin
 
 export function UserPanel() {
   const me = useApp((s) => s.me);
-  const status = useMyStatus((s) => s.status);
+  const status = useMyStatus(shownStatus);
   const custom = useMyStatus((s) => s.custom);
   const v = useVoice();
   // Voice can be on another instance than the one on screen; name it from there.

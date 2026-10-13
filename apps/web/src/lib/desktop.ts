@@ -17,6 +17,8 @@ export interface DesktopBridge {
   setBadge: (count: number) => void;
   notify: (title: string, body: string) => void;
   window: { minimize: () => void; maximize: () => void; close: () => void };
+  /** Seconds since any input on the system (absent in older builds). */
+  idleSeconds?: () => Promise<number>;
   gpuInfo: () => Promise<{ hwEncode: string[]; hwDecode: string[]; features: Record<string, string> }>;
   /** `branchr://auth/callback` links from finishing sign-in in the browser. */
   auth?: {

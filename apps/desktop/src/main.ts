@@ -12,6 +12,7 @@ import {
   desktopCapturer,
   ipcMain,
   nativeImage,
+  powerMonitor,
   session,
   shell,
 } from "electron";
@@ -240,6 +241,8 @@ function setupIpc() {
     else if (action === "maximize") (win.isMaximized() ? win.unmaximize() : win.maximize());
     else win.close();
   });
+  // Seconds since any input on the system (not only this window), for going idle.
+  ipcMain.handle("desktop:idle-seconds", () => powerMonitor.getSystemIdleTime());
   ipcMain.handle("desktop:audio-available", () => venmic.available());
   ipcMain.handle("desktop:audio-list", () => venmic.list());
   ipcMain.handle("desktop:audio-start", (_e, appName: string | null) => venmic.start(appName));

@@ -26,7 +26,12 @@ export const useDialogs = create<{ dialog: DialogState | null; open: (d: DialogS
  * The status you chose and your custom status, the same on every hub. Kept on this device
  * and sent when connecting, so a reload or reconnect doesn't reset them.
  */
-export const useMyStatus = create<{ status: Status; custom: string }>()(persist(() => ({ status: "online" as Status, custom: "" }), { name: "my-status" }));
+export const useMyStatus = create<{ status: Status; custom: string; away: boolean }>()(
+  persist(() => ({ status: "online" as Status, custom: "", away: false as boolean }), { name: "my-status", partialize: ({ status, custom }) => ({ status, custom }) }),
+);
+
+/** What others see: online turns idle while you're away. */
+export const shownStatus = (s: { status: Status; away: boolean }): Status => (s.away && s.status === "online" ? "idle" : s.status);
 
 /** Per-device UI preferences. */
 export const usePrefs = create<{ devMode: boolean; set: (p: Partial<{ devMode: boolean }>) => void }>()(

@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld("desktop", {
     close: () => ipcRenderer.send("desktop:window", "close"),
   },
   gpuInfo: () => ipcRenderer.invoke("desktop:gpu-info"),
+  idleSeconds: () => ipcRenderer.invoke("desktop:idle-seconds"),
   auth: {
     onCallback: (cb: (url: string) => void) => ipcRenderer.on("desktop:auth-callback", (_e, url: string) => cb(url)),
     pending: () => ipcRenderer.invoke("desktop:auth-pending"),

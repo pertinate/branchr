@@ -34,3 +34,24 @@ test("custom status and Do Not Disturb show to others and survive a reload", asy
   await alice.getByRole("button", { name: "Clear" }).click();
   await expect(custom).toHaveCount(0);
 });
+
+test("going idle after ten minutes away, and back on input", async ({ browser }) => {
+  const alice = await register(browser, "away_a");
+  const code = await createServer(alice, "Away");
+  const bob = await register(browser, "away_b");
+  await joinServer(bob, code);
+  // Alice's clock is ours to move.
+  await alice.clock.install();
+  await alice.reload();
+  await expect(alice.getByPlaceholder("Message #general")).toBeVisible();
+  // Bob's panel, and both in the member list.
+  await expect(bob.locator('[data-status="online"]')).toHaveCount(3);
+
+  await alice.clock.fastForward("11:00");
+  await expect(bob.locator('[data-status="idle"]')).toHaveCount(1);
+  await expect(alice.getByRole("button", { name: "Your account", exact: true }).locator('[data-status="idle"]')).toBeVisible();
+
+  await alice.mouse.move(200, 200);
+  await alice.mouse.move(300, 300);
+  await expect(bob.locator('[data-status="idle"]')).toHaveCount(0);
+});
