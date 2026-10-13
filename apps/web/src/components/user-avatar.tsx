@@ -51,6 +51,7 @@ export const UserAvatar = memo(function UserAvatar({
       </div>
       {status && (
         <span
+          data-status={status}
           className={cn("absolute -right-0.5 -bottom-0.5 rounded-full border-[3px] border-sidebar", statusColor[status])}
           style={{ width: dot, height: dot }}
         />

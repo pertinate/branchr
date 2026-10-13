@@ -43,6 +43,7 @@ function UserCard({ guildId, user }: { guildId?: string; user: User }) {
   const myAccount = useSocial((s) => s.me?.id);
   const relation = useSocial((s) => (user.globalId ? s.relationships[user.globalId]?.kind : undefined));
   const live = useApp((s) => s.members[guildId ?? ""]?.[user.id]?.user) ?? user;
+  const custom = useApp((s) => s.customStatus[user.id]);
   const self = user.id === me;
   const branchr = !!live.globalId && live.globalId !== myAccount;
 
@@ -74,6 +75,7 @@ function UserCard({ guildId, user }: { guildId?: string; user: User }) {
         <div className="text-sm text-muted-foreground">
           @{live.username} · {hubName}
         </div>
+        {custom && <div className="mt-2 text-sm break-words">{custom}</div>}
         {member && (
           <div className="mt-3 text-xs">
             <div className="font-semibold text-muted-foreground uppercase">Member since</div>

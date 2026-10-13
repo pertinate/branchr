@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import type { Status } from "@app/protocol";
 
 import { type Instance, instances } from "@/lib/instances";
+import { useMyStatus } from "@/stores/ui";
 
 export async function copy(text: string, what = "Copied") {
   try {
@@ -94,7 +95,11 @@ export async function kick(inst: Instance, guildId: string, userId: string) {
   if (await attempt(() => inst.api("DELETE", `/guilds/${guildId}/members/${userId}`))) toast.success(`Kicked ${name}`);
 }
 
-/** Your status is the same everywhere: set it on every instance. */
-export function setStatus(status: Status) {
-  for (const i of instances()) i.gateway.send({ op: "set_status", d: { status } });
+/** Your status is the same everywhere: set it on every instance (and remember it). */
+export function setStatus(status: Status, custom = useMyStatus.getState().custom) {
+  custom = custom.trim();
+  useMyStatus.setState({ status, custom });
+  for (const i of instances()) i.gateway.send({ op: "set_status", d: { status, custom: custom || null } });
 }
+
+export const setCustomStatus = (custom: string) => setStatus(useMyStatus.getState().status, custom);

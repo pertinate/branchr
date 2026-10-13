@@ -15,6 +15,7 @@ import { dmTitle, useSocial } from "@/lib/social";
 import { ALL_PERMS } from "@app/protocol";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/stores/app";
+import { useMyStatus } from "@/stores/ui";
 import { useVoice } from "@/stores/voice";
 
 function IconButton({ label, onClick, active, danger, children }: { label: string; onClick: () => void; active?: boolean; danger?: boolean; children: React.ReactNode }) {
@@ -39,7 +40,8 @@ function IconButton({ label, onClick, active, danger, children }: { label: strin
 
 export function UserPanel() {
   const me = useApp((s) => s.me);
-  const status = useApp((s) => (s.me ? (s.presences[s.me.id] ?? "online") : "offline"));
+  const status = useMyStatus((s) => s.status);
+  const custom = useMyStatus((s) => s.custom);
   const v = useVoice();
   // Voice can be on another instance than the one on screen; name it from there.
   const here = useInstance();
@@ -165,7 +167,7 @@ export function UserPanel() {
             <>
               <div className="min-w-0 flex-1 leading-tight">
                 <div className="truncate text-sm font-semibold">{me.displayName}</div>
-                <div className="truncate text-xs text-muted-foreground">@{me.username}</div>
+                <div className="truncate text-xs text-muted-foreground">{custom || `@${me.username}`}</div>
               </div>
               <div className="flex shrink-0 items-center gap-0.5 pr-2">
                 {inVoice && (

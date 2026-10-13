@@ -14,11 +14,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { copy } from "@/lib/actions";
+import { copy, setCustomStatus } from "@/lib/actions";
 import { InstanceProvider, instance, useInstance } from "@/lib/instances";
 import { P, useChannelCan } from "@/lib/perms";
 import { useApp } from "@/stores/app";
-import { type DialogState, useDialogs } from "@/stores/ui";
+import { type DialogState, useDialogs, useMyStatus } from "@/stores/ui";
 
 const SLOWMODES: [number, string][] = [
   [0, "Off"],
@@ -69,6 +69,8 @@ function DialogFor({ dialog, close }: { dialog: DialogState; close: () => void }
       return <CreateThreadDialog channelId={dialog.channelId} messageId={dialog.messageId} suggested={dialog.suggested} onClose={close} />;
     case "host-admin":
       return <HostAdminDialog onClose={close} />;
+    case "custom-status":
+      return <CustomStatusDialog onClose={close} />;
   }
 }
 
@@ -151,6 +153,47 @@ function InviteDialog({ guildId, onClose }: { guildId: string; onClose: () => vo
             </button>
           </p>
         )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Your custom status: shown under your name on every hub. */
+function CustomStatusDialog({ onClose }: { onClose: () => void }) {
+  const [text, setText] = useState(useMyStatus.getState().custom);
+  const had = useMyStatus.getState().custom !== "";
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Custom Status</DialogTitle>
+          <DialogDescription>Shown under your name, on every hub you're on.</DialogDescription>
+        </DialogHeader>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            setCustomStatus(text);
+            onClose();
+          }}
+          className="space-y-3"
+        >
+          <Input autoFocus value={text} onChange={(e) => setText(e.target.value)} maxLength={128} placeholder="What's up?" aria-label="Custom status" />
+          <div className="flex justify-end gap-2">
+            {had && (
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setCustomStatus("");
+                  onClose();
+                }}
+              >
+                Clear
+              </Button>
+            )}
+            <Button type="submit">Save</Button>
+          </div>
+        </form>
       </DialogContent>
     </Dialog>
   );

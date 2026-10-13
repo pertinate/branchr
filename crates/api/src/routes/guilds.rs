@@ -403,9 +403,8 @@ pub async fn accept_invite(
         let m = db::member(&state.db, gid, user).await?;
         state.hub.to_guild(gid, &ServerEvent::MemberAdd(m));
         // Others need to see the newcomer as online.
-        let status = state.hub.status(user);
-        if status != Status::Offline {
-            state.hub.to_guild(gid, &ServerEvent::PresenceUpdate(Presence { user_id: user, status }));
+        if let Some(p) = state.hub.presence(user) {
+            state.hub.to_guild(gid, &ServerEvent::PresenceUpdate(p));
         }
     }
     let rg = ready_guild(&state, gid, user).await?;

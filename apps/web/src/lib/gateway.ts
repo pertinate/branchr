@@ -4,6 +4,7 @@ import { toast } from "sonner";
 
 import { gatewayUrl } from "@/lib/api";
 import { type Instance, activeInstance, instances } from "@/lib/instances";
+import { useMyStatus } from "@/stores/ui";
 
 type Listener = (ev: ServerEvent) => void;
 
@@ -62,7 +63,10 @@ export class Gateway {
       const ev = JSON.parse(e.data) as ServerEvent;
       switch (ev.t) {
         case "HELLO":
-          this.send({ op: "identify", d: { token } });
+          {
+            const { status, custom } = useMyStatus.getState();
+            this.send({ op: "identify", d: { token, status, custom: custom || null } });
+          }
           this.startHeartbeat(ev.d.heartbeatIntervalMs);
           return;
         case "HEARTBEAT_ACK":

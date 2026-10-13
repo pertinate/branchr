@@ -10,7 +10,15 @@ use crate::models::*;
 #[serde(tag = "op", content = "d", rename_all = "snake_case")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub enum ClientOp {
-    Identify { token: String },
+    /// `status` and `custom` are what the client last chose (kept on its side), so a
+    /// reconnect doesn't reset them.
+    Identify {
+        token: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        status: Option<Status>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        custom: Option<String>,
+    },
     Heartbeat,
     /// Join/leave/update voice. `channel_id: None` leaves voice.
     VoiceStateUpdate(VoiceStateUpdate),
@@ -18,7 +26,12 @@ pub enum ClientOp {
         #[serde(rename = "channelId")]
         channel_id: Id,
     },
-    SetStatus { status: Status },
+    /// Sets both: a missing `custom` clears it.
+    SetStatus {
+        status: Status,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        custom: Option<String>,
+    },
     /// Read a channel up to `message_id`; clears its mention count.
     Ack {
         #[serde(rename = "channelId")]

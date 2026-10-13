@@ -15,7 +15,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PicturePicker } from "@/components/picture-picker";
 import { MicTest } from "@/components/voice/mic-test";
-import { setStatus } from "@/lib/actions";
+import { setCustomStatus, setStatus } from "@/lib/actions";
 import { api } from "@/lib/api";
 import { type OwnedHost, claimServer, ownedHosts, releaseHost, transferHost, signOut, startSignIn, useBranchrId } from "@/lib/branchr-id";
 import { desktop } from "@/lib/desktop";
@@ -24,7 +24,7 @@ import { uploadPicture } from "@/lib/media";
 import { instanceInfo, linkToBranchr } from "@/lib/server-login";
 import { useApp } from "@/stores/app";
 import { useAuth } from "@/stores/auth";
-import { useDialogs, usePrefs } from "@/stores/ui";
+import { useDialogs, useMyStatus, usePrefs } from "@/stores/ui";
 import { useVoice, useVoiceSettings } from "@/stores/voice";
 import { type NoiseSuppression, noiseSuppressionModes } from "@/voice/mic";
 
@@ -62,7 +62,8 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
 
 function Account() {
   const me = useApp((s) => s.me)!;
-  const status = useApp((s) => s.presences[me.id] ?? "online");
+  const status = useMyStatus((s) => s.status);
+  const [custom, setCustom] = useState(useMyStatus.getState().custom);
   const [name, setName] = useState(me.displayName);
   const inst = useInstance();
   const applied = (u: User) => {
@@ -72,6 +73,7 @@ function Account() {
   const save = async () => {
     try {
       applied(await api<User>("PATCH", "/users/@me", { displayName: name }));
+      if (custom.trim() !== useMyStatus.getState().custom) setCustomStatus(custom);
       toast.success("Profile updated");
     } catch (e) {
       toast.error((e as Error).message);
@@ -108,6 +110,10 @@ function Account() {
             <SelectItem value="dnd">Do Not Disturb</SelectItem>
           </SelectContent>
         </Select>
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="custom-status">Custom status</Label>
+        <Input id="custom-status" value={custom} onChange={(e) => setCustom(e.target.value)} maxLength={128} placeholder="What's up?" />
       </div>
       <div className="flex gap-2">
         <Button onClick={save}>Save</Button>

@@ -28,6 +28,8 @@ export interface AppState {
   /** guild id -> user id -> member */
   members: Record<string, Record<string, Member>>;
   presences: Record<string, Status>;
+  /** user id -> their custom status, for those who set one */
+  customStatus: Record<string, string>;
   /** guild id -> user id -> voice state */
   voice: Record<string, Record<string, VoiceState>>;
   emotes: Record<string, Emote[]>;
@@ -80,7 +82,12 @@ function withGuild(s: AppState, rg: ReadyGuild): Partial<AppState> {
   const voice: Record<string, VoiceState> = {};
   for (const v of rg.voiceStates) voice[v.userId] = v;
   const presences = { ...s.presences };
-  for (const p of rg.presences) presences[p.userId] = p.status;
+  const customStatus = { ...s.customStatus };
+  for (const p of rg.presences) {
+    presences[p.userId] = p.status;
+    if (p.custom) customStatus[p.userId] = p.custom;
+    else delete customStatus[p.userId];
+  }
   return {
     guilds: { ...s.guilds, [gid]: rg.guild },
     guildOrder: s.guildOrder.includes(gid) ? s.guildOrder : [...s.guildOrder, gid],
@@ -90,6 +97,7 @@ function withGuild(s: AppState, rg: ReadyGuild): Partial<AppState> {
     emotes: { ...s.emotes, [gid]: rg.emotes },
     roles: { ...s.roles, [gid]: sortRoles(rg.roles) },
     presences,
+    customStatus,
   };
 }
 
@@ -123,6 +131,7 @@ export function createAppStore(inst: Instance) {
   channels: {},
   members: {},
   presences: {},
+  customStatus: {},
   voice: {},
   emotes: {},
   roles: {},
@@ -161,6 +170,7 @@ export function createAppStore(inst: Instance) {
           emotes: {},
           roles: {},
           presences: {},
+          customStatus: {},
           typing: {},
         };
         let acc: AppState = base;
@@ -242,7 +252,12 @@ export function createAppStore(inst: Instance) {
         set((s) => updateUserEverywhere(s, ev.d));
         return;
       case "PRESENCE_UPDATE":
-        set((s) => ({ presences: { ...s.presences, [ev.d.userId]: ev.d.status } }));
+        set((s) => {
+          const customStatus = { ...s.customStatus };
+          if (ev.d.custom) customStatus[ev.d.userId] = ev.d.custom;
+          else delete customStatus[ev.d.userId];
+          return { presences: { ...s.presences, [ev.d.userId]: ev.d.status }, customStatus };
+        });
         return;
       case "EMOTE_CREATE":
         set((s) => {

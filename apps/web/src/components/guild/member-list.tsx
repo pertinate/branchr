@@ -61,15 +61,25 @@ export function MemberList({ guildId }: { guildId: string }) {
 }
 
 const MemberRow = memo(function MemberRow({ member, status, owner, color }: { member: Member; status: Status; owner: boolean; color?: string }) {
+  const custom = useApp((s) => (status === "offline" ? undefined : s.customStatus[member.user.id]));
   return (
     <Menu items={<UserMenuItems guildId={member.guildId} userId={member.user.id} />}>
     <UserCardPopover guildId={member.guildId} user={member.user}>
     <div className={cn("flex cursor-pointer items-center gap-3 rounded px-2 py-1.5 hover:bg-sidebar-accent/60", status === "offline" && "opacity-40")}>
       <UserAvatar user={member.user} size={32} status={status === "offline" ? undefined : status} />
-      <span className="truncate text-[15px] font-medium text-sidebar-foreground" style={{ color }}>
-        {member.nick ?? member.user.displayName}
-      </span>
-      {owner && <span title="Community Owner" className="text-idle">♛</span>}
+      <div className="min-w-0 leading-tight">
+        <div className="flex items-center gap-1">
+          <span className="truncate text-[15px] font-medium text-sidebar-foreground" style={{ color }}>
+            {member.nick ?? member.user.displayName}
+          </span>
+          {owner && <span title="Community Owner" className="text-idle">♛</span>}
+        </div>
+        {custom && (
+          <div className="truncate text-xs text-muted-foreground" data-testid="custom-status">
+            {custom}
+          </div>
+        )}
+      </div>
     </div>
     </UserCardPopover>
     </Menu>

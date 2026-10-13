@@ -2,4 +2,8 @@
 import type { Id } from "./Id";
 import type { Status } from "./Status";
 
-export type Presence = { userId: Id, status: Status, };
+export type Presence = { userId: Id, status: Status, 
+/**
+ * Their custom status ("back at 5"), if set.
+ */
+custom?: string | null, };

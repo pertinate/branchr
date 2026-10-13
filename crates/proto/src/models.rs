@@ -247,6 +247,9 @@ wire! {
     pub struct Presence {
         pub user_id: Id,
         pub status: Status,
+        /// Their custom status ("back at 5"), if set.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub custom: Option<String>,
     }
 
     /// An emote found on a provider (not yet added to a guild).

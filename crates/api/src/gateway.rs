@@ -56,12 +56,12 @@ async fn run(mut ws: WebSocket, state: AppState) -> anyhow::Result<()> {
     send(&mut ws, &ServerEvent::Hello(Hello { heartbeat_interval_ms: HEARTBEAT_MS })).await?;
 
     // Identify must arrive promptly.
-    let user = loop {
+    let (user, shown) = loop {
         let msg = timeout(Duration::from_secs(15), ws.recv()).await?.ok_or_else(|| anyhow::anyhow!("closed"))??;
         if let WsMsg::Text(t) = msg {
-            if let Ok(ClientOp::Identify { token }) = serde_json::from_str::<ClientOp>(&t) {
+            if let Ok(ClientOp::Identify { token, status, custom }) = serde_json::from_str::<ClientOp>(&t) {
                 match crate::auth::user_for_token(&state, &token).await {
-                    Ok(Some(u)) => break u,
+                    Ok(Some(u)) => break (u, shown(status.unwrap_or(Status::Online), custom)),
                     _ => {
                         send(&mut ws, &ServerEvent::InvalidSession).await?;
                         return Ok(());
@@ -74,7 +74,7 @@ async fn run(mut ws: WebSocket, state: AppState) -> anyhow::Result<()> {
     let guild_ids = db::guild_ids_for_user(&state.db, user).await?;
     let (tx, mut rx) = mpsc::channel::<Utf8Bytes>(SESSION_QUEUE);
     // Register before building READY so no event can fall between snapshot and stream.
-    let (key, first) = state.hub.connect(user, &guild_ids, tx);
+    let (key, first) = state.hub.connect(user, &guild_ids, tx, shown.clone());
     let _guard = SessionGuard { state: state.clone(), key };
 
     let me = db::user(&state.db, user).await?;
@@ -85,8 +85,11 @@ async fn run(mut ws: WebSocket, state: AppState) -> anyhow::Result<()> {
     let ready = Ready { user: me, session_id: key.to_string(), guilds, max_upload_bytes: state.max_upload_bytes.load(std::sync::atomic::Ordering::Relaxed), read_states };
     send(&mut ws, &ServerEvent::Ready(ready)).await?;
 
-    if first {
-        broadcast_presence(&state, user, Status::Online, &guild_ids);
+    // Another session of theirs may have shown something else; the newest choice wins.
+    if first || state.hub.set_status(user, shown.0, shown.1) {
+        if let Some(p) = state.hub.presence(user) {
+            broadcast_presence(&state, p, &guild_ids);
+        }
     }
 
     let hb_timeout = Duration::from_millis(HEARTBEAT_MS as u64 * 2);
@@ -119,8 +122,18 @@ async fn run(mut ws: WebSocket, state: AppState) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn broadcast_presence(state: &AppState, user: Id, status: Status, guilds: &[Id]) {
-    let ev = ServerEvent::PresenceUpdate(Presence { user_id: user, status });
+/// What a session asked to show: never offline (that's for having no sessions), and a custom
+/// status trimmed to something sensible.
+fn shown(status: Status, custom: Option<String>) -> (Status, Option<String>) {
+    let status = if status == Status::Offline { Status::Idle } else { status };
+    let custom = custom.map(|c| c.trim().chars().take(CUSTOM_STATUS_MAX).collect::<String>()).filter(|c| !c.is_empty());
+    (status, custom)
+}
+
+const CUSTOM_STATUS_MAX: usize = 128;
+
+fn broadcast_presence(state: &AppState, p: Presence, guilds: &[Id]) {
+    let ev = ServerEvent::PresenceUpdate(p);
     for g in guilds {
         state.hub.to_guild(*g, &ev);
     }
@@ -147,7 +160,7 @@ fn end_session(state: &AppState, key: SessionKey) {
         hub.to_guild(r.guild_id, &ServerEvent::VoiceStateRemove(r));
     }
     if offline {
-        broadcast_presence(state, user, Status::Offline, &guilds);
+        broadcast_presence(state, Presence { user_id: user, status: Status::Offline, custom: None }, &guilds);
     }
 }
 
@@ -165,11 +178,12 @@ async fn handle_op(state: &AppState, key: SessionKey, user: Id, op: ClientOp) {
                 state.to_channel(guild, channel_id, &ServerEvent::TypingStart(TypingStart { channel_id, user_id: user })).await;
             }
         }
-        ClientOp::SetStatus { status } => {
-            let status = if status == Status::Offline { Status::Idle } else { status };
-            if state.hub.set_status(user, status) {
+        ClientOp::SetStatus { status, custom } => {
+            let (status, custom) = shown(status, custom);
+            if state.hub.set_status(user, status, custom) {
+                let Some(p) = state.hub.presence(user) else { return };
                 let guilds = db::guild_ids_for_user(&state.db, user).await.unwrap_or_default();
-                broadcast_presence(state, user, status, &guilds);
+                broadcast_presence(state, p, &guilds);
             }
         }
         ClientOp::VoiceStateUpdate(u) => voice_state_update(state, key, user, u).await,

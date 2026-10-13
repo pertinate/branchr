@@ -5,7 +5,7 @@
 import type { ReactNode } from "react";
 import type { Member, Status } from "@app/protocol";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { AtSign, Ban, Bell, CheckCheck, Copy, LogOut, Pencil, PhoneOff, PlusCircle, Settings, Shield, Smile, Trash2, UserMinus, UserPlus, Volume2 } from "lucide-react";
+import { AtSign, Ban, Bell, CheckCheck, Copy, LogOut, MessageSquareText, Pencil, PhoneOff, PlusCircle, Settings, Shield, Smile, Trash2, UserMinus, UserPlus, Volume2 } from "lucide-react";
 
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
@@ -31,7 +31,7 @@ import { useInstance } from "@/lib/instances";
 import { type NotifyLevel, notifyLevel, useChannelMuted, useGuildMuted, useMutes } from "@/lib/mutes";
 import { P, SETTINGS_PERMS, roleColor, topOf, useCan, useCanAny, useOutranks } from "@/lib/perms";
 import { useApp } from "@/stores/app";
-import { useDialogs, usePrefs } from "@/stores/ui";
+import { useDialogs, useMyStatus, usePrefs } from "@/stores/ui";
 import { useVoice, useVoiceSettings } from "@/stores/voice";
 
 /** Right-click `children` for `items`. `children` must take a ref (a DOM element or forwardRef). */
@@ -308,7 +308,8 @@ export function SelfMenuItems() {
   const instanceId = inst.id;
   const staff = useHostOwner(inst);
   const me = useApp((s) => s.me);
-  const status = useApp((s) => (s.me ? (s.presences[s.me.id] ?? "online") : "online"));
+  const status = useMyStatus((s) => s.status);
+  const custom = useMyStatus((s) => s.custom);
   const { guildId } = useParams({ strict: false }) as { guildId?: string };
   const open = useDialogs((s) => s.open);
   if (!me) return null;
@@ -325,6 +326,9 @@ export function SelfMenuItems() {
           </ContextMenuRadioGroup>
         </ContextMenuSubContent>
       </ContextMenuSub>
+      <ContextMenuItem onSelect={() => open({ instanceId, kind: "custom-status" })}>
+        {custom ? "Edit Custom Status" : "Set Custom Status"} <MessageSquareText className="ml-auto" />
+      </ContextMenuItem>
       {guildId && (
         <ContextMenuItem onSelect={() => open({ instanceId, kind: "nickname", guildId })}>
           Change Nickname <Pencil className="ml-auto" />

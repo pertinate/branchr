@@ -31,7 +31,8 @@ pub struct Hub {
     sessions: DashMap<SessionKey, Session>,
     guild_sessions: DashMap<Id, HashSet<SessionKey>>,
     user_sessions: DashMap<Id, HashSet<SessionKey>>,
-    status: DashMap<Id, Status>,
+    /// Status and custom status of everyone online.
+    status: DashMap<Id, (Status, Option<String>)>,
     /// guild -> user -> voice state
     voice: DashMap<Id, HashMap<Id, VoiceState>>,
     /// user -> (guild, owning session). A user is in at most one voice channel.
@@ -44,7 +45,8 @@ pub fn encode(ev: &ServerEvent) -> Utf8Bytes {
 
 impl Hub {
     /// Registers a session. Returns its key and whether this is the user's first live session.
-    pub fn connect(&self, user: Id, guilds: &[Id], tx: mpsc::Sender<Utf8Bytes>) -> (SessionKey, bool) {
+    /// A first session starts with `shown` (what the client last chose).
+    pub fn connect(&self, user: Id, guilds: &[Id], tx: mpsc::Sender<Utf8Bytes>, shown: (Status, Option<String>)) -> (SessionKey, bool) {
         let key = self.next.fetch_add(1, Ordering::Relaxed);
         for g in guilds {
             self.guild_sessions.entry(*g).or_default().insert(key);
@@ -55,7 +57,7 @@ impl Hub {
         let first = us.len() == 1;
         drop(us);
         if first {
-            self.status.insert(user, Status::Online);
+            self.status.insert(user, shown);
         }
         (key, first)
     }
@@ -188,13 +190,19 @@ impl Hub {
     }
 
     pub fn status(&self, user: Id) -> Status {
-        self.status.get(&user).map(|s| *s).unwrap_or(Status::Offline)
+        self.status.get(&user).map(|s| s.0).unwrap_or(Status::Offline)
     }
 
-    pub fn set_status(&self, user: Id, status: Status) -> bool {
+    /// What others see of `user`, if online.
+    pub fn presence(&self, user: Id) -> Option<Presence> {
+        self.status.get(&user).map(|s| Presence { user_id: user, status: s.0, custom: s.1.clone() })
+    }
+
+    /// Returns whether anything changed.
+    pub fn set_status(&self, user: Id, status: Status, custom: Option<String>) -> bool {
         match self.status.get_mut(&user) {
-            Some(mut s) if *s != status => {
-                *s = status;
+            Some(mut s) if s.0 != status || s.1 != custom => {
+                *s = (status, custom);
                 true
             }
             _ => false,
@@ -202,9 +210,7 @@ impl Hub {
     }
 
     pub fn presences(&self, users: impl Iterator<Item = Id>) -> Vec<Presence> {
-        users
-            .filter_map(|u| self.status.get(&u).map(|s| Presence { user_id: u, status: *s }))
-            .collect()
+        users.filter_map(|u| self.presence(u)).collect()
     }
 
     pub fn voice_states(&self, guild: Id) -> Vec<VoiceState> {
