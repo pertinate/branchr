@@ -5,6 +5,7 @@ import { memo, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 
+import { EventsRow } from "@/components/guild/events";
 import { GuildMenu } from "@/components/guild/guild-menu";
 import { MentionBadge } from "@/components/mention-badge";
 import { ChannelMenuItems, Menu, UserMenuItems } from "@/components/menus";
@@ -81,6 +82,7 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
     <aside className="flex w-60 shrink-0 flex-col bg-sidebar">
       <GuildMenu guildId={guildId} />
       <GuildBanner guildId={guildId} />
+      <EventsRow guildId={guildId} />
       <Menu items={<ChannelListMenuItems guildId={guildId} />}>
       <div className="flex-1 space-y-0.5 overflow-y-auto px-2 pb-2" data-testid="channel-list">
         {groups.list.map(({ cat, items }) => (

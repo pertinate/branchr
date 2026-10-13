@@ -35,7 +35,7 @@ use tower_http::services::{ServeDir, ServeFile};
 use tracing_subscriber::EnvFilter;
 
 use crate::config::Config;
-use crate::routes::{admin, attachments, bans, channels, emotes, guilds, messages, pictures, roles, search, users, webhooks};
+use crate::routes::{admin, attachments, bans, channels, emotes, events, guilds, messages, pictures, roles, search, users, webhooks};
 use crate::state::{AppState, State};
 
 #[tokio::main]
@@ -162,6 +162,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/channels/{cid}/pins", get(search::pins))
         .route("/channels/{cid}/pins/{mid}", put(search::pin).delete(search::unpin))
         .route("/guilds/{gid}/messages/search", get(search::search))
+        .route("/guilds/{gid}/events", get(events::list).post(events::create))
+        .route("/guilds/{gid}/events/{eid}", delete(events::delete))
+        .route("/guilds/{gid}/events/{eid}/interest", put(events::interested).delete(events::uninterested))
         .route("/channels/{cid}/messages/{mid}/reactions/{emoji}", put(messages::react).delete(messages::unreact))
         .route("/channels/{cid}/messages/{mid}/poll/{answer}", put(messages::vote).delete(messages::unvote))
         .route("/emotes/search", get(emotes::search))

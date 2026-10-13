@@ -83,6 +83,10 @@ pub enum ServerEvent {
     MessageUpdate(Message),
     MessageDelete(MessageRef),
 
+    GuildEventCreate(GuildEvent),
+    GuildEventDelete(GuildEventRef),
+    EventInterestAdd(EventInterest),
+    EventInterestRemove(EventInterest),
     PollVoteAdd(PollVoteEvent),
     PollVoteRemove(PollVoteEvent),
     ReactionAdd(ReactionEvent),
@@ -174,6 +178,23 @@ refs! {
     RoleRef { id, guild_id }
     VoiceStateRef { guild_id, user_id }
     TypingStart { channel_id, user_id }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct GuildEventRef {
+    pub guild_id: Id,
+    pub id: Id,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct EventInterest {
+    pub guild_id: Id,
+    pub event_id: Id,
+    pub user_id: Id,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

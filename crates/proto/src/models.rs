@@ -202,6 +202,25 @@ wire! {
         pub token: Option<String>,
     }
 
+    /// Something happening in a community, at a time: in one of its channels, or somewhere else.
+    pub struct GuildEvent {
+        pub id: Id,
+        pub guild_id: Id,
+        pub creator_id: Id,
+        pub name: String,
+        pub description: String,
+        /// Unix ms.
+        #[cfg_attr(feature = "ts", ts(type = "number"))]
+        pub start_at: i64,
+        #[cfg_attr(feature = "ts", ts(type = "number | null"))]
+        pub end_at: Option<i64>,
+        pub channel_id: Option<Id>,
+        pub location: Option<String>,
+        pub interested: u32,
+        /// Whether the requesting user is interested (REST only; gateway clients track their own).
+        pub me: bool,
+    }
+
     /// What a community notifies about: every message, only mentions (the default), or nothing.
     #[derive(Copy, Eq)]
     pub enum NotifyLevel {

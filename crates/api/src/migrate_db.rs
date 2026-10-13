@@ -37,6 +37,8 @@ const TABLES: &[&str] = &[
     "polls",
     "poll_votes",
     "notify_settings",
+    "guild_events",
+    "event_interest",
 ];
 
 pub async fn run(from: &str, to: &str) -> anyhow::Result<()> {

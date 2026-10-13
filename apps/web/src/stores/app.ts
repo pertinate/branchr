@@ -2,6 +2,7 @@ import type {
   Channel,
   Emote,
   Guild,
+  GuildEvent,
   Member,
   ReadyGuild,
   Role,
@@ -31,6 +32,9 @@ export interface AppState {
   presences: Record<string, Status>;
   /** user id -> their custom status, for those who set one */
   customStatus: Record<string, string>;
+  /** guild id -> event id -> upcoming event (for communities whose events were loaded) */
+  events: Record<string, Record<string, GuildEvent>>;
+  setEvents: (guildId: string, list: GuildEvent[]) => void;
   /** guild id -> user id -> voice state */
   voice: Record<string, Record<string, VoiceState>>;
   emotes: Record<string, Emote[]>;
@@ -133,6 +137,8 @@ export function createAppStore(inst: Instance) {
   members: {},
   presences: {},
   customStatus: {},
+  events: {},
+  setEvents: (guildId, list) => set((s) => ({ events: { ...s.events, [guildId]: Object.fromEntries(list.map((e) => [e.id, e])) } })),
   voice: {},
   emotes: {},
   roles: {},
@@ -173,6 +179,7 @@ export function createAppStore(inst: Instance) {
           roles: {},
           presences: {},
           customStatus: {},
+          events: {},
           typing: {},
         };
         let acc: AppState = base;
@@ -250,6 +257,29 @@ export function createAppStore(inst: Instance) {
           members: { ...s.members, [ev.d.guildId]: without(s.members[ev.d.guildId] ?? {}, ev.d.userId) },
         }));
         return;
+      case "GUILD_EVENT_CREATE":
+        set((s) => (s.events[ev.d.guildId] ? { events: { ...s.events, [ev.d.guildId]: { ...s.events[ev.d.guildId], [ev.d.id]: ev.d } } } : {}));
+        return;
+      case "GUILD_EVENT_DELETE":
+        set((s) => {
+          const list = s.events[ev.d.guildId];
+          if (!list?.[ev.d.id]) return {};
+          const { [ev.d.id]: _, ...rest } = list;
+          return { events: { ...s.events, [ev.d.guildId]: rest } };
+        });
+        return;
+      case "EVENT_INTEREST_ADD":
+      case "EVENT_INTEREST_REMOVE": {
+        const add = ev.t === "EVENT_INTEREST_ADD";
+        const mine = ev.d.userId === get().me?.id;
+        set((s) => {
+          const e = s.events[ev.d.guildId]?.[ev.d.eventId];
+          if (!e) return {};
+          const next = { ...e, interested: Math.max(0, e.interested + (add ? 1 : -1)), me: mine ? add : e.me };
+          return { events: { ...s.events, [ev.d.guildId]: { ...s.events[ev.d.guildId], [e.id]: next } } };
+        });
+        return;
+      }
       case "NOTIFY_SETTINGS_UPDATE":
         fromHubUpdate(inst.id, ev.d);
         return;

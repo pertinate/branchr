@@ -3,6 +3,7 @@ pub mod attachments;
 pub mod bans;
 pub mod channels;
 pub mod emotes;
+pub mod events;
 pub mod guilds;
 pub mod messages;
 pub mod pictures;
