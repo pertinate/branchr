@@ -43,11 +43,11 @@ services:
       # Hubs with RELAY=1 learn the gateway from us (its certificate is in the relay's data).
       RELAY_QUIC: ${ID_DOMAIN}:7443
       RELAY_CERT: /relay/cert.der
-    volumes:
-      - relay-data:/relay:ro
       # DM calls go through id-sfu (below); off unless ID_VOICE_SECRET is set.
       ID_SFU_URL: wss://${ID_DOMAIN}/sfu/ws
       ID_VOICE_SECRET: ${ID_VOICE_SECRET:-}
+    volumes:
+      - relay-data:/relay:ro
 
   # The SFU for DM calls, separate from the instance's. Started only with the "calls"
   # profile (COMPOSE_PROFILES=calls), since it needs its UDP ports open on the host.
