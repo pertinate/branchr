@@ -1,7 +1,7 @@
 import { type Browser, expect, test } from "@playwright/test";
 
 /** A hub with no public address of its own, reached through branchr-relay (relay-stack.sh). */
-const BRANCH = "http://relayed.localhost:18800";
+const BRANCH = "http://localhost:18800/h/relayed";
 
 async function user(browser: Browser, name: string) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });

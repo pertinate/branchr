@@ -176,7 +176,8 @@ async fn main() -> anyhow::Result<()> {
     if let Some(dir) = &config.web_dir {
         app = app.nest_service("/app", static_site(dir)).layer(axum::middleware::from_fn(app_slash));
         if config.site_dir.is_none() {
-            app = app.route("/", get(|| async { Redirect::temporary("/app/") }));
+            // Relative, so it stays under a gateway's /h/<name>/ prefix.
+            app = app.route("/", get(|| async { Redirect::temporary("app/") }));
         }
     }
     if let Some(dir) = &config.site_dir {
@@ -204,7 +205,8 @@ fn static_site(dir: &std::path::Path) -> Router {
 async fn app_slash(req: axum::extract::Request, next: axum::middleware::Next) -> axum::response::Response {
     if req.uri().path() == "/app" {
         let q = req.uri().query().map(|q| format!("?{q}")).unwrap_or_default();
-        return axum::response::IntoResponse::into_response(Redirect::permanent(&format!("/app/{q}")));
+        // Relative ("app/" from ".../app"), so it stays under a gateway's /h/<name>/ prefix.
+        return axum::response::IntoResponse::into_response(Redirect::permanent(&format!("app/{q}")));
     }
     next.run(req).await
 }

@@ -62,6 +62,10 @@ struct State {
 }
 
 impl State {
+    fn by_name(&self, name: &str) -> Option<quinn::Connection> {
+        self.live.lock().unwrap().get(name).cloned()
+    }
+
     fn by_host(&self, host: &str) -> Option<quinn::Connection> {
         let name = load_branches(&self.dir).ok()?.into_iter().find(|b| b.host.eq_ignore_ascii_case(host))?.name;
         self.live.lock().unwrap().get(&name).cloned()
@@ -190,10 +194,38 @@ async fn visitor(state: Arc<State>, req: Request<Incoming>) -> Response<Body> {
         let known = if connected { state.by_host(domain).is_some() } else { load_branches(&state.dir).is_ok_and(|bs| bs.iter().any(|b| b.host.eq_ignore_ascii_case(domain))) };
         return text(if known { StatusCode::OK } else { StatusCode::NOT_FOUND }, if known { "ok" } else { "unknown" });
     }
-    let host = req.headers().get(hyper::header::HOST).and_then(|h| h.to_str().ok()).unwrap_or("").split(':').next().unwrap_or("").to_string();
-    let Some(conn) = state.by_host(&host) else {
-        return text(StatusCode::BAD_GATEWAY, "this branch isn't connected right now");
+    // `/h/<name>/...` reaches a hub under the gateway's own address (prefix removed);
+    // otherwise the Host header names it.
+    let mut req = req;
+    let routed = match path_hub(req.uri()) {
+        Some((name, rest)) => {
+            let Some(conn) = state.by_name(&name) else {
+                return text(StatusCode::BAD_GATEWAY, "this hub isn't connected right now");
+            };
+            if rest.is_empty() {
+                // `/h/name` → `/h/name/`, so relative links resolve under it.
+                let mut r = text(StatusCode::PERMANENT_REDIRECT, "");
+                r.headers_mut().insert(hyper::header::LOCATION, format!("/h/{name}/").parse().expect("location"));
+                return r;
+            }
+            match rest.parse() {
+                Ok(uri) => *req.uri_mut() = uri,
+                Err(_) => return text(StatusCode::BAD_REQUEST, "bad path"),
+            }
+            if let Ok(v) = format!("/h/{name}").parse() {
+                req.headers_mut().insert("x-forwarded-prefix", v);
+            }
+            conn
+        }
+        None => {
+            let host = req.headers().get(hyper::header::HOST).and_then(|h| h.to_str().ok()).unwrap_or("").split(':').next().unwrap_or("").to_string();
+            match state.by_host(&host) {
+                Some(conn) => conn,
+                None => return text(StatusCode::BAD_GATEWAY, "this hub isn't connected right now"),
+            }
+        }
     };
+    let conn = routed;
     forward(req, |req| async move {
         let (send, recv) = conn.open_bi().await?;
         let (mut sender, c) = hyper::client::conn::http1::handshake(TokioIo::new(tokio::io::join(recv, send))).await?;
@@ -201,4 +233,32 @@ async fn visitor(state: Arc<State>, req: Request<Incoming>) -> Response<Body> {
         Ok(sender.send_request(req).await?)
     })
     .await
+}
+
+/// `/h/<name><rest>` → (name, rest with its query); `rest` is empty for a bare `/h/<name>`.
+fn path_hub(uri: &hyper::Uri) -> Option<(String, String)> {
+    let path = uri.path().strip_prefix("/h/")?;
+    let (name, rest) = path.split_once('/').map_or((path, ""), |(n, r)| (n, r));
+    if name.is_empty() {
+        return None;
+    }
+    if rest.is_empty() && !uri.path().ends_with('/') {
+        return Some((name.to_string(), String::new()));
+    }
+    let q = uri.query().map(|q| format!("?{q}")).unwrap_or_default();
+    Some((name.to_string(), format!("/{rest}{q}")))
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn hubs_by_path() {
+        let p = |u: &str| super::path_hub(&u.parse().unwrap());
+        assert_eq!(p("/h/home/api/health"), Some(("home".into(), "/api/health".into())));
+        assert_eq!(p("/h/home/"), Some(("home".into(), "/".into())));
+        assert_eq!(p("/h/home"), Some(("home".into(), "".into())));
+        assert_eq!(p("/h/home/gateway?v=1"), Some(("home".into(), "/gateway?v=1".into())));
+        assert_eq!(p("/api/health"), None);
+        assert_eq!(p("/h/"), None);
+    }
 }

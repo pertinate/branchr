@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { type Instance, hostOf, instance, instanceKey, useActive, useInstanceList } from "@/lib/instances";
+import { type Instance, hostOf, hubBase, instance, instanceKey, useActive, useInstanceList } from "@/lib/instances";
 import { isUnread, useSocial } from "@/lib/social";
 import { cn } from "@/lib/utils";
 
@@ -23,7 +23,7 @@ export function parseInvite(input: string): { code: string; server: string | nul
   try {
     const url = new URL(raw);
     const code = raw.split("/").filter(Boolean).pop() ?? "";
-    return { code, server: url.origin };
+    return { code, server: hubBase(url.href) };
   } catch {
     return { code: raw.split("/").pop() ?? raw, server: null };
   }

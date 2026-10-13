@@ -8,7 +8,7 @@ D="${E2E_DATA:-/tmp/branchr-e2e}/relay-$(date +%s%N)"
 mkdir -p "$D"
 trap 'kill 0' EXIT
 cargo build -q -p api -p sfu -p relay
-DATABASE_URL="sqlite://$D/db.sqlite" UPLOAD_DIR="$D/up" API_BIND=127.0.0.1:18180 SFU_URLS=ws://relayed.localhost:18800/sfu/ws TRUST_PROXY=1 VOICE_SECRET=e2e-relay target/debug/api &
+DATABASE_URL="sqlite://$D/db.sqlite" UPLOAD_DIR="$D/up" API_BIND=127.0.0.1:18180 SFU_URLS=ws://localhost:18800/h/relayed/sfu/ws TRUST_PROXY=1 VOICE_SECRET=e2e-relay target/debug/api &
 SFU_BIND=127.0.0.1:18190 SFU_UDP_PORT=51200 SFU_WORKERS=2 SFU_PUBLIC_IP=127.0.0.1 SFU_PUBLIC_UDP_PORT=51300 VOICE_SECRET=e2e-relay target/debug/sfu &
 TOKEN=$(RELAY_DIR="$D/gateway" RELAY_PUBLIC=127.0.0.1:17443 target/debug/branchr-relay add relayed relayed.localhost 51300 2 2>/dev/null)
 RELAY_DIR="$D/gateway" RELAY_QUIC=127.0.0.1:17443 RELAY_HTTP=127.0.0.1:18800 target/debug/branchr-relay serve &

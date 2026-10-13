@@ -34,8 +34,12 @@ services:
       DATABASE_URL: postgres://branchr:${ID_DB_PASSWORD}@id-db:5432/branchr
       DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:?set DISCORD_CLIENT_ID}
       DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET:?set DISCORD_CLIENT_SECRET}
-      # The desktop app, and the web client this host serves.
-      ALLOWED_REDIRECTS: branchr://auth/callback,https://${DOMAIN}/app/,https://${DOMAIN}/
+      # The desktop app, the app branchr ID serves (/app/), and the one the hub serves.
+      ALLOWED_REDIRECTS: branchr://auth/callback,https://${ID_DOMAIN}/app/,https://${DOMAIN}/app/,https://${DOMAIN}/
+      # branchr ID is also the front door: the product site at /, the app at /app/ (both
+      # in the image), opening this hub by default (e.g. https://$ID_DOMAIN/h/home through
+      # the relay).
+      DEFAULT_HUB: ${DEFAULT_HUB:-https://${DOMAIN}}
       # DM calls go through id-sfu (below); off unless ID_VOICE_SECRET is set.
       ID_SFU_URL: wss://${ID_DOMAIN}/sfu/ws
       ID_VOICE_SECRET: ${ID_VOICE_SECRET:-}
@@ -58,6 +62,26 @@ services:
     ports:
       - "${ID_SFU_UDP_PORT:-52000}-${ID_SFU_UDP_END:-52001}:${ID_SFU_UDP_PORT:-52000}-${ID_SFU_UDP_END:-52001}/udp"
 
+  # Plex-style access to hubs without a public address (at home): they dial out to this
+  # gateway and are reached at https://$ID_DOMAIN/h/<name>/. Started only with the "relay"
+  # profile; allow a hub with `docker compose exec relay branchr-relay add <name> - <udp-base> <ports>`.
+  relay:
+    image: ${IMAGE:-branchr}
+    command: ["branchr-relay", "serve"]
+    profiles: ["relay"]
+    restart: unless-stopped
+    environment:
+      RELAY_DIR: /data/relay
+      RELAY_QUIC: 0.0.0.0:7443
+      RELAY_HTTP: 0.0.0.0:8800
+      RELAY_PUBLIC: ${ID_DOMAIN}:7443
+    volumes:
+      - relay-data:/data/relay
+    ports:
+      - "7443:7443/udp"
+      # Hubs' media; give each hub its own ports from this range when adding it.
+      - "${RELAY_UDP_START:-53000}-${RELAY_UDP_END:-53009}:${RELAY_UDP_START:-53000}-${RELAY_UDP_END:-53009}/udp"
+
   caddy:
     environment:
       ID_DOMAIN: ${ID_DOMAIN}
@@ -66,3 +90,4 @@ services:
 
 volumes:
   id-db:
+  relay-data:

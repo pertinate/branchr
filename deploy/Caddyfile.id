@@ -5,5 +5,9 @@
 	handle_path /sfu/* {
 		reverse_proxy id-sfu:8090
 	}
+	# Hubs reached through the relay, at /h/<name>/ (the "relay" profile).
+	handle /h/* {
+		reverse_proxy relay:8800
+	}
 	reverse_proxy id:8070
 }

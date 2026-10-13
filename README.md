@@ -205,20 +205,17 @@ How federation works:
 
 To host it, add `deploy/docker-compose.id.yml`: it runs branchr ID and its own Postgres, and Caddy serves it on `ID_DOMAIN`. It needs `ID_DOMAIN`, `ID_DB_PASSWORD`, `DISCORD_CLIENT_ID` and `DISCORD_CLIENT_SECRET` in `.env`; `scripts/deploy-image.sh` includes it when `ID_DOMAIN` is set. DM calls go through a second SFU, `id-sfu`, next to branchr ID: set `ID_VOICE_SECRET` (`openssl rand -hex 32`) and `COMPOSE_PROFILES=calls` in `.env`, and open UDP 52000–52001 (`ID_SFU_UDP_PORT`/`ID_SFU_UDP_END`). Without them, branchr ID runs as before and calls are off. Its token signing keys rotate on their own every `KEY_ROTATE_DAYS` (default 90, `0` turns it off): a new key is published an hour before it starts signing, and the old one is retired an hour after, when every token it signed has expired. Run it locally against real Discord with `scripts/dev-id.sh`. It reads `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` and a Postgres `DATABASE_URL` from `~/.config/branchr/id.env`, which stays outside the repo. Tests use `TEST_DATABASE_URL` and a throwaway schema; CI provides Postgres and rustfs containers and runs the e2e suite twice: SQLite with files on disk, then Postgres (`E2E_INSTANCE_DB=postgres`, which also sets the test-only `DATABASE_SCHEMA`) with files in rustfs (`E2E_S3_ENDPOINT`). The e2e emote tests talk to a local mock of 7TV, BetterTTV and FrankerFaceZ through the test-only `EMOTE_PROVIDERS_URL`.
 
-## Reaching a home branch (branchr-relay)
+## Reaching a home Hub through branchr.us (branchr-relay)
 
-Like Plex's relay: a branch at home (no public IP, no port forwarding) is reached through a public gateway. The connector next to the branch dials out to the gateway over QUIC and keeps the connection open. Visitors' HTTPS and WebSockets come back over QUIC streams, and voice/video over QUIC datagrams, so a lost packet never holds up the others.
+Like Plex: a Hub at home (no public IP, no port forwarding) is reached through the gateway at `https://branchr.us/h/<name>/`. The connector next to the Hub dials out to the gateway over QUIC and keeps the connection open. Visitors' HTTPS and WebSockets come back over QUIC streams (with the `/h/<name>` prefix removed), and voice/video over QUIC datagrams, so a lost packet never holds up the others.
 
-On the gateway (e.g. the droplet, next to Caddy):
+branchr.us is the front door: branchr ID serves the product site at `/` and the app at `/app/` (`SITE_DIR`/`WEB_DIR`, both in the image), and the app opens `DEFAULT_HUB` unless you pick another. `deploy/docker-compose.id.yml` has the gateway as the `relay` profile (UDP 7443, plus media ports `RELAY_UDP_START`..`RELAY_UDP_END`), and Caddy sends `/h/*` to it. Allow a Hub there:
 
 ```sh
-branchr-relay serve        # RELAY_QUIC (UDP, default 0.0.0.0:7443), RELAY_HTTP (default 127.0.0.1:8800), RELAY_DIR
-branchr-relay add home home.branchr.us 53000 2   # prints the branch's token; media on UDP 53000-53001
+docker compose exec relay branchr-relay add home - 53000 2   # prints its token; media on UDP 53000-53001
 ```
 
-Point the branch's address at the gateway, have Caddy proxy it to `RELAY_HTTP` (`reverse_proxy relay:8800`; for many branches, on-demand TLS can ask `/_relay/check?domain=`), and open UDP 7443 plus the branch's media ports.
-
-Next to the branch: `RELAY_TOKEN=<token> RELAY_API=http://api:8080 RELAY_SFU=http://sfu:8090 RELAY_SFU_UDP=sfu-host:50000 branchr-relay connect`. The branch then runs with `PUBLIC_URL=https://home.branchr.us`, `SFU_URLS=wss://home.branchr.us/sfu/ws` and `TRUST_PROXY=1` on the api, and `SFU_PUBLIC_IP=<gateway IP>` plus `SFU_PUBLIC_UDP_PORT=53000` on the sfu, so clients send media to the gateway. The connector trusts only the gateway certificate named in its token, and the gateway only the secret in it. Relayed media costs the gateway's bandwidth both ways; direct connections, when a branch has them, come later.
+(`-` means no hostname of its own; give one instead to also reach it at that name.) Next to the Hub: `RELAY_TOKEN=<token> RELAY_API=http://api:8080 RELAY_SFU=http://sfu:8090 RELAY_SFU_UDP=sfu-host:50000 branchr-relay connect`. The Hub runs with `PUBLIC_URL=https://branchr.us/h/home`, `SFU_URLS=wss://branchr.us/h/home/sfu/ws` and `TRUST_PROXY=1` on the api, and `SFU_PUBLIC_IP=<gateway IP>` plus `SFU_PUBLIC_UDP_PORT=53000` on the sfu, so clients send media to the gateway. The connector trusts only the gateway certificate named in its token, and the gateway only the secret in it. Relayed media costs the gateway's bandwidth both ways; direct connections, when a Hub has them, come later.
 
 ## CI/CD
 

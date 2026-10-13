@@ -85,7 +85,7 @@ pub fn router(state: AppState) -> Router {
     let explore = Router::new()
         .route("/discover", get(discovery::search))
         .layer(axum::middleware::from_fn_with_state(throttle::IpLimit::new(60, 60.0, trust_proxy), throttle::ip_limit));
-    Router::new()
+    let router = Router::new()
         .merge(open)
         .merge(explore)
         .route("/logout", post(oauth::logout))
@@ -110,8 +110,43 @@ pub fn router(state: AppState) -> Router {
         .route("/instances/{id}/listings", axum::routing::put(discovery::publish))
         .route("/.well-known/jwks.json", get(|s: axum::extract::State<AppState>| async move { axum::Json(s.keys.jwks()) }))
         .route("/health", get(|| async { "ok" }))
-        .layer(cors)
-        .with_state(state)
+        .layer(cors);
+    with_pages(router).with_state(state)
+}
+
+/// Where branchr ID is also the public front door (branchr.us): the product site at `/`
+/// (SITE_DIR) and the app at `/app/` (WEB_DIR), which opens DEFAULT_HUB unless told otherwise.
+fn with_pages(mut router: Router<AppState>) -> Router<AppState> {
+    use tower_http::services::{ServeDir, ServeFile};
+    let var = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
+    if let Some(web) = var("WEB_DIR") {
+        let hub = var("DEFAULT_HUB").unwrap_or_default();
+        let config = format!("window.__BRANCHR__ = {};\n", serde_json::json!({ "defaultHub": hub }));
+        let web = std::path::PathBuf::from(web);
+        router = router
+            .route(
+                "/app/config.js",
+                get(move || {
+                    let config = config.clone();
+                    async move { ([(axum::http::header::CONTENT_TYPE, "text/javascript"), (axum::http::header::CACHE_CONTROL, "no-cache")], config) }
+                }),
+            )
+            .nest_service("/app", ServeDir::new(&web).fallback(ServeFile::new(web.join("index.html"))))
+            .layer(axum::middleware::from_fn(app_slash));
+    }
+    if let Some(site) = var("SITE_DIR") {
+        let site = std::path::PathBuf::from(site);
+        router = router.fallback_service(ServeDir::new(&site).fallback(ServeFile::new(site.join("index.html"))));
+    }
+    router
+}
+
+/// `/app` → `app/`, so the app's relative asset paths resolve under it.
+async fn app_slash(req: axum::extract::Request, next: axum::middleware::Next) -> axum::response::Response {
+    if req.uri().path() == "/app" {
+        return axum::response::IntoResponse::into_response(axum::response::Redirect::permanent("app/"));
+    }
+    next.run(req).await
 }
 
 /// Deletes expired sign-in state now and then.

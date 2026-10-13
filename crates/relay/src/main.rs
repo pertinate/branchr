@@ -1,7 +1,8 @@
 //! branchr-relay: reach a branch running at home through a public gateway, like Plex's relay.
 //!
 //!   branchr-relay serve                                   on the gateway (the droplet)
-//!   branchr-relay add <name> <host> <udp-base> <ports>    on the gateway: allow a branch, print its token
+//!   branchr-relay add <name> <host|-> <udp-base> <ports> on the gateway: allow a hub, print its token
+//!                                                         (it's at https://<gateway>/h/<name>/, and at <host> too if given)
 //!   branchr-relay connect                                 next to the branch (RELAY_TOKEN=...)
 
 mod agent;
@@ -38,18 +39,24 @@ async fn main() -> anyhow::Result<()> {
             let secret: String = raw.iter().map(|b| format!("{b:02x}")).collect();
             let mut branches = server::load_branches(&dir)?;
             branches.retain(|b| b.name != *name);
-            if let Some(b) = branches.iter().find(|b| b.host.eq_ignore_ascii_case(host)) {
+            let host = if host == "-" { String::new() } else { host.to_lowercase() };
+            if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+                anyhow::bail!("a hub name is letters, digits and dashes (it goes in the address)");
+            }
+            if let Some(b) = branches.iter().find(|b| !host.is_empty() && b.host.eq_ignore_ascii_case(&host)) {
                 anyhow::bail!("{host} already belongs to branch {}", b.name);
             }
             if let Some(b) = branches.iter().find(|b| base < b.udp_base + b.udp_ports && b.udp_base < base + ports) {
                 anyhow::bail!("UDP {base}..{} overlaps branch {}", base + ports, b.name);
             }
-            branches.push(server::Branch { name: name.clone(), secret_hash: server::hash(&secret), host: host.to_lowercase(), udp_base: base, udp_ports: ports });
+            branches.push(server::Branch { name: name.clone(), secret_hash: server::hash(&secret), host: host.clone(), udp_base: base, udp_ports: ports });
             server::save_branches(&dir, &branches)?;
             let relay = var("RELAY_PUBLIC", "branchr.us:7443");
+            let gateway = relay.rsplit_once(':').map_or(relay.as_str(), |(h, _)| h).to_string();
             let token = proto::Token { relay, name: name.clone(), secret, fp: tls::fingerprint(&cert) };
             println!("{}", token.encode());
-            eprintln!("allowed branch {name} at https://{host}, media on UDP {base}..{}; give the token above to its connector (RELAY_TOKEN)", base + ports - 1);
+            let also = if host.is_empty() { String::new() } else { format!(" and https://{host}") };
+            eprintln!("allowed hub {name} at https://{gateway}/h/{name}/{also}, media on UDP {base}..{}; give the token above to its connector (RELAY_TOKEN)", base + ports - 1);
             Ok(())
         }
         Some("connect") => {

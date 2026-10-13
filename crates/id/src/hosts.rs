@@ -19,12 +19,16 @@ pub struct Host {
 }
 
 /// `https://chat.example.com` style origins only (no paths, queries or credentials).
+/// A hub's base address: its origin, plus a path when it's reached under one (a gateway's
+/// `/h/<name>`); an app page (`/app/`) or fragment on the end is dropped.
 fn origin(url: &str) -> Result<String> {
     let u = url::Url::parse(url.trim()).map_err(|_| bad("invalid_request", "url must be a URL"))?;
     if !matches!(u.scheme(), "http" | "https") || u.host_str().is_none() || !u.username().is_empty() || u.password().is_some() {
         return Err(bad("invalid_request", "url must be an http(s) origin"));
     }
-    Ok(u.origin().ascii_serialization())
+    let path = u.path().trim_end_matches('/');
+    let path = path.strip_suffix("/app").unwrap_or(path);
+    Ok(format!("{}{path}", u.origin().ascii_serialization()))
 }
 
 pub async fn list(State(s): State<AppState>, headers: HeaderMap) -> Result<Json<Vec<Host>>> {
@@ -69,6 +73,9 @@ mod tests {
     fn origins() {
         assert_eq!(origin("https://Chat.Example.com/").unwrap(), "https://chat.example.com");
         assert_eq!(origin("http://localhost:8081/#/invite/x").unwrap(), "http://localhost:8081");
+        assert_eq!(origin("https://branchr.us/h/home/").unwrap(), "https://branchr.us/h/home");
+        assert_eq!(origin("https://branchr.us/h/home/app/#/invite/x").unwrap(), "https://branchr.us/h/home");
+        assert_eq!(origin("https://chat.example.com/app/").unwrap(), "https://chat.example.com");
         assert!(origin("ftp://x").is_err());
         assert!(origin("https://user:pw@x.com").is_err());
         assert!(origin("not a url").is_err());

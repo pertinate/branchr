@@ -46,13 +46,23 @@ export function instanceKey(url: string): string {
   }
 }
 
-/** An instance's address for people: host and port, e.g. `chat.example.com`. */
+/** A hub's address for people: host and port, plus its path when it's reached under one
+ *  (e.g. `chat.example.com`, `branchr.us/h/home`). */
 export function hostOf(url: string) {
   try {
-    return new URL(url).host;
+    const u = new URL(url);
+    return `${u.host}${u.pathname.replace(/\/+$/, "")}`;
   } catch {
     return url;
   }
+}
+
+/** A hub's base address from any link into it: origin plus its path (a gateway's `/h/<name>`),
+ *  without the app page (`/app/`) or fragment. */
+export function hubBase(link: string): string {
+  const u = new URL(link);
+  const path = u.pathname.replace(/\/+$/, "").replace(/\/app$/, "");
+  return `${u.origin}${path}`;
 }
 
 export function normalizeUrl(url: string): string {
@@ -61,9 +71,11 @@ export function normalizeUrl(url: string): string {
 
 /** The address the login screen suggests: this page's own server when served by one. */
 export const defaultServerUrl =
-  typeof window !== "undefined" && window.location.protocol.startsWith("http") && !import.meta.env.DEV
-    ? window.location.origin
-    : ((import.meta.env.VITE_DEFAULT_SERVER as string | undefined) ?? "http://localhost:8080");
+  // Where the app is served by something other than a hub (branchr.us), it says which hub.
+  (typeof window !== "undefined" && (window as { __BRANCHR__?: { defaultHub?: string } }).__BRANCHR__?.defaultHub) ||
+  (typeof window !== "undefined" && window.location.protocol.startsWith("http") && !import.meta.env.DEV
+    ? hubBase(window.location.href)
+    : ((import.meta.env.VITE_DEFAULT_SERVER as string | undefined) ?? "http://localhost:8080"));
 
 // Before multiple instances, one session lived under "auth" and read state under "lastRead".
 function migrateSingleSession() {
