@@ -317,7 +317,7 @@ function EditChannelDialog({ channelId, onClose }: { channelId: string; onClose:
     try {
       const c = await api<Channel>("PATCH", `/channels/${channelId}`, {
         name: name.trim(),
-        ...(channel.kind === "text" ? { topic: topic.trim() || null, slowmodeSecs: Number(slowmode) } : {}),
+        ...(channel.kind === "text" || channel.kind === "forum" ? { topic: topic.trim() || null, slowmodeSecs: Number(slowmode) } : {}),
       });
       inst.app.getState().apply({ t: "CHANNEL_UPDATE", d: c });
       onClose();
@@ -331,13 +331,13 @@ function EditChannelDialog({ channelId, onClose }: { channelId: string; onClose:
         <Label htmlFor="channel-name">Name</Label>
         <Input id="channel-name" autoFocus value={name} onChange={(e) => setName(e.target.value)} maxLength={100} required />
       </div>
-      {channel.kind === "text" && (
+      {(channel.kind === "text" || channel.kind === "forum") && (
         <div className="space-y-1">
           <Label htmlFor="channel-topic">Topic</Label>
           <Input id="channel-topic" value={topic} onChange={(e) => setTopic(e.target.value)} maxLength={1024} placeholder="What's this channel about?" />
         </div>
       )}
-      {channel.kind === "text" && (
+      {(channel.kind === "text" || channel.kind === "forum") && (
         <div className="space-y-1">
           <Label htmlFor="channel-slowmode">Slow mode</Label>
           <Select value={slowmode} onValueChange={setSlowmode}>

@@ -25,7 +25,7 @@ pub struct CreateChannel {
 
 fn normalize(name: &str, kind: ChannelKind) -> AppResult<String> {
     let name = name.trim();
-    let name = if kind == ChannelKind::Text {
+    let name = if matches!(kind, ChannelKind::Text | ChannelKind::Forum) {
         // Text channel names are lowercase-kebab like Discord.
         name.to_lowercase().split_whitespace().collect::<Vec<_>>().join("-")
     } else {
@@ -265,12 +265,17 @@ pub struct CreateThread {
     message_id: Option<Id>,
 }
 
-/// Starts a thread under a text channel; anyone who can post there can.
+/// Starts a thread under a text channel, or a post in a forum (a thread with a title; its
+/// first message is posted into it next); anyone who can post there can.
 pub async fn create_thread(State(state): State<AppState>, Auth(user): Auth, Path(cid): Path<Id>, Json(body): Json<CreateThread>) -> AppResult<Json<Channel>> {
     let (gid, _) = super::channel_perm(&state, cid, user, perms::SEND_MESSAGES).await?;
     let parent = db::channel(&state.db, cid).await?;
-    if parent.kind != ChannelKind::Text {
+    let forum = parent.kind == ChannelKind::Forum;
+    if !matches!(parent.kind, ChannelKind::Text | ChannelKind::Forum) {
         return Err(bad("threads start in text channels"));
+    }
+    if forum && (body.message_id.is_some() || body.name.as_ref().is_none_or(|n| n.trim().is_empty())) {
+        return Err(bad("a forum post needs a title"));
     }
     let starter = match body.message_id {
         Some(mid) => {

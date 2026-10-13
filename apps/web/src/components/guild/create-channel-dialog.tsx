@@ -1,6 +1,6 @@
 import type { Channel, ChannelKind } from "@app/protocol";
 import { useNavigate } from "@tanstack/react-router";
-import { Hash, Volume2 } from "lucide-react";
+import { Hash, MessagesSquare, Volume2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -31,7 +31,7 @@ export function CreateChannelDialog(props: {
       inst.app.getState().apply({ t: "CHANNEL_CREATE", d: c });
       props.onOpenChange(false);
       setName("");
-      if (c.kind === "text") void navigate({ to: "/$guildId/$channelId", params: { guildId: c.guildId, channelId: c.id } });
+      if (c.kind === "text" || c.kind === "forum") void navigate({ to: "/$guildId/$channelId", params: { guildId: c.guildId, channelId: c.id } });
     } catch (err) {
       toast.error((err as Error).message);
     }
@@ -44,24 +44,30 @@ export function CreateChannelDialog(props: {
           <DialogTitle>Create Channel</DialogTitle>
         </DialogHeader>
         <form onSubmit={submit} className="space-y-3">
-          {(["text", "voice", "category"] as const).map((k) => (
+          {(["text", "voice", "forum", "category"] as const).map((k) => (
             <button
               type="button"
               key={k}
               onClick={() => setKind(k)}
               className={cn("flex w-full items-center gap-3 rounded-md border px-3 py-2 text-left", kind === k ? "border-primary bg-accent" : "border-border hover:bg-accent/50")}
             >
-              {k === "voice" ? <Volume2 className="size-5" /> : <Hash className="size-5" />}
+              {k === "voice" ? <Volume2 className="size-5" /> : k === "forum" ? <MessagesSquare className="size-5" /> : <Hash className="size-5" />}
               <div>
                 <div className="font-medium capitalize">{k}</div>
                 <div className="text-xs text-muted-foreground">
-                  {k === "text" ? "Messages, emotes, opinions and puns" : k === "voice" ? "Hang out with voice, video, and screen/game streaming" : "Group channels together"}
+                  {k === "text"
+                    ? "Messages, emotes, opinions and puns"
+                    : k === "voice"
+                      ? "Hang out with voice, video, and screen/game streaming"
+                      : k === "forum"
+                        ? "Posts with a title, each its own conversation"
+                        : "Group channels together"}
                 </div>
               </div>
             </button>
           ))}
           {props.parentId && kind === "category" && <p className="text-xs text-destructive">Categories can't be nested.</p>}
-          <Input autoFocus placeholder={kind === "text" ? "new-channel" : "New Channel"} value={name} onChange={(e) => setName(e.target.value)} required maxLength={100} />
+          <Input autoFocus placeholder={kind === "text" || kind === "forum" ? "new-channel" : "New Channel"} value={name} onChange={(e) => setName(e.target.value)} required maxLength={100} />
           <Button type="submit" className="w-full" disabled={!name.trim() || (!!props.parentId && kind === "category")}>Create Channel</Button>
         </form>
       </DialogContent>

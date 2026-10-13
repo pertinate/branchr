@@ -616,8 +616,10 @@ pub enum ChannelKind {
     Text,
     Voice,
     Category,
-    /// A side conversation under a text channel (its `parent_id`).
+    /// A side conversation under a text channel (its `parent_id`), or a post in a forum.
     Thread,
+    /// A channel of posts (threads, each with a title), instead of one stream of messages.
+    Forum,
 }
 
 impl ChannelKind {
@@ -627,6 +629,7 @@ impl ChannelKind {
             Self::Voice => "voice",
             Self::Category => "category",
             Self::Thread => "thread",
+            Self::Forum => "forum",
         }
     }
     pub fn parse(s: &str) -> Option<Self> {
@@ -635,6 +638,7 @@ impl ChannelKind {
             "voice" => Self::Voice,
             "category" => Self::Category,
             "thread" => Self::Thread,
+            "forum" => Self::Forum,
             _ => return None,
         })
     }

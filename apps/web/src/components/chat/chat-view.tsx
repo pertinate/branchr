@@ -1,8 +1,9 @@
 import { Link } from "@tanstack/react-router";
-import { ChevronRight, CornerDownRight, Hash, Search, Users } from "lucide-react";
+import { ChevronRight, CornerDownRight, Hash, MessagesSquare, Search, Users } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { Composer } from "@/components/chat/composer";
+import { ForumView } from "@/components/chat/forum-view";
 import { MessageList } from "@/components/chat/message-list";
 import { PinsPopover } from "@/components/chat/pins-popover";
 import { SearchPanel } from "@/components/chat/search-panel";
@@ -45,15 +46,21 @@ export function ChatView({ guildId, channelId }: { guildId: string; channelId: s
         {parent && (
           <>
             <Link to="/$guildId/$channelId" params={{ guildId, channelId: parent.id }} className="flex items-center gap-1 text-muted-foreground hover:text-foreground">
-              <Hash className="size-5" />
+              {parent.kind === "forum" ? <MessagesSquare className="size-5" /> : <Hash className="size-5" />}
               {parent.name}
             </Link>
             <ChevronRight className="size-4 text-muted-foreground" />
           </>
         )}
-        {channel?.kind === "thread" ? <CornerDownRight className="size-5 text-muted-foreground" /> : <Hash className="size-6 text-muted-foreground" />}
+        {channel?.kind === "thread" ? (
+          <CornerDownRight className="size-5 text-muted-foreground" />
+        ) : channel?.kind === "forum" ? (
+          <MessagesSquare className="size-6 text-muted-foreground" />
+        ) : (
+          <Hash className="size-6 text-muted-foreground" />
+        )}
         <span className="font-semibold">{channel?.name}</span>
-        {channel?.topic && <span className="truncate border-l border-border pl-3 text-sm text-muted-foreground">{channel.topic}</span>}
+        {channel?.topic && channel.kind !== "forum" && <span className="truncate border-l border-border pl-3 text-sm text-muted-foreground">{channel.topic}</span>}
         <div className="flex-1" />
         <PinsPopover guildId={guildId} channelId={channelId} />
         <button onClick={() => setShowMembers((v) => !v)} className={cn("text-muted-foreground hover:text-foreground", showMembers && "text-foreground")} title="Member List">
@@ -98,8 +105,14 @@ export function ChatView({ guildId, channelId }: { guildId: string; channelId: s
               Drop files to upload to #{channel?.name}
             </div>
           )}
-          <MessageList channelId={channelId} guildId={guildId} onReply={setReplyTo} />
-          <Composer channelId={channelId} guildId={guildId} replyTo={replyTo} clearReply={clearReply} />
+          {channel?.kind === "forum" ? (
+            <ForumView guildId={guildId} channel={channel} />
+          ) : (
+            <>
+              <MessageList channelId={channelId} guildId={guildId} onReply={setReplyTo} />
+              <Composer channelId={channelId} guildId={guildId} replyTo={replyTo} clearReply={clearReply} />
+            </>
+          )}
         </div>
         {search ? (
           <SearchPanel key={search} guildId={guildId} query={search} onClose={() => (setSearch(null), setDraft(""))} />

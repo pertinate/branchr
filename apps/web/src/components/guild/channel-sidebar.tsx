@@ -1,6 +1,6 @@
 import type { Channel } from "@app/protocol";
 import { Link, useParams } from "@tanstack/react-router";
-import { ChevronDown, CornerDownRight, FolderPlus, Hash, PlusCircle, UserPlus, MicOff, Plus, Video, Volume2, HeadphoneOff } from "lucide-react";
+import { ChevronDown, CornerDownRight, FolderPlus, Hash, MessagesSquare, PlusCircle, UserPlus, MicOff, Plus, Video, Volume2, HeadphoneOff } from "lucide-react";
 import { memo, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 import { useChannelMuted } from "@/lib/mutes";
 import { useMediaUrl } from "@/lib/media";
 import { P, useCan } from "@/lib/perms";
-import { useApp } from "@/stores/app";
+import { type AppState, useApp } from "@/stores/app";
 import { useDialogs } from "@/stores/ui";
 import { useVoice } from "@/stores/voice";
 
@@ -66,8 +66,8 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
     const sorted = [...channels].sort((a, b) => a.position - b.position || compareIds(a.id, b.id));
     const cats = sorted.filter((c) => c.kind === "category");
     const children = (parent: string | null) => sorted.filter((c) => c.kind !== "category" && c.kind !== "thread" && c.parentId === parent)
-      // Text above voice inside a category, like Discord.
-      .sort((a, b) => (a.kind === b.kind ? 0 : a.kind === "text" ? -1 : 1));
+      // Text (and forums) above voice inside a category, like Discord.
+      .sort((a, b) => (a.kind === "voice") === (b.kind === "voice") ? 0 : a.kind === "voice" ? 1 : -1);
     // Each channel's threads, most recently active first.
     const threads = new Map<string, Channel[]>();
     for (const t of sorted.filter((c) => c.kind === "thread" && c.parentId)) threads.set(t.parentId!, [...(threads.get(t.parentId!) ?? []), t]);
@@ -121,7 +121,7 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
                   <DragRow dnd={dnd} id={c.id}>
                     <TextChannelRow channel={c} />
                   </DragRow>
-                  {groups.threads.get(c.id)?.slice(0, MAX_THREADS).map((t) => <TextChannelRow key={t.id} channel={t} thread />)}
+                  {c.kind === "text" && groups.threads.get(c.id)?.slice(0, MAX_THREADS).map((t) => <TextChannelRow key={t.id} channel={t} thread />)}
                 </div>
               ),
             )}
@@ -216,14 +216,25 @@ function ChannelListMenuItems({ guildId }: { guildId: string }) {
   );
 }
 
+/** New messages since we last read it. */
+const isUnread = (s: AppState, c: Channel) => !!c.lastMessageId && (!s.lastRead[c.id] || compareIds(c.lastMessageId, s.lastRead[c.id]) > 0);
+
 const TextChannelRow = memo(function TextChannelRow({ channel, thread }: { channel: Channel; thread?: boolean }) {
   const params = useParams({ strict: false }) as { channelId?: string };
   const active = params.channelId === channel.id;
   const instanceId = useInstance().id;
   const muted = useChannelMuted(instanceId, channel.id);
+  const forum = channel.kind === "forum";
   const unread =
-    useApp((s) => !!channel.lastMessageId && (!s.lastRead[channel.id] || compareIds(channel.lastMessageId, s.lastRead[channel.id]) > 0)) && !muted;
-  const pings = useApp((s) => s.pings[channel.id] ?? 0);
+    useApp((s) =>
+      forum
+        ? Object.values(s.channels).some((t) => t.parentId === channel.id && t.kind === "thread" && isUnread(s, t))
+        : isUnread(s, channel),
+    ) && !muted;
+  // A forum's pings are its posts'.
+  const pings = useApp((s) =>
+    forum ? Object.values(s.channels).reduce((n, t) => (t.parentId === channel.id && t.kind === "thread" ? n + (s.pings[t.id] ?? 0) : n), 0) : (s.pings[channel.id] ?? 0),
+  );
   return (
     <Menu items={<ChannelMenuItems channelId={channel.id} />}>
     <Link
@@ -241,7 +252,13 @@ const TextChannelRow = memo(function TextChannelRow({ channel, thread }: { chann
       )}
     >
       {unread && !active && <span className="absolute -left-2 h-2 w-1 rounded-r-full bg-foreground" />}
-      {thread ? <CornerDownRight className="size-4 shrink-0 opacity-60" /> : <Hash className="size-5 shrink-0 opacity-70" />}
+      {thread ? (
+        <CornerDownRight className="size-4 shrink-0 opacity-60" />
+      ) : forum ? (
+        <MessagesSquare className="size-5 shrink-0 opacity-70" />
+      ) : (
+        <Hash className="size-5 shrink-0 opacity-70" />
+      )}
       <span className="truncate">{channel.name}</span>
       {pings > 0 && !active && <MentionBadge count={pings} className="ml-auto" />}
     </Link>
