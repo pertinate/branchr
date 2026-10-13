@@ -324,6 +324,10 @@ export function createAppStore(inst: Instance) {
           return { lastRead, pings };
         });
         return;
+      case "POLL_VOTE_ADD":
+      case "POLL_VOTE_REMOVE":
+        inst.messages.getState().onPollVote(ev.d, ev.t === "POLL_VOTE_ADD", get().me?.id);
+        return;
       case "REACTION_ADD":
       case "REACTION_REMOVE":
         inst.messages.getState().onReaction(ev.d, ev.t === "REACTION_ADD", get().me?.id);

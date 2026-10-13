@@ -70,7 +70,7 @@ function notifyMessage(inst: Instance, m: Message) {
   const guild = guildId ? s.guilds[guildId] : undefined;
   const author = (guildId && s.members[guildId]?.[m.author.id]?.nick) || m.author.displayName;
   const title = `${author} (#${channel?.name ?? "unknown"}${guild ? `, ${guild.name}` : ""})`;
-  show(title, plainText(m, guildId, s) || (m.attachments.length ? "Sent an attachment" : ""), m.id);
+  show(title, plainText(m, guildId, s) || (m.poll ? `Poll: ${m.poll.question}` : m.attachments.length ? "Sent an attachment" : ""), m.id);
 }
 
 /** Every DM notifies (they're all to you), unless that conversation is on screen. */

@@ -512,6 +512,7 @@ pub async fn messages(
 
     let mut reactions = reactions_for(db, rows.iter().map(|r| r.id), viewer).await?;
     let mut attachments = attachments_for(db, rows.iter().map(|r| r.id)).await?;
+    let mut polls = polls_for(db, rows.iter().map(|r| r.id), viewer).await?;
     let mut out: Vec<Message> = rows
         .into_iter()
         .map(|r| Message {
@@ -531,6 +532,7 @@ pub async fn messages(
             pinned: r.pinned_at.is_some(),
             embeds: snapshot(r.embeds.as_deref()),
             nonce: None,
+            poll: polls.remove(&r.id),
         })
         .collect();
     if after.is_some() && before.is_none() {
@@ -549,6 +551,7 @@ pub async fn message(db: &Db, id: Id, viewer: Id) -> sqlx::Result<Message> {
     .await?;
     let mut reactions = reactions_for(db, std::iter::once(r.id), viewer).await?;
     let mut attachments = attachments_for(db, std::iter::once(r.id)).await?;
+    let mut polls = polls_for(db, std::iter::once(r.id), viewer).await?;
     Ok(Message {
         id: Id(r.id),
         channel_id: Id(r.channel_id),
@@ -566,7 +569,45 @@ pub async fn message(db: &Db, id: Id, viewer: Id) -> sqlx::Result<Message> {
         pinned: r.pinned_at.is_some(),
         embeds: snapshot(r.embeds.as_deref()),
         nonce: None,
+        poll: polls.remove(&r.id),
     })
+}
+
+/// Polls among `ids`, with vote counts and what `viewer` picked.
+pub async fn polls_for(db: &Db, ids: impl Iterator<Item = i64>, viewer: Id) -> sqlx::Result<HashMap<i64, Poll>> {
+    let ids: Vec<String> = ids.map(|i| i.to_string()).collect();
+    let mut map: HashMap<i64, Poll> = HashMap::new();
+    if ids.is_empty() {
+        return Ok(map);
+    }
+    let ids = ids.join(",");
+    // Ids are integers we produced ourselves, so inlining them is safe.
+    let polls: Vec<(i64, String, String, i64, i64)> =
+        sqlx::query_as(AssertSqlSafe(format!("SELECT message_id, question, answers, multi, ends_at FROM polls WHERE message_id IN ({ids})")))
+            .fetch_all(db)
+            .await?;
+    if polls.is_empty() {
+        return Ok(map);
+    }
+    for (mid, question, answers, multi, ends_at) in polls {
+        let answers: Vec<String> = serde_json::from_str(&answers).unwrap_or_default();
+        let answers = answers.into_iter().map(|text| PollAnswer { text, votes: 0, me: false }).collect();
+        map.insert(mid, Poll { question, answers, multi: multi != 0, ends_at });
+    }
+    let votes: Vec<(i64, i64, i64, i64)> = sqlx::query_as(AssertSqlSafe(format!(
+        "SELECT message_id, answer, COUNT(*), MAX(CASE WHEN user_id = $1 THEN 1 ELSE 0 END) FROM poll_votes
+         WHERE message_id IN ({ids}) GROUP BY message_id, answer"
+    )))
+    .bind(viewer.0)
+    .fetch_all(db)
+    .await?;
+    for (mid, answer, count, me) in votes {
+        if let Some(a) = map.get_mut(&mid).and_then(|p| p.answers.get_mut(answer as usize)) {
+            a.votes = count as u32;
+            a.me = me != 0;
+        }
+    }
+    Ok(map)
 }
 
 /// A webhook post's own name and avatar, over the webhook's.

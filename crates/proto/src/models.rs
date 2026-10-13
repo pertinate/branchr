@@ -146,6 +146,9 @@ wire! {
         /// Client-generated id echoed back so optimistic sends can be reconciled.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub nonce: Option<String>,
+        /// A poll, when the message is one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub poll: Option<Poll>,
     }
 
     pub struct Attachment {
@@ -197,6 +200,23 @@ wire! {
         pub created_at: i64,
         /// Only in the reply that creates it or resets its token; it isn't stored readably.
         pub token: Option<String>,
+    }
+
+    pub struct Poll {
+        pub question: String,
+        pub answers: Vec<PollAnswer>,
+        /// Whether you can pick more than one answer.
+        pub multi: bool,
+        /// When voting closes (unix ms).
+        #[cfg_attr(feature = "ts", ts(type = "number"))]
+        pub ends_at: i64,
+    }
+
+    pub struct PollAnswer {
+        pub text: String,
+        pub votes: u32,
+        /// Whether the requesting user picked it (REST only, like reactions).
+        pub me: bool,
     }
 
     pub struct Reaction {

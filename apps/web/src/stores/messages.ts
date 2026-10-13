@@ -1,4 +1,4 @@
-import type { Attachment, Emote, Message, ReactionEvent } from "@app/protocol";
+import type { Attachment, Emote, Message, PollVoteEvent, ReactionEvent } from "@app/protocol";
 import { toast } from "sonner";
 import { create } from "zustand";
 
@@ -32,6 +32,7 @@ interface MessagesState {
   onUpdate: (m: Message) => void;
   onDelete: (channelId: string, id: string) => void;
   onReaction: (r: ReactionEvent, add: boolean, me: string | undefined) => void;
+  onPollVote: (v: PollVoteEvent, add: boolean, me: string | undefined) => void;
 }
 
 /** Best-effort emote snapshot for an optimistic message, from the user's own servers. */
@@ -192,6 +193,20 @@ export function createMessagesStore(inst: Instance) {
     onDelete: (channelId, id) => {
       if (!get().channels[channelId]) return;
       patch(channelId, (c) => ({ ...c, items: c.items.filter((x) => x.id !== id) }));
+    },
+    onPollVote: (v, add, me) => {
+      if (!get().channels[v.channelId]) return;
+      const mine = v.userId === me;
+      patch(v.channelId, (c) => ({
+        ...c,
+        items: c.items.map((x) => {
+          if (x.id !== v.messageId || !x.poll?.answers[v.answer]) return x;
+          const answers = x.poll.answers.map((a, i) =>
+            i === v.answer ? { ...a, votes: Math.max(0, a.votes + (add ? 1 : -1)), me: mine ? add : a.me } : a,
+          );
+          return { ...x, poll: { ...x.poll, answers } };
+        }),
+      }));
     },
     onReaction: (r, add, me) => {
       if (!get().channels[r.channelId]) return;

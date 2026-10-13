@@ -83,6 +83,8 @@ pub enum ServerEvent {
     MessageUpdate(Message),
     MessageDelete(MessageRef),
 
+    PollVoteAdd(PollVoteEvent),
+    PollVoteRemove(PollVoteEvent),
     ReactionAdd(ReactionEvent),
     ReactionRemove(ReactionEvent),
 
@@ -167,6 +169,17 @@ refs! {
     RoleRef { id, guild_id }
     VoiceStateRef { guild_id, user_id }
     TypingStart { channel_id, user_id }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct PollVoteEvent {
+    pub channel_id: Id,
+    pub message_id: Id,
+    pub user_id: Id,
+    /// Index into the poll's answers.
+    pub answer: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

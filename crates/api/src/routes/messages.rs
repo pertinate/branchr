@@ -1,7 +1,7 @@
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use proto::Id;
-use proto::gateway::{MessageRef, ReactionEvent, ServerEvent};
+use proto::gateway::{MessageRef, PollVoteEvent, ReactionEvent, ServerEvent};
 use proto::models::*;
 use serde::Deserialize;
 
@@ -113,6 +113,46 @@ pub struct CreateMessage {
     reply_to: Option<Id>,
     #[serde(default)]
     attachment_ids: Vec<Id>,
+    poll: Option<NewPoll>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewPoll {
+    question: String,
+    answers: Vec<String>,
+    #[serde(default)]
+    multi: bool,
+    /// How long voting stays open (default a day, at most a week).
+    duration_hours: Option<u32>,
+}
+
+const POLL_QUESTION_MAX: usize = 300;
+const POLL_ANSWER_MAX: usize = 55;
+const POLL_ANSWERS: std::ops::RangeInclusive<usize> = 2..=10;
+
+impl NewPoll {
+    /// Trimmed and checked.
+    fn validate(self) -> AppResult<Poll> {
+        let question = self.question.trim().to_string();
+        if question.is_empty() || question.chars().count() > POLL_QUESTION_MAX {
+            return Err(bad(format!("a poll's question must be 1-{POLL_QUESTION_MAX} characters")));
+        }
+        let answers: Vec<String> = self.answers.iter().map(|a| a.trim().to_string()).filter(|a| !a.is_empty()).collect();
+        if !POLL_ANSWERS.contains(&answers.len()) || answers.iter().any(|a| a.chars().count() > POLL_ANSWER_MAX) {
+            return Err(bad(format!("a poll needs 2-10 answers of at most {POLL_ANSWER_MAX} characters")));
+        }
+        let hours = self.duration_hours.unwrap_or(24);
+        if !(1..=168).contains(&hours) {
+            return Err(bad("a poll lasts 1 hour to 7 days"));
+        }
+        Ok(Poll {
+            question,
+            answers: answers.into_iter().map(|text| PollAnswer { text, votes: 0, me: false }).collect(),
+            multi: self.multi,
+            ends_at: db::now_ms() + i64::from(hours) * 3_600_000,
+        })
+    }
 }
 
 pub async fn create(
@@ -133,8 +173,9 @@ pub async fn create(
             return Err(AppError::Wait(format!("slow mode is on: wait {}s", wait.as_secs().max(1))));
         }
     }
+    let poll = body.poll.map(NewPoll::validate).transpose()?;
     let content = body.content.trim();
-    if (content.is_empty() && body.attachment_ids.is_empty()) || content.chars().count() > MAX_LEN {
+    if (content.is_empty() && body.attachment_ids.is_empty() && poll.is_none()) || content.chars().count() > MAX_LEN {
         return Err(bad(format!("message must be 1-{MAX_LEN} characters")));
     }
     if body.attachment_ids.len() > 10 {
@@ -166,6 +207,17 @@ pub async fn create(
     .bind(snapshot_json(&mentions.roles))
     .execute(&mut *tx)
     .await?;
+    if let Some(p) = &poll {
+        let answers: Vec<&str> = p.answers.iter().map(|a| a.text.as_str()).collect();
+        sqlx::query("INSERT INTO polls (message_id, question, answers, multi, ends_at) VALUES ($1, $2, $3, $4, $5)")
+            .bind(id.0)
+            .bind(&p.question)
+            .bind(serde_json::to_string(&answers).expect("strings serialize"))
+            .bind(i64::from(p.multi))
+            .bind(p.ends_at)
+            .execute(&mut *tx)
+            .await?;
+    }
     for a in &body.attachment_ids {
         // Only the uploader's own, unsent uploads to this channel can be attached.
         let r = sqlx::query("UPDATE attachments SET message_id = $1 WHERE id = $2 AND uploader_id = $3 AND channel_id = $4 AND message_id IS NULL")
@@ -207,6 +259,7 @@ pub async fn create(
         embeds: Vec::new(),
         mentions: mentions.users,
         nonce: body.nonce,
+        poll,
     };
     state.to_channel(guild, cid, &ServerEvent::MessageCreate(msg.clone())).await;
     if gp.can_in(user, cid, perms::EMBED_LINKS) {
@@ -425,9 +478,99 @@ pub async fn unreact(
     Ok(())
 }
 
+/// Votes for answer `answer` of the poll in `mid`. On a single-choice poll, it replaces
+/// your other vote.
+pub async fn vote(State(state): State<AppState>, Auth(user): Auth, Path((cid, mid, answer)): Path<(Id, Id, u32)>) -> AppResult<()> {
+    let (guild, _) = channel_perm(&state, cid, user, 0).await?;
+    let row: Option<(String, i64, i64)> = sqlx::query_as(
+        "SELECT p.answers, p.multi, p.ends_at FROM polls p JOIN messages m ON m.id = p.message_id WHERE p.message_id = $1 AND m.channel_id = $2",
+    )
+    .bind(mid.0)
+    .bind(cid.0)
+    .fetch_optional(&state.db)
+    .await?;
+    let (answers, multi, ends_at) = row.ok_or(AppError::NotFound)?;
+    if db::now_ms() >= ends_at {
+        return Err(bad("this poll has ended"));
+    }
+    let count = serde_json::from_str::<Vec<String>>(&answers).map(|a| a.len()).unwrap_or(0);
+    if answer as usize >= count {
+        return Err(bad("no such answer"));
+    }
+    let mut tx = state.db.begin().await?;
+    let replaced: Vec<(i64,)> = if multi == 0 {
+        sqlx::query_as("DELETE FROM poll_votes WHERE message_id = $1 AND user_id = $2 AND answer <> $3 RETURNING answer")
+            .bind(mid.0)
+            .bind(user.0)
+            .bind(i64::from(answer))
+            .fetch_all(&mut *tx)
+            .await?
+    } else {
+        Vec::new()
+    };
+    let added = sqlx::query("INSERT INTO poll_votes (message_id, answer, user_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING")
+        .bind(mid.0)
+        .bind(i64::from(answer))
+        .bind(user.0)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected()
+        > 0;
+    tx.commit().await?;
+    let ev = |answer: u32| PollVoteEvent { channel_id: cid, message_id: mid, user_id: user, answer };
+    for (old,) in replaced {
+        state.to_channel(guild, cid, &ServerEvent::PollVoteRemove(ev(old as u32))).await;
+    }
+    if added {
+        state.to_channel(guild, cid, &ServerEvent::PollVoteAdd(ev(answer))).await;
+    }
+    Ok(())
+}
+
+pub async fn unvote(State(state): State<AppState>, Auth(user): Auth, Path((cid, mid, answer)): Path<(Id, Id, u32)>) -> AppResult<()> {
+    let (guild, _) = channel_perm(&state, cid, user, 0).await?;
+    let open: Option<(i64,)> = sqlx::query_as("SELECT p.ends_at FROM polls p JOIN messages m ON m.id = p.message_id WHERE p.message_id = $1 AND m.channel_id = $2")
+        .bind(mid.0)
+        .bind(cid.0)
+        .fetch_optional(&state.db)
+        .await?;
+    let (ends_at,) = open.ok_or(AppError::NotFound)?;
+    if db::now_ms() >= ends_at {
+        return Err(bad("this poll has ended"));
+    }
+    let r = sqlx::query("DELETE FROM poll_votes WHERE message_id = $1 AND answer = $2 AND user_id = $3")
+        .bind(mid.0)
+        .bind(i64::from(answer))
+        .bind(user.0)
+        .execute(&state.db)
+        .await?;
+    if r.rows_affected() > 0 {
+        let ev = PollVoteEvent { channel_id: cid, message_id: mid, user_id: user, answer };
+        state.to_channel(guild, cid, &ServerEvent::PollVoteRemove(ev)).await;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::emote_tokens;
+    use super::{NewPoll, emote_tokens};
+
+    fn poll(question: &str, answers: &[&str], hours: Option<u32>) -> NewPoll {
+        NewPoll { question: question.into(), answers: answers.iter().map(|a| a.to_string()).collect(), multi: false, duration_hours: hours }
+    }
+
+    #[test]
+    fn polls() {
+        let p = poll("  Lunch? ", &["Pizza", "  ", " Tacos "], None).validate().unwrap();
+        assert_eq!(p.question, "Lunch?");
+        assert_eq!(p.answers.iter().map(|a| a.text.as_str()).collect::<Vec<_>>(), ["Pizza", "Tacos"]);
+        assert!(poll("", &["a", "b"], None).validate().is_err());
+        assert!(poll("q", &["only one", " "], None).validate().is_err());
+        assert!(poll("q", &["a"; 11], None).validate().is_err());
+        assert!(poll("q", &["a", &"x".repeat(56)], None).validate().is_err());
+        assert!(poll("q", &["a", "b"], Some(0)).validate().is_err());
+        assert!(poll("q", &["a", "b"], Some(169)).validate().is_err());
+    }
 
     #[test]
     fn tokens() {

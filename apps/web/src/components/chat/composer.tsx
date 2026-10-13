@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { emoteToken } from "@/lib/emotes";
 import { canMentionEveryone } from "@/lib/mentions";
 import { P, roleColor, useChannelCan } from "@/lib/perms";
+import { CreatePollButton } from "@/components/chat/poll";
 import { useApp } from "@/stores/app";
 import { useEmoteGroups } from "@/stores/emotes";
 import { type UiMessage, useMessages } from "@/stores/messages";
@@ -393,6 +394,7 @@ export function Composer({ channelId, guildId, replyTo, clearReply }: { channelI
             <Paperclip className="size-6" />
           </button>
         )}
+        {canSend && <CreatePollButton channelId={channelId} />}
         <input
           ref={fileInput}
           type="file"

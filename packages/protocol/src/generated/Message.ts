@@ -4,6 +4,7 @@ import type { Embed } from "./Embed";
 import type { Emote } from "./Emote";
 import type { Id } from "./Id";
 import type { MessageKind } from "./MessageKind";
+import type { Poll } from "./Poll";
 import type { Reaction } from "./Reaction";
 import type { User } from "./User";
 
@@ -45,4 +46,8 @@ embeds: Array<Embed>,
 /**
  * Client-generated id echoed back so optimistic sends can be reconciled.
  */
-nonce?: string | null, };
+nonce?: string | null, 
+/**
+ * A poll, when the message is one.
+ */
+poll?: Poll | null, };

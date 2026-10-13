@@ -162,6 +162,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/channels/{cid}/pins/{mid}", put(search::pin).delete(search::unpin))
         .route("/guilds/{gid}/messages/search", get(search::search))
         .route("/channels/{cid}/messages/{mid}/reactions/{emoji}", put(messages::react).delete(messages::unreact))
+        .route("/channels/{cid}/messages/{mid}/poll/{answer}", put(messages::vote).delete(messages::unvote))
         .route("/emotes/search", get(emotes::search))
         .route("/emotes/lookup", get(emotes::lookup))
         .route("/channels/{cid}/attachments", post(attachments::upload))

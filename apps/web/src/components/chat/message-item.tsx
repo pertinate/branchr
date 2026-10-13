@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { Attachments } from "@/components/chat/attachments";
 import { Embeds } from "@/components/chat/embeds";
+import { PollView } from "@/components/chat/poll";
 import { EmojiPicker } from "@/components/chat/emoji-picker";
 import { EmoteImage, Markup } from "@/components/chat/markup";
 import { Menu, UserMenuItems } from "@/components/menus";
@@ -343,6 +344,7 @@ export const MessageItem = memo(function MessageItem({
               {m.editedAt && <span className="ml-1 text-[10px] text-muted-foreground">(edited)</span>}
             </div>
           )}
+          {m.poll && <PollView message={m} poll={m.poll} />}
           <Attachments items={m.attachments} />
           <Embeds items={m.embeds ?? []} />
           {thread && (
