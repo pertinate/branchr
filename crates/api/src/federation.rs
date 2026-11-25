@@ -224,7 +224,16 @@ impl Federation {
         }
         let id = self.identity().expect("set above");
         let status_url = format!("{}/instances/{}", self.id_url, id.instance_id);
-        let st: Status = self.http.get(&status_url).bearer_auth(&id.secret).send().await?.error_for_status()?.json().await?;
+        let resp = self.http.get(&status_url).bearer_auth(&id.secret).send().await?;
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            // branchr doesn't know us (its records were reset or moved): start over.
+            tracing::warn!("branchr no longer knows this hub; registering again");
+            sqlx::query("DELETE FROM federation WHERE id = 1").execute(db).await?;
+            *self.identity.write() = None;
+            *self.claim_issued.lock() = None;
+            return Ok(false);
+        }
+        let st: Status = resp.error_for_status()?.json().await?;
         if st.claimed && st.owner_id == id.owner {
             return Ok(true);
         }

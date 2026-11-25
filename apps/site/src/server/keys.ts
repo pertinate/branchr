@@ -73,7 +73,7 @@ export async function jwks() {
   return { keys: (await load()).map((k) => ({ ...publicJwk(k), alg: "EdDSA", use: "sig", kid: k.kid })) };
 }
 
-export async function sign(claims: { aud: string; sub: string }, ttlSecs: number): Promise<string> {
+export async function sign(claims: { aud: string; sub: string } & Record<string, unknown>, ttlSecs: number): Promise<string> {
   const key = (await load()).find((k) => k.activates_at.getTime() <= Date.now());
   if (!key) throw new Error("no active signing key");
   const iat = Math.floor(Date.now() / 1000);

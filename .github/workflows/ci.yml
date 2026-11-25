@@ -59,7 +59,8 @@ jobs:
           pnpm --filter web build
           node apps/site/scripts/copy-app.mjs
           pnpm --filter site build
-          pnpm --filter site test
+          cargo build -p api
+          BRANCHR_API_BIN="$PWD/target/debug/api" pnpm --filter site test
       - name: Compose files are valid
         env:
           DOMAIN: chat.example.com
