@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { Hubs } from "@/components/hubs";
 import { Button } from "@/components/ui/button";
 
 // The web app's own storage (it's on this origin), so one sign-in covers both.
@@ -55,37 +56,81 @@ async function complete(): Promise<void> {
   save({ account: body.account, refreshToken: body.refresh_token });
 }
 
+/** Trades the saved sign-in for a fresh access token, which proves it still works.
+ *  Null (and forgotten) if the server no longer accepts it. */
+async function renew(): Promise<{ signed: Signed; accessToken: string } | null> {
+  const saved = stored();
+  if (!saved) return null;
+  const r = await fetch("/token", { method: "POST", body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: saved.refreshToken }) });
+  const body = await r.json().catch(() => ({}));
+  if (r.status === 400 && body.error === "invalid_grant") {
+    save({ account: null, refreshToken: null });
+    return null;
+  }
+  if (!r.ok) throw new Error(body.error_description ?? `Couldn't check your sign-in (${r.status})`);
+  const signed = { account: body.account, refreshToken: body.refresh_token };
+  save(signed);
+  return { signed, accessToken: body.access_token };
+}
+
+type State = { status: "checking" } | { status: "out" } | { status: "in"; signed: Signed; accessToken: string } | { status: "error" };
+
+// Shared while in flight, however often React runs the effect: a sign-in code works once.
+let loading: Promise<State> | null = null;
+let loadError: string | null = null;
+
+function load(): Promise<State> {
+  return (loading ??= (async (): Promise<State> => {
+    loadError = null;
+    try {
+      await complete().catch((e: Error) => {
+        loadError = e.message;
+      });
+      const r = await renew();
+      return r ? { status: "in", ...r } : { status: "out" };
+    } catch (e) {
+      loadError = (e as Error).message;
+      return { status: "error" };
+    }
+  })().finally(() => (loading = null)));
+}
+
 export function Account() {
-  const [signed, setSigned] = useState<Signed | null | undefined>(undefined);
+  const [state, setState] = useState<State>({ status: "checking" });
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    complete()
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setSigned(stored()));
+    void load().then((s) => {
+      setState(s);
+      setError(loadError);
+    });
   }, []);
 
   async function signOut() {
     const token = stored()?.refreshToken;
     if (token) await fetch("/logout", { method: "POST", body: new URLSearchParams({ refresh_token: token }) }).catch(() => {});
     save({ account: null, refreshToken: null });
-    setSigned(null);
+    setState({ status: "out" });
   }
 
-  if (signed === undefined) return <p className="text-muted-foreground">Loading…</p>;
   return (
-    <div className="space-y-4">
-      {signed ? (
-        <div className="flex items-center gap-4">
-          {signed.account.avatarUrl && <img src={signed.account.avatarUrl} alt="" className="size-12 rounded-full" />}
-          <p>
-            Signed in as <b>{signed.account.displayName}</b>
-          </p>
-          <Button variant="secondary" onClick={() => void signOut()}>
-            Sign out
-          </Button>
-        </div>
-      ) : (
+    <div className="space-y-8">
+      {state.status === "checking" && <p className="text-muted-foreground">Checking your sign-in…</p>}
+      {state.status === "in" && (
+        <>
+          <div className="flex flex-wrap items-center gap-4">
+            {state.signed.account.avatarUrl && <img src={state.signed.account.avatarUrl} alt="" className="size-12 rounded-full" />}
+            <p>
+              Signed in as <b>{state.signed.account.displayName}</b>
+            </p>
+            <Button variant="secondary" onClick={() => void signOut()}>
+              Sign out
+            </Button>
+          </div>
+          <Hubs accessToken={state.accessToken} />
+        </>
+      )}
+      {state.status === "out" && (
         <Button className="bg-[#5865F2] text-white hover:bg-[#4752c4]" onClick={() => void signIn()}>
           Sign in with Discord
         </Button>

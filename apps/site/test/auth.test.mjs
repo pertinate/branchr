@@ -1,79 +1,17 @@
-// Sign-in end to end: the built site (`pnpm build` first), a real Postgres
-// (TEST_DATABASE_URL; a throwaway database is made in it) and a stand-in Discord.
+// Sign-in end to end (see harness.mjs).
 import assert from "node:assert/strict";
-import { spawn, spawnSync } from "node:child_process";
-import { createHash, randomBytes } from "node:crypto";
 import { after, before, describe, it } from "node:test";
-import { fileURLToPath } from "node:url";
 import { createLocalJWKSet, jwtVerify } from "jose";
-import pg from "pg";
 
-const base = process.env.TEST_DATABASE_URL;
-const site = fileURLToPath(new URL("..", import.meta.url));
-const PORT = 18090;
-const MOCK = 18091;
-const URL_ = `http://localhost:${PORT}`;
-const REDIRECT = `${URL_}/account`;
+import { skip, start } from "./harness.mjs";
 
-describe("sign-in", { skip: !base && "needs TEST_DATABASE_URL (Postgres)" }, () => {
-  const name = `branchr_site_${process.pid}`;
-  const children = [];
-  let admin, db;
-
+describe("sign-in", { skip }, () => {
+  let s, URL_, db, post, hop, authorize, exchange, refresh;
   before(async () => {
-    admin = new pg.Client({ connectionString: base });
-    await admin.connect();
-    await admin.query(`CREATE DATABASE ${name}`);
-    const url = new URL(base);
-    url.pathname = `/${name}`;
-    const env = {
-      ...process.env,
-      DATABASE_URL: url.toString(),
-      DATABASE_URL_UNPOOLED: "",
-      PUBLIC_URL: URL_,
-      ALLOWED_REDIRECTS: "",
-      DISCORD_CLIENT_ID: "test",
-      DISCORD_CLIENT_SECRET: "test",
-      DISCORD_API: `http://127.0.0.1:${MOCK}/api`,
-      DISCORD_AUTHORIZE: `http://127.0.0.1:${MOCK}/oauth2/authorize`,
-      DEFAULT_HUB: "https://hub.example.com",
-    };
-    for (let i = 0; i < 2; i++) assert.equal(spawnSync("node", ["scripts/migrate.mjs"], { cwd: site, env, stdio: "inherit" }).status, 0);
-    db = new pg.Client({ connectionString: url.toString() });
-    await db.connect();
-    children.push(spawn("node", ["../../tests/e2e/mock-discord.mjs"], { cwd: site, env: { ...env, PORT: String(MOCK) } }));
-    children.push(spawn("node_modules/.bin/next", ["start", "-p", String(PORT)], { cwd: site, env, stdio: ["ignore", "ignore", "inherit"] }));
-    for (let i = 0; ; i++) {
-      const ok = await Promise.all([fetch(`${URL_}/health`), fetch(`http://127.0.0.1:${MOCK}/health`)]).then((r) => r.every((x) => x.ok), () => false);
-      if (ok) break;
-      assert.ok(i < 150, "servers didn't start");
-      await new Promise((r) => setTimeout(r, 200));
-    }
+    s = await start(18090);
+    ({ url: URL_, db, post, hop, authorize, exchange, refresh } = s);
   });
-
-  after(async () => {
-    for (const c of children) c.kill();
-    await db?.end();
-    await admin?.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
-    await admin?.end();
-  });
-
-  const post = (path, body) => fetch(`${URL_}${path}`, { method: "POST", body: new URLSearchParams(body) });
-  const hop = async (url) => {
-    const r = await fetch(url, { redirect: "manual" });
-    assert.equal(r.status >= 300 && r.status < 400, true, `expected a redirect from ${url}, got ${r.status}`);
-    return new URL(r.headers.get("location"), url);
-  };
-  /** Through Discord and back: the code our client receives. */
-  async function authorize(redirectUri = REDIRECT) {
-    const verifier = randomBytes(32).toString("base64url");
-    const q = new URLSearchParams({ redirect_uri: redirectUri, code_challenge: createHash("sha256").update(verifier).digest("base64url"), code_challenge_method: "S256", state: "xyz" });
-    const back = await hop(await hop(await hop(`${URL_}/authorize?${q}`)));
-    assert.equal(back.searchParams.get("state"), "xyz");
-    return { code: back.searchParams.get("code"), verifier, back };
-  }
-  const exchange = ({ code, verifier }, over = {}) => post("/token", { grant_type: "authorization_code", code, code_verifier: verifier, redirect_uri: REDIRECT, ...over });
-  const refresh = (token) => post("/token", { grant_type: "refresh_token", refresh_token: token });
+  after(() => s?.stop());
 
   it("signs in, and hubs can verify the token from the JWKS", async () => {
     const t = await (await exchange(await authorize())).json();

@@ -45,6 +45,7 @@ async function gc() {
   await query("DELETE FROM auth_codes WHERE expires_at < now()");
   await query("DELETE FROM refresh_tokens WHERE expires_at < now()");
   await query("DELETE FROM rate_limits WHERE minute < now() - interval '1 hour'");
+  await query("DELETE FROM setup_codes WHERE hub_id IS NULL AND expires_at < now() - interval '1 day'");
 }
 
 /** Starts a sign-in: remembers the client's PKCE challenge and sends the user to Discord. */

@@ -209,11 +209,13 @@ To host it, add `deploy/docker-compose.id.yml`: it runs branchr ID and its own P
 
 ## The website
 
-`apps/site` is a Next.js app, deployed to Vercel with `apps/site` as the project's root directory. Its build also builds the web app (served at `/app/`) and applies `apps/site/migrations` to the database. It's where branchr ID is moving: so far it has Discord sign-in (`/authorize`, `/token`, `/me`, `/logout`, the JWKS, and an `/account` page). Hubs, friends, DMs and relays are still only in `crates/id`.
+`apps/site` is a Next.js app, deployed to Vercel with `apps/site` as the project's root directory. Its build also builds the web app (served at `/app/`) and applies `apps/site/migrations` to the database. It's where branchr ID is moving: so far it has Discord sign-in (`/authorize`, `/token`, `/me`, `/logout`, the JWKS) and hubs (registration, claiming, setup codes, passes, and each account's hub list), with an `/account` page for both. Friends, DMs, Explore, bans and relays are still only in `crates/id`.
 
 Settings are in `apps/site/.env.example`: a Postgres `DATABASE_URL`, `PUBLIC_URL`, the Discord client id and secret, and `DEFAULT_HUB`. Discord must allow the redirect `$PUBLIC_URL/auth/discord/callback`. Give preview deployments their own database, since every build migrates the one it's given.
 
-To test it: `pnpm --filter web build && node apps/site/scripts/copy-app.mjs && pnpm --filter site build`, then `TEST_DATABASE_URL=postgres://… pnpm --filter site test`.
+To test it: `pnpm --filter web build && node apps/site/scripts/copy-app.mjs && pnpm --filter site build`, then `TEST_DATABASE_URL=postgres://… pnpm --filter site test` (add `BRANCHR_API_BIN=$PWD/target/debug/api` after `cargo build -p api` to test with a real hub).
+
+To point a local hub at a local site (`pnpm dev:site`): `AUTH_MODE=both BRANCHR_ID_URL=http://localhost:5180 cargo run -p api`.
 
 ## Reaching a home Hub through branchr.us (branchr-relay)
 
