@@ -1,6 +1,6 @@
 import { AudioLines, GitBranch, KeyRound, Leaf, MonitorPlay, Search, Shield, Smile } from "lucide-react";
 
-import { PageHead } from "@/layout";
+import { PageHead } from "@/components/site";
 
 const FEATURES = [
   {

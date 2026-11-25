@@ -54,6 +54,12 @@ jobs:
           pnpm --filter web typecheck
           pnpm --filter desktop typecheck
           pnpm --filter site typecheck
+      - name: Site and account API
+        run: |
+          pnpm --filter web build
+          node apps/site/scripts/copy-app.mjs
+          pnpm --filter site build
+          pnpm --filter site test
       - name: Compose files are valid
         env:
           DOMAIN: chat.example.com

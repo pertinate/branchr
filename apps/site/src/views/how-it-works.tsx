@@ -1,6 +1,6 @@
 import { Eye, GitBranch, Network, Server, Shield } from "lucide-react";
 
-import { PageHead } from "@/layout";
+import { PageHead } from "@/components/site";
 
 const PARTS = [
   {

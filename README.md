@@ -177,7 +177,7 @@ Configuration is all through the environment:
 | `TRUST_PROXY` | api, id | unset | `1` behind a reverse proxy that sets `X-Forwarded-For` (the Caddy compose files set it). Sign-in, registration, invites and branchr ID's public endpoints are rate limited per client address; without this every client would look like the proxy. Loopback clients are never limited. |
 | `LINK_PREVIEWS` | api | on | `0` turns off link previews (the server then never fetches links people post). |
 | `SFU_PUBLIC_UDP_PORT` | sfu | `SFU_UDP_PORT` | First UDP port advertised to clients, when a relay forwards other public ports to the sfu's own. |
-| `SITE_DIR` | api | `/srv/site` in the image | The product site (`apps/site`), served at `/`; the app is at `/app/`. Without it, `/` leads to the app. Old `/#/...` links (invites, sign-in) carry on to `/app/`. |
+| `SITE_DIR` | api | unset | A folder of static pages to serve at `/`; the app is at `/app/`. Without it, `/` leads to the app. Old `/#/...` links (invites, sign-in) carry on to `/app/`. |
 | `SFU_PUBLIC_IP` | sfu | detected | The address clients send media to, or `auto` for a hub at home: the sfu asks the router to forward its UDP ports (UPnP; `SFU_UPNP=0` turns that off) and for its public IP, else asks `SFU_IP_ECHO` (`https://branchr.us/ip`), and keeps it current. It also offers its LAN address (`SFU_LAN_IP`, detected) so people on the same network connect locally. Manage Hub shows whether the internet can reach it (branchr probes the ports). |
 | `RELAY` | api | off | `1`: be reached through your branchr ID's gateway (branchr.us) at `https://branchr.us/h/<this hub's key>/`, with no domain or open web ports. The hub proves who it is with a pass from branchr ID; it must be claimed first. Use with `TRUST_PROXY=1`, and `SFU_PUBLIC_IP=auto` on the sfu so voice goes to it directly. |
 | `MAX_UPLOAD_MB` | api | `500` | Largest attachment. Sent to clients, which refuse bigger files up front. |
@@ -207,13 +207,21 @@ How federation works:
 
 To host it, add `deploy/docker-compose.id.yml`: it runs branchr ID and its own Postgres, and Caddy serves it on `ID_DOMAIN`. It needs `ID_DOMAIN`, `ID_DB_PASSWORD`, `DISCORD_CLIENT_ID` and `DISCORD_CLIENT_SECRET` in `.env`; `scripts/deploy-image.sh` includes it when `ID_DOMAIN` is set. DM calls go through a second SFU, `id-sfu`, next to branchr ID: set `ID_VOICE_SECRET` (`openssl rand -hex 32`) and `COMPOSE_PROFILES=calls` in `.env`, and open UDP 52000–52001 (`ID_SFU_UDP_PORT`/`ID_SFU_UDP_END`). Without them, branchr ID runs as before and calls are off. Its token signing keys rotate on their own every `KEY_ROTATE_DAYS` (default 90, `0` turns it off): a new key is published an hour before it starts signing, and the old one is retired an hour after, when every token it signed has expired. Run it locally against real Discord with `scripts/dev-id.sh`. It reads `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` and a Postgres `DATABASE_URL` from `~/.config/branchr/id.env`, which stays outside the repo. Tests use `TEST_DATABASE_URL` and a throwaway schema; CI provides Postgres and rustfs containers and runs the e2e suite twice: SQLite with files on disk, then Postgres (`E2E_INSTANCE_DB=postgres`, which also sets the test-only `DATABASE_SCHEMA`) with files in rustfs (`E2E_S3_ENDPOINT`). The e2e emote tests talk to a local mock of 7TV, BetterTTV and FrankerFaceZ through the test-only `EMOTE_PROVIDERS_URL`.
 
+## The website
+
+`apps/site` is a Next.js app, deployed to Vercel with `apps/site` as the project's root directory. Its build also builds the web app (served at `/app/`) and applies `apps/site/migrations` to the database. It's where branchr ID is moving: so far it has Discord sign-in (`/authorize`, `/token`, `/me`, `/logout`, the JWKS, and an `/account` page). Hubs, friends, DMs and relays are still only in `crates/id`.
+
+Settings are in `apps/site/.env.example`: a Postgres `DATABASE_URL`, `PUBLIC_URL`, the Discord client id and secret, and `DEFAULT_HUB`. Discord must allow the redirect `$PUBLIC_URL/auth/discord/callback`. Give preview deployments their own database, since every build migrates the one it's given.
+
+To test it: `pnpm --filter web build && node apps/site/scripts/copy-app.mjs && pnpm --filter site build`, then `TEST_DATABASE_URL=postgres://… pnpm --filter site test`.
+
 ## Reaching a home Hub through branchr.us (branchr-relay)
 
 **The easy way:** sign in at `https://branchr.us/app/#/setup-hub`, name the Hub, and paste the Compose file or `docker run` commands it gives you. They carry a one-time setup code (`BRANCHR_SETUP`), so the Hub is yours from its first start, and `RELAY=1`, so it's reachable at `https://branchr.us/h/<its key>/`. The page waits for it to check in and then opens it. What follows is how that works underneath, and how to run your own gateway.
 
 Like Plex: a Hub at home (no public IP, no port forwarding) is reached through the gateway at `https://branchr.us/h/<name>/`. The connector next to the Hub dials out to the gateway over QUIC and keeps the connection open. Visitors' HTTPS and WebSockets come back over QUIC streams (with the `/h/<name>` prefix removed), and voice/video over QUIC datagrams, so a lost packet never holds up the others.
 
-branchr.us is the front door: the product site is at `/` and the app at `/app/`. Both are deployed to Vercel (project root directory `apps/site`; its `vercel.json` builds the two), and Caddy on the gateway proxies those paths to `WEB_HOST`. Everything else on the domain goes to branchr ID, including `/app/config.js`, so the app opens `DEFAULT_HUB` unless you pick another. A new site page needs its path added to `deploy/Caddyfile.id`. `deploy/docker-compose.id.yml` has the gateway as the `relay` profile (UDP 7443, plus media ports `RELAY_UDP_START`..`RELAY_UDP_END`), and Caddy sends `/h/*` to it. Allow a Hub there:
+branchr.us is the front door: the website at `/` and the app at `/app/`, both on Vercel (see The website). `deploy/docker-compose.id.yml` has the gateway as the `relay` profile (UDP 7443, plus media ports `RELAY_UDP_START`..`RELAY_UDP_END`), and Caddy sends `/h/*` to it. Allow a Hub there:
 
 ```sh
 docker compose exec relay branchr-relay add home - 53000 2   # prints its token; media on UDP 53000-53001
