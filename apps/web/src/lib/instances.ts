@@ -69,10 +69,13 @@ export function normalizeUrl(url: string): string {
   return url.trim().replace(/\/+$/, "");
 }
 
-/** The address the login screen suggests: this page's own server when served by one. */
+/** What the server of this page says its hub is (`config.js`); empty if it says none. */
+const configuredHub = typeof window !== "undefined" ? (window as { __BRANCHR__?: { defaultHub?: string } }).__BRANCHR__?.defaultHub : undefined;
+
+/** The address the login screen suggests: this page's own server when served by one. Empty
+ *  where the app is served by something other than a hub (branchr.us) with none set. */
 export const defaultServerUrl =
-  // Where the app is served by something other than a hub (branchr.us), it says which hub.
-  (typeof window !== "undefined" && (window as { __BRANCHR__?: { defaultHub?: string } }).__BRANCHR__?.defaultHub) ||
+  configuredHub ??
   (typeof window !== "undefined" && window.location.protocol.startsWith("http") && !import.meta.env.DEV
     ? hubBase(window.location.href)
     : ((import.meta.env.VITE_DEFAULT_SERVER as string | undefined) ?? "http://localhost:8080"));

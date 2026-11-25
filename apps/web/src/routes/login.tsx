@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { signOut, startSignIn, useBranchrId } from "@/lib/branchr-id";
 import { useSessions } from "@/lib/instances";
 import { type Landing, instanceInfo, landAfterLogin, loginWithBranchr } from "@/lib/server-login";
 import { useAuth } from "@/stores/auth";
@@ -33,6 +34,8 @@ function Login() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [info, setInfo] = useState<InstanceInfo | null>(null);
+
+  const account = useBranchrId((s) => s.account);
 
   const land = (to: Landing) => {
     if (to.guildId) void navigate({ to: "/$guildId", params: { guildId: to.guildId } });
@@ -68,7 +71,10 @@ function Login() {
     setBusy(true);
     setError(null);
     try {
-      const to = await loginWithBranchr(server.trim().replace(/\/+$/, ""), invite);
+      const base = server.trim().replace(/\/+$/, "");
+      // No hub to log in to: just sign in to branchr.
+      if (!base) return await startSignIn();
+      const to = await loginWithBranchr(base, invite);
       if (to) land(to);
     } catch (err) {
       setError((err as Error).message);
@@ -115,7 +121,19 @@ function Login() {
                 : "Join your self-hosted community."}
           </p>
         </div>
-        {!full ? (
+        {!full && !server && account ? (
+          <div className="space-y-3 text-center">
+            <p>
+              Signed in to branchr as <b>{account.displayName}</b>
+            </p>
+            <Button type="button" size="lg" className="w-full" onClick={() => setExpanded(true)}>
+              Connect a hub
+            </Button>
+            <button type="button" className="text-sm text-muted-foreground hover:text-foreground hover:underline" onClick={() => void signOut()}>
+              Sign out
+            </button>
+          </div>
+        ) : !full ? (
           <>
             <Button type="button" size="lg" className="w-full bg-[#5865F2] text-white hover:bg-[#4752c4]" disabled={busy} onClick={() => void withBranchr()}>
               Sign in with Discord
@@ -127,19 +145,21 @@ function Login() {
                 </button>{" "}
                 (a password account, or another hub)
               </p>
-              <p>
-                Need an account on this hub?{" "}
-                <button
-                  type="button"
-                  className="text-primary hover:underline"
-                  onClick={() => {
-                    setMode("register");
-                    setExpanded(true);
-                  }}
-                >
-                  Register
-                </button>
-              </p>
+              {server && (
+                <p>
+                  Need an account on this hub?{" "}
+                  <button
+                    type="button"
+                    className="text-primary hover:underline"
+                    onClick={() => {
+                      setMode("register");
+                      setExpanded(true);
+                    }}
+                  >
+                    Register
+                  </button>
+                </p>
+              )}
             </div>
           </>
         ) : (
