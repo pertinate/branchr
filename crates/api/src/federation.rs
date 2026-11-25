@@ -21,6 +21,32 @@ pub struct Identity {
     pub owner: Option<String>,
 }
 
+pub enum Ticket {
+    /// Our owner linked us to a relay.
+    Linked(Linked),
+    /// No relay is linked to this hub.
+    Unlinked,
+    SharedGateway,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct Linked {
+    pub token: String,
+    pub relay: RelayAt,
+    /// The first of our media ports on the relay.
+    pub udp_base: u16,
+}
+
+#[derive(Deserialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RelayAt {
+    pub quic: String,
+    pub fp: String,
+    pub web: String,
+    pub public_ip: std::net::IpAddr,
+}
+
 /// What a branchr ID pass says about the user.
 #[derive(Deserialize, Debug)]
 pub struct Pass {
@@ -123,6 +149,31 @@ impl Federation {
             .json()
             .await?;
         Ok(t.token)
+    }
+
+    /// What branchr says about reaching us through a relay, asking for `ports` media ports.
+    pub async fn relay_ticket(&self, ports: usize) -> anyhow::Result<Ticket> {
+        let id = self.identity().ok_or_else(|| anyhow::anyhow!("not registered with branchr yet"))?;
+        let r = self
+            .http
+            .post(format!("{}/instances/{}/relay-pass", self.id_url, id.instance_id))
+            .bearer_auth(&id.secret)
+            .json(&serde_json::json!({ "ports": ports }))
+            .send()
+            .await?;
+        let status = r.status();
+        let body: serde_json::Value = r.json().await.unwrap_or_default();
+        if status == reqwest::StatusCode::NOT_FOUND && body["error"] == "no_relay" {
+            return Ok(Ticket::Unlinked);
+        }
+        if !status.is_success() {
+            anyhow::bail!("relay pass: {status} {}", body["error_description"].as_str().unwrap_or_default());
+        }
+        // An older branchr has one gateway for everyone, described at /relay.
+        if body.get("relay").is_none() {
+            return Ok(Ticket::SharedGateway);
+        }
+        Ok(Ticket::Linked(serde_json::from_value(body)?))
     }
 
     pub fn id_url(&self) -> &str {

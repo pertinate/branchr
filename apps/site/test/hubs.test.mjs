@@ -1,4 +1,4 @@
-// Hubs: registering, claiming and passes; then, with BRANCHR_API_BIN set to a built hub
+// Hubs: registering, claiming and passes; then, with BRANCHR_BIN_DIR set to built programs
 // (`cargo build -p api`), the real thing signing someone in.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -92,8 +92,8 @@ describe("hubs", { skip }, () => {
     assert.equal((await fetch(`${s.url}/me/instances`, { method: "OPTIONS" })).headers.get("access-control-allow-methods")?.includes("PUT"), true);
   });
 
-  const bin = process.env.BRANCHR_API_BIN;
-  it("signs people in to a real hub", { skip: !bin && "needs BRANCHR_API_BIN" }, async () => {
+  const bin = process.env.BRANCHR_BIN_DIR && path.join(process.env.BRANCHR_BIN_DIR, "api");
+  it("signs people in to a real hub", { skip: !bin && "needs BRANCHR_BIN_DIR" }, async () => {
     const dir = mkdtempSync(path.join(tmpdir(), "branchr-hub-"));
     const hubUrl = "http://127.0.0.1:18094";
     const claimFile = path.join(dir, "claim.txt");
@@ -120,7 +120,7 @@ describe("hubs", { skip }, () => {
     }
   });
 
-  it("is forgotten and registers again", { skip: !bin && "needs BRANCHR_API_BIN" }, async () => {
+  it("is forgotten and registers again", { skip: !bin && "needs BRANCHR_BIN_DIR" }, async () => {
     const dir = mkdtempSync(path.join(tmpdir(), "branchr-hub-"));
     const claimFile = path.join(dir, "claim.txt");
     const env = { PATH: process.env.PATH, DATABASE_URL: `sqlite://${dir}/hub.db`, UPLOAD_DIR: `${dir}/up`, API_BIND: "127.0.0.1:18095", VOICE_SECRET: "test",

@@ -18,6 +18,7 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::net::{TcpListener, UdpSocket};
 
 use crate::http::{Body, forward, text};
+use crate::managed::{About, Managed};
 use crate::proto::{ALPN, Hello, Welcome, decode_datagram, encode_datagram};
 
 /// A branch allowed to connect (`branches.json`).
@@ -59,13 +60,40 @@ fn pass_branch(dir: &Path, name: String) -> anyhow::Result<Branch> {
     Ok(Branch { name, secret_hash: String::new(), host: String::new(), udp_base, udp_ports })
 }
 
+/// A branch's bound media ports; dropping this frees them.
+struct MediaPorts {
+    base: u16,
+    sockets: Arc<Vec<Arc<UdpSocket>>>,
+    readers: Vec<tokio::task::AbortHandle>,
+}
+
+impl Drop for MediaPorts {
+    fn drop(&mut self) {
+        for r in &self.readers {
+            r.abort();
+        }
+    }
+}
+
+/// A pass for a managed relay (its audience): this hub, its owner, and the ports it gets.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ManagedClaims {
+    sub: String,
+    owner: String,
+    udp_base: u16,
+    udp_ports: u16,
+}
+
 #[derive(Default)]
 struct State {
     dir: PathBuf,
     /// Branch name -> its connection, while connected.
     live: Mutex<HashMap<String, quinn::Connection>>,
     /// Branch name -> its public media sockets (kept across reconnects).
-    udp: Mutex<HashMap<String, Arc<Vec<Arc<UdpSocket>>>>>,
+    udp: Mutex<HashMap<String, MediaPorts>>,
+    /// Set when branchr manages us (RELAY_MANAGED=1): only the hubs linked there get in.
+    managed: Option<Managed>,
     /// Carry hubs' voice and video too (RELAY_MEDIA; off where bandwidth is someone else's
     /// bill, e.g. branchr.us: hubs take media directly).
     media: bool,
@@ -98,7 +126,8 @@ pub struct Passes {
 }
 
 impl Passes {
-    async fn verify(&self, pass: &str) -> anyhow::Result<String> {
+    /// The claims of a pass signed by branchr for `audience`.
+    async fn claims<T: serde::de::DeserializeOwned>(&self, pass: &str, audience: &str) -> anyhow::Result<T> {
         let kid = jsonwebtoken::decode_header(pass)?.kid.ok_or_else(|| anyhow::anyhow!("pass without a key id"))?;
         if !self.keys.lock().unwrap().contains_key(&kid) {
             let due = self.fetched.lock().unwrap().is_none_or(|t| t.elapsed() > std::time::Duration::from_secs(60));
@@ -123,8 +152,12 @@ impl Passes {
         let key = self.keys.lock().unwrap().get(&kid).cloned().ok_or_else(|| anyhow::anyhow!("pass signed with an unknown key"))?;
         let mut v = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::EdDSA);
         v.set_issuer(&[&self.id_url]);
-        v.set_audience(&["branchr-relay"]);
-        let c = jsonwebtoken::decode::<PassClaims>(pass, &key, &v)?.claims;
+        v.set_audience(&[audience]);
+        Ok(jsonwebtoken::decode::<T>(pass, &key, &v)?.claims)
+    }
+
+    async fn verify(&self, pass: &str) -> anyhow::Result<String> {
+        let c: PassClaims = self.claims(pass, "branchr-relay").await?;
         if self.require_claimed && !c.claimed {
             anyhow::bail!("claim this hub first (sign in and enter its claim code), then it can be reached through here");
         }
@@ -163,6 +196,7 @@ impl State {
 
 pub async fn serve(dir: PathBuf, quic: SocketAddr, http: SocketAddr) -> anyhow::Result<()> {
     let (cert, key) = crate::tls::load_or_create(&dir)?;
+    let cert_der = cert.to_vec();
     tracing::info!("relay certificate fingerprint {}", crate::tls::fingerprint(&cert));
     let mut tls = rustls::ServerConfig::builder_with_provider(crate::tls::provider())
         .with_safe_default_protocol_versions()?
@@ -181,11 +215,32 @@ pub async fn serve(dir: PathBuf, quic: SocketAddr, http: SocketAddr) -> anyhow::
         rand::RngCore::fill_bytes(&mut rand::rng(), &mut salt);
         std::fs::write(&salt_file, salt)?;
     }
+    let id_url = std::env::var("RELAY_ID_URL").ok().filter(|u| !u.is_empty());
+    let managed = if flag("RELAY_MANAGED", false) {
+        let var = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
+        let need = |k: &str| var(k).ok_or_else(|| anyhow::anyhow!("a managed relay needs {k}"));
+        let about = About {
+            quic: need("RELAY_PUBLIC")?,
+            fp: crate::tls::fingerprint(&cert_der),
+            web: need("RELAY_WEB")?.trim_end_matches('/').to_string(),
+            public_ip: var("RELAY_PUBLIC_IP"),
+            udp_start: need("RELAY_UDP_START")?.parse()?,
+            udp_end: need("RELAY_UDP_END")?.parse()?,
+        };
+        anyhow::ensure!(about.udp_start <= about.udp_end, "RELAY_UDP_START is above RELAY_UDP_END");
+        let url = id_url.clone().unwrap_or_else(|| "https://branchr.us".into());
+        Some(Managed::new(&url, var("RELAY_NAME").unwrap_or_else(|| "My relay".into()), about, dir.clone()))
+    } else {
+        None
+    };
+    // A managed relay checks passes from the branchr that manages it.
+    let passes_url = managed.as_ref().map(|m| m.id_url().to_string()).or(id_url);
     let state = Arc::new(State {
-        media: flag("RELAY_MEDIA", true),
+        // Carrying media is the point of a managed relay.
+        media: managed.is_some() || flag("RELAY_MEDIA", true),
         pass_ip: flag("RELAY_PASS_IP", false),
         salt: std::fs::read(&salt_file)?,
-        passes: std::env::var("RELAY_ID_URL").ok().filter(|u| !u.is_empty()).map(|u| Passes {
+        passes: passes_url.map(|u| Passes {
             id_url: u.trim_end_matches('/').to_string(),
             require_claimed: flag("RELAY_REQUIRE_CLAIMED", true),
             http: reqwest::Client::builder().timeout(std::time::Duration::from_secs(10)).build().expect("http client"),
@@ -193,8 +248,25 @@ pub async fn serve(dir: PathBuf, quic: SocketAddr, http: SocketAddr) -> anyhow::
             fetched: Default::default(),
         }),
         dir,
+        managed,
         ..Default::default()
     });
+    if state.managed.is_some() {
+        let state = state.clone();
+        let every = std::env::var("RELAY_HEARTBEAT_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(60);
+        tokio::spawn(async move {
+            loop {
+                if let Some(m) = &state.managed {
+                    match m.beat(std::time::Duration::ZERO).await {
+                        Ok(()) => drop_unlinked(&state),
+                        // Out of reach: carry on with what we were last told.
+                        Err(e) => tracing::warn!("branchr: {e:#}"),
+                    }
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(every.max(1))).await;
+            }
+        });
+    }
     tracing::info!("relaying hubs' media: {}; visitors' addresses: {}", if state.media { "yes" } else { "no (direct)" }, if state.pass_ip { "passed on" } else { "stand-ins" });
     tokio::spawn(serve_http(state.clone(), http));
     while let Some(incoming) = endpoint.accept().await {
@@ -220,7 +292,13 @@ async fn branch(state: Arc<State>, conn: quinn::Connection) -> anyhow::Result<()
     BufReader::new(recv.take(4096)).read_line(&mut line).await?;
     let hello: Hello = serde_json::from_str(&line)?;
     // A pass from branchr ID admits a hub by its key; otherwise it must be on our list.
-    let admitted = match &hello.pass {
+    let admitted = if state.managed.is_some() {
+        match &hello.pass {
+            Some(pass) => admit_managed(&state, pass).await,
+            None => Err(anyhow::anyhow!("this relay only takes hubs linked to it on branchr")),
+        }
+    } else {
+        match &hello.pass {
         Some(pass) => match state.passes.as_ref() {
             Some(p) => p.verify(pass).await.and_then(|name| pass_branch(&state.dir, name)),
             None => Err(anyhow::anyhow!("this gateway doesn't take branchr passes")),
@@ -229,6 +307,7 @@ async fn branch(state: Arc<State>, conn: quinn::Connection) -> anyhow::Result<()
             .into_iter()
             .find(|b| b.name == hello.name && b.secret_hash == hash(&hello.secret))
             .ok_or_else(|| anyhow::anyhow!("unknown hub or wrong secret")),
+        }
     };
     let b = match admitted {
         Ok(b) => b,
@@ -266,16 +345,66 @@ async fn branch(state: Arc<State>, conn: quinn::Connection) -> anyhow::Result<()
     Ok(())
 }
 
+/// A hub shows a managed relay a pass naming it. The hub must also be linked here now.
+async fn admit_managed(state: &State, pass: &str) -> anyhow::Result<Branch> {
+    let (managed, passes) = (state.managed.as_ref().expect("managed"), state.passes.as_ref().expect("passes"));
+    let me = managed.relay_id().ok_or_else(|| anyhow::anyhow!("this relay isn't registered with branchr yet"))?;
+    let c: ManagedClaims = passes.claims(pass, &me).await?;
+    let listed = |a: crate::managed::Allowed| a.owner.as_deref() == Some(c.owner.as_str()) && a.hubs.get(&c.sub) == Some(&(c.udp_base, c.udp_ports));
+    if !listed(managed.allowed()) {
+        // Just linked, perhaps: ask again.
+        managed.beat(std::time::Duration::ZERO).await?;
+        anyhow::ensure!(listed(managed.allowed()), "this hub isn't linked to this relay");
+    }
+    if !c.sub.chars().all(|ch| ch.is_ascii_hexdigit() || ch == '-') || c.sub.is_empty() {
+        anyhow::bail!("odd hub key in pass");
+    }
+    Ok(Branch { name: c.sub, secret_hash: String::new(), host: String::new(), udp_base: c.udp_base, udp_ports: c.udp_ports })
+}
+
+/// Cuts off hubs branchr no longer links here, or whose ports moved.
+fn drop_unlinked(state: &State) {
+    let Some(m) = &state.managed else { return };
+    let allowed = m.allowed();
+    state.udp.lock().unwrap().retain(|name, ports| allowed.hubs.get(name) == Some(&(ports.base, ports.sockets.len() as u16)));
+    state.live.lock().unwrap().retain(|name, conn| {
+        let keep = allowed.hubs.contains_key(name);
+        if !keep {
+            tracing::info!("hub {name} is no longer linked here");
+            conn.close(3u32.into(), b"unlinked");
+        }
+        keep
+    });
+}
+
 /// The branch's public media ports, bound once; packets on them go to its current connection.
 async fn media_sockets(state: &Arc<State>, b: &Branch) -> anyhow::Result<Arc<Vec<Arc<UdpSocket>>>> {
-    if let Some(s) = state.udp.lock().unwrap().get(&b.name) {
-        return Ok(s.clone());
+    {
+        let mut all = state.udp.lock().unwrap();
+        if let Some(p) = all.get(&b.name) {
+            if p.base == b.udp_base && p.sockets.len() == b.udp_ports as usize {
+                return Ok(p.sockets.clone());
+            }
+            all.remove(&b.name);
+        }
     }
     let mut sockets = Vec::new();
+    let mut readers = Vec::new();
     for i in 0..b.udp_ports {
-        let sock = Arc::new(UdpSocket::bind(("0.0.0.0", b.udp_base + i)).await?);
+        // Ports just freed take a moment to close.
+        let mut tries = 0;
+        let sock = loop {
+            match UdpSocket::bind(("0.0.0.0", b.udp_base + i)).await {
+                Ok(s) => break Arc::new(s),
+                Err(_) if tries < 20 => {
+                    tries += 1;
+                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                }
+                Err(e) => return Err(e.into()),
+            }
+        };
         let (state, name, sock2) = (state.clone(), b.name.clone(), sock.clone());
-        tokio::spawn(async move {
+        let reader = tokio::spawn(async move {
             let mut buf = vec![0u8; 2048];
             while let Ok((n, from)) = sock2.recv_from(&mut buf).await {
                 let conn = state.live.lock().unwrap().get(&name).cloned();
@@ -286,10 +415,11 @@ async fn media_sockets(state: &Arc<State>, b: &Branch) -> anyhow::Result<Arc<Vec
                 }
             }
         });
+        readers.push(reader.abort_handle());
         sockets.push(sock);
     }
     let sockets = Arc::new(sockets);
-    state.udp.lock().unwrap().insert(b.name.clone(), sockets.clone());
+    state.udp.lock().unwrap().insert(b.name.clone(), MediaPorts { base: b.udp_base, sockets: sockets.clone(), readers });
     Ok(sockets)
 }
 

@@ -3,6 +3,7 @@
 
 pub mod agent;
 mod http;
+pub mod managed;
 pub mod proto;
 pub mod server;
 pub mod tls;

@@ -25,10 +25,16 @@ const MAX_OPEN_SETUP_CODES = 10;
 
 type Params = { id: string };
 
-function hubId(p: Params): string {
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(p.id)) throw notFound();
-  return p.id.toLowerCase();
+/** An id from a request; anything else names nothing. */
+export function uuid(id: string): string {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw notFound();
+  return id.toLowerCase();
 }
+
+const hubId = (p: Params) => uuid(p.id);
+
+/** A hub that changes hands leaves its old owner's relay. */
+const UNLINK = "relay_id = NULL, relay_port_base = NULL, relay_port_count = NULL";
 
 function hubName(v: unknown): string {
   const name = text(v).trim();
@@ -61,7 +67,7 @@ export async function register(req: Request): Promise<Response> {
 
 /** The hub behind `Authorization: Bearer <hub secret>`. A hub we don't know is "not found",
  *  which tells it to register again. */
-async function hubAuth(req: Request, id: string): Promise<{ ownerId: string | null }> {
+export async function hubAuth(req: Request, id: string): Promise<{ ownerId: string | null }> {
   const secret = req.headers.get("authorization")?.match(/^Bearer (.+)$/)?.[1];
   const [hub] = await query<{ ok: boolean; ownerId: string | null }>(
     `SELECT secret_hash = $2 AS ok, owner_id AS "ownerId" FROM hubs WHERE id = $1`,
@@ -131,7 +137,7 @@ export async function owned(req: Request): Promise<Response> {
   const account = await authed(req);
   return json(
     await query(
-      `SELECT id AS "instanceId", name, public_url AS "publicUrl", floor(extract(epoch FROM last_seen_at) * 1000)::float8 AS "lastSeen"
+      `SELECT id AS "instanceId", name, public_url AS "publicUrl", floor(extract(epoch FROM last_seen_at) * 1000)::float8 AS "lastSeen", relay_id AS "relayId"
        FROM hubs WHERE owner_id = $1 ORDER BY created_at`,
       [account],
     ),
@@ -146,7 +152,7 @@ export async function transfer(req: Request, p: Params): Promise<Response> {
   const [to] = await query<{ id: string }>("SELECT id FROM accounts WHERE handle = $1", [handle]);
   if (!to) throw bad("invalid_request", `no branchr account @${handle}`);
   if (to.id === account) throw bad("invalid_request", "that's you");
-  const rows = await query("UPDATE hubs SET owner_id = $1 WHERE id = $2 AND owner_id = $3 RETURNING id", [to.id, id, account]);
+  const rows = await query(`UPDATE hubs SET owner_id = $1, ${UNLINK} WHERE id = $2 AND owner_id = $3 RETURNING id`, [to.id, id, account]);
   if (!rows.length) throw notFound();
   return empty(204);
 }
@@ -154,7 +160,7 @@ export async function transfer(req: Request, p: Params): Promise<Response> {
 /** Gives up a claim: the hub shows a claim code again. */
 export async function release(req: Request, p: Params): Promise<Response> {
   const account = await authed(req);
-  const rows = await query("UPDATE hubs SET owner_id = NULL WHERE id = $1 AND owner_id = $2 RETURNING id", [hubId(p), account]);
+  const rows = await query(`UPDATE hubs SET owner_id = NULL, ${UNLINK} WHERE id = $1 AND owner_id = $2 RETURNING id`, [hubId(p), account]);
   if (!rows.length) throw notFound();
   return empty(204);
 }

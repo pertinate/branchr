@@ -7,6 +7,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use axum::Router;
 use axum::extract::State;
+use axum::http::{HeaderMap, StatusCode};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::response::Response;
 use axum::routing::get;
@@ -33,7 +34,41 @@ impl App {
 pub fn router(app: Arc<App>) -> Router {
     Router::new().route("/ws", get(upgrade)).route("/health", get(|| async { "ok" }))
         // Where clients send media, and how that was found (for the hub's settings).
-        .route("/status", get(|a: axum::extract::State<Arc<App>>| async move { axum::Json(a.status.read().clone()) })).with_state(app)
+        .route("/status", get(|a: axum::extract::State<Arc<App>>| async move { axum::Json(a.status.read().clone()) }))
+        .route("/relay", axum::routing::post(set_relay))
+        .with_state(app)
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Relay {
+    public_ip: std::net::IpAddr,
+    public_port: u16,
+}
+
+/// From our api (with the voice secret): the relay address clients should send media to.
+async fn set_relay(State(app): State<Arc<App>>, headers: HeaderMap, axum::Json(r): axum::Json<Relay>) -> StatusCode {
+    // Never for visitors a relay forwards to us (it marks theirs).
+    let given = headers.get("authorization").and_then(|v| v.to_str().ok()).and_then(|v| v.strip_prefix("Bearer "));
+    let secret = &app.config.voice_secret;
+    let same = given.is_some_and(|g| g.len() == secret.len() && g.bytes().zip(secret).fold(0, |d, (a, b)| d | (a ^ b)) == 0);
+    if !same || headers.contains_key("x-forwarded-for") {
+        return StatusCode::UNAUTHORIZED;
+    }
+    if !app.config.relay {
+        return StatusCode::CONFLICT;
+    }
+    let changed = *app.shared.public_ip.read() != r.public_ip || app.shared.public_port.load(Ordering::Relaxed) != r.public_port;
+    if changed {
+        *app.shared.public_ip.write() = r.public_ip;
+        app.shared.public_port.store(r.public_port, Ordering::Relaxed);
+        tracing::info!("media goes through the relay at {} (ports from {})", r.public_ip, r.public_port);
+        let mut s = app.status.write();
+        s.public_ip = Some(r.public_ip.to_string());
+        s.ports = (0..app.config.workers).map(|i| r.public_port + i as u16).collect();
+        s.via = "relay".into();
+    }
+    StatusCode::NO_CONTENT
 }
 
 async fn upgrade(ws: WebSocketUpgrade, State(app): State<Arc<App>>) -> Response {

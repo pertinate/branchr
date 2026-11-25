@@ -13,8 +13,9 @@
 # INSTANCE_NAME, TRUST_PROXY). With $APPDIR/relay.env (RELAY_TOKEN=...), a branchr-relay
 # connector runs next to them, so the hub is reached through a gateway (see the README).
 # A hub at home: PUBLIC_IP=auto with RELAY=1 and TRUST_PROXY=1 in .env (no relay.env).
-# To hide a home hub's address, with media through the gateway too: RELAY=1 in .env,
-# PUBLIC_IP=<gateway IP> and SFU_PUBLIC_UDP_PORT=<the hub's first port there>.
+# To hide a home hub's address, with voice and video through your relay too: RELAY=1 in
+# .env, PUBLIC_IP=relay, and link the hub to the relay on branchr's account page.
+# (With an older shared gateway: PUBLIC_IP=<gateway IP> and SFU_PUBLIC_UDP_PORT.)
 set -euo pipefail
 HOST=${1:?usage: deploy-docker.sh user@host}
 : "${PUBLIC_IP:?set PUBLIC_IP}"
@@ -43,7 +44,7 @@ docker rm -f branchr-api branchr-sfu branchr-relay >/dev/null 2>&1 || true
 if [ "$PUBLIC_IP" = auto ] || grep -q '^RELAY=1' .env; then
   # Media comes from the gateway unless the address is auto: the api delivers it to the sfu.
   media=
-  [ "$PUBLIC_IP" = auto ] || media="-e RELAY_SFU_UDP=127.0.0.1:$UDP_PORT"
+  [ "$PUBLIC_IP" = auto ] || [ "$PUBLIC_IP" = relay ] || media="-e RELAY_SFU_UDP=127.0.0.1:$UDP_PORT"
   # A hub at home (with RELAY=1 in .env, reached through branchr.us): the api dials the
   # gateway and hands it voice signaling, so it reaches the sfu on localhost.
   docker run -d --name branchr-api --restart unless-stopped --ulimit nofile=1048576 --network host --env-file .env \

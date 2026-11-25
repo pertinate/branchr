@@ -209,15 +209,23 @@ To host it, add `deploy/docker-compose.id.yml`: it runs branchr ID and its own P
 
 ## The website
 
-`apps/site` is a Next.js app, deployed to Vercel with `apps/site` as the project's root directory. Its build also builds the web app (served at `/app/`) and applies `apps/site/migrations` to the database. It's where branchr ID is moving: so far it has Discord sign-in (`/authorize`, `/token`, `/me`, `/logout`, the JWKS) and hubs (registration, claiming, setup codes, passes, and each account's hub list), with an `/account` page for both. Friends, DMs, Explore, bans and relays are still only in `crates/id`.
+`apps/site` is a Next.js app, deployed to Vercel with `apps/site` as the project's root directory. Its build also builds the web app (served at `/app/`) and applies `apps/site/migrations` to the database. It's where branchr ID is moving: so far it has Discord sign-in (`/authorize`, `/token`, `/me`, `/logout`, the JWKS) and hubs (registration, claiming, setup codes, passes, and each account's hub list), with an `/account` page for both. Friends, DMs, Explore and bans are still only in `crates/id`.
 
 Settings are in `apps/site/.env.example`: a Postgres `DATABASE_URL`, `PUBLIC_URL`, the Discord client id and secret, and `DEFAULT_HUB`. Discord must allow the redirect `$PUBLIC_URL/auth/discord/callback`. Give preview deployments their own database, since every build migrates the one it's given.
 
-To test it: `pnpm --filter web build && node apps/site/scripts/copy-app.mjs && pnpm --filter site build`, then `TEST_DATABASE_URL=postgres://… pnpm --filter site test` (add `BRANCHR_API_BIN=$PWD/target/debug/api` after `cargo build -p api` to test with a real hub).
+To test it: `pnpm --filter web build && node apps/site/scripts/copy-app.mjs && pnpm --filter site build`, then `TEST_DATABASE_URL=postgres://… pnpm --filter site test` (add `BRANCHR_BIN_DIR=$PWD/target/debug` after `cargo build -p api -p sfu -p relay` to test with a real hub and relay).
 
 To point a local hub at a local site (`pnpm dev:site`): `AUTH_MODE=both BRANCHR_ID_URL=http://localhost:5180 cargo run -p api`.
 
+## Your own relay
+
+A relay is a server with a public address that carries hubs which have none, including their voice and video, so nobody sees the hub's address. Run one with `deploy/docker-compose.relay.yml` (see the comments there), claim it on `/account` with the code in its log, and pick it for each of your hubs. A relay only carries hubs with the same owner.
+
+Each hub needs `AUTH_MODE=both` (or `federated`), `RELAY=1` and `TRUST_PROXY=1` on its api, and `SFU_PUBLIC_IP=relay` on its sfu; the two need the same `VOICE_SECRET`, and the api reaches the sfu directly (`SFU_URLS=ws://127.0.0.1:8090/ws`, say). branchr assigns the hub's media ports on the relay, one per sfu worker. The hub asks branchr every minute (`RELAY_POLL_SECS`) and the relay reports in as often (`RELAY_HEARTBEAT_SECS`), so linking and unlinking take up to that long. Link previews and emote fetches still leave from the hub (`LINK_PREVIEWS=0` stops the former).
+
 ## Reaching a home Hub through branchr.us (branchr-relay)
+
+The rest of this section describes the older shared gateway run by `crates/id`.
 
 **The easy way:** sign in at `https://branchr.us/app/#/setup-hub`, name the Hub, and paste the Compose file or `docker run` commands it gives you. They carry a one-time setup code (`BRANCHR_SETUP`), so the Hub is yours from its first start, and `RELAY=1`, so it's reachable at `https://branchr.us/h/<its key>/`. The page waits for it to check in and then opens it. What follows is how that works underneath, and how to run your own gateway.
 
@@ -235,8 +243,8 @@ docker compose exec relay branchr-relay add home - 53000 2   # prints its token;
 
 GitHub Actions (`.github/workflows/`):
 
-- **CI** runs on every push and PR. It runs the Rust tests, checks that the generated TypeScript protocol is current, typechecks, and validates the compose files. On `main` it then builds the server image, publishes it to `ghcr.io/<owner>/<repo>`, and deploys it.
-- **Deploy** runs `scripts/deploy-image.sh`. It copies the compose files to the server, pulls the new image, restarts, and fails unless the API reports healthy. The server's `.env` and data are left alone. It needs a server already provisioned once with `scripts/deploy-vps.sh`, plus three secrets on the `production` environment (restricted to `main`): `DEPLOY_HOST` (`root@host`), `DEPLOY_SSH_KEY` (a private key authorized on it) and `DEPLOY_KNOWN_HOSTS` (`ssh-keyscan host`). Without them the job is skipped.
+- **CI** runs on every push and PR. It runs the Rust tests, checks that the generated TypeScript protocol is current, typechecks, and validates the compose files. On `main` it then builds the server image, and publishes it to `ghcr.io/<owner>/<repo>`.
+- **Deploying** isn't automatic: servers pull the published image. `scripts/deploy-image.sh` still rolls one out to a server provisioned with `scripts/deploy-vps.sh`: it copies the compose files, pulls the image, restarts, and fails unless the API reports healthy, leaving the server's `.env` and data alone.
 - **Branch protection**: a ruleset on `main` requires a PR with the code owner's approval and passing `test`/`e2e` checks, and blocks force-pushes and deletion; repository admins bypass it. Workflow runs from outside contributors' PRs need approval.
 - **Desktop** builds the Linux AppImage and the Windows installer and attaches them to the run. Pushing a `v*` tag publishes both as a GitHub release.
 

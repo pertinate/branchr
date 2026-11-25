@@ -11,6 +11,9 @@ pub struct Config {
     /// SFU_PUBLIC_IP=auto this is a first guess, kept current by `addrs` (UPnP, else an echo).
     pub public_ip: IpAddr,
     pub public_auto: bool,
+    /// SFU_PUBLIC_IP=relay: everything goes through a relay, whose address the api tells us.
+    /// Nothing else (no LAN or home address) is ever offered to clients.
+    pub relay: bool,
     /// Also offered to clients (people on the same network connect locally); defaults to this
     /// machine's own address with SFU_PUBLIC_IP=auto.
     pub lan_ip: Option<IpAddr>,
@@ -30,7 +33,10 @@ impl Config {
     pub fn from_env() -> anyhow::Result<Self> {
         let var = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
         let public_auto = var("SFU_PUBLIC_IP").is_some_and(|v| v == "auto");
+        let relay = var("SFU_PUBLIC_IP").is_some_and(|v| v == "relay");
         let public_ip = match var("SFU_PUBLIC_IP").filter(|_| !public_auto) {
+            // A documentation address (reaches nobody) until the api names the relay.
+            Some(_) if relay => IpAddr::from([192, 0, 2, 1]),
             Some(ip) => ip.parse()?,
             None if public_auto => detect_local_ip().unwrap_or(IpAddr::from([127, 0, 0, 1])),
             None => {
@@ -50,7 +56,8 @@ impl Config {
                 .unwrap_or_else(|| std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2)),
             public_ip,
             public_auto,
-            lan_ip: match var("SFU_LAN_IP") {
+            relay,
+            lan_ip: match var("SFU_LAN_IP").filter(|_| !relay) {
                 Some(ip) => Some(ip.parse()?),
                 None if public_auto => detect_local_ip(),
                 None => None,
