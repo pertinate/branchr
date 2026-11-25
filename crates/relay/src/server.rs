@@ -52,6 +52,13 @@ pub fn save_branches(dir: &Path, branches: &[Branch]) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// A hub admitted by pass, with the media ports set aside for its key, if any
+/// (`branchr-relay add <key> - <udp-base> <ports>`).
+fn pass_branch(dir: &Path, name: String) -> anyhow::Result<Branch> {
+    let (udp_base, udp_ports) = load_branches(dir)?.iter().find(|b| b.name == name).map_or((0, 0), |b| (b.udp_base, b.udp_ports));
+    Ok(Branch { name, secret_hash: String::new(), host: String::new(), udp_base, udp_ports })
+}
+
 #[derive(Default)]
 struct State {
     dir: PathBuf,
@@ -215,7 +222,7 @@ async fn branch(state: Arc<State>, conn: quinn::Connection) -> anyhow::Result<()
     // A pass from branchr ID admits a hub by its key; otherwise it must be on our list.
     let admitted = match &hello.pass {
         Some(pass) => match state.passes.as_ref() {
-            Some(p) => p.verify(pass).await.map(|name| Branch { name, secret_hash: String::new(), host: String::new(), udp_base: 0, udp_ports: 0 }),
+            Some(p) => p.verify(pass).await.and_then(|name| pass_branch(&state.dir, name)),
             None => Err(anyhow::anyhow!("this gateway doesn't take branchr passes")),
         },
         None => load_branches(&state.dir)?
@@ -234,7 +241,7 @@ async fn branch(state: Arc<State>, conn: quinn::Connection) -> anyhow::Result<()
         anyhow::bail!("refused {}: {e:#}", if hello.name.is_empty() { "a pass" } else { &hello.name });
         }
     };
-    // Hubs admitted by pass have no ports set aside here: their media goes direct.
+    // Without ports set aside here, a hub's media goes direct.
     let sockets = if state.media && b.udp_ports > 0 { media_sockets(&state, &b).await? } else { Arc::new(Vec::new()) };
     if let Some(old) = state.live.lock().unwrap().insert(b.name.clone(), conn.clone()) {
         old.close(2u32.into(), b"replaced");
@@ -397,5 +404,25 @@ mod tests {
         assert_eq!(p("/h/home/gateway?v=1"), Some(("home".into(), "/gateway?v=1".into())));
         assert_eq!(p("/api/health"), None);
         assert_eq!(p("/h/"), None);
+    }
+}
+
+#[cfg(test)]
+mod pass_tests {
+    use super::*;
+
+    #[test]
+    fn pass_hubs_get_the_ports_set_aside_for_their_key() {
+        let dir = std::env::temp_dir().join(format!("branchr-relay-pass-{}", std::process::id()));
+        let key = "01a13356-c1d7-7715-882a-9ee2317be535";
+        let ports = |name: &str| {
+            let b = pass_branch(&dir, name.into()).unwrap();
+            (b.udp_base, b.udp_ports)
+        };
+        assert_eq!(ports(key), (0, 0));
+        save_branches(&dir, &[Branch { name: key.into(), secret_hash: hash("s"), host: String::new(), udp_base: 53000, udp_ports: 4 }]).unwrap();
+        assert_eq!(ports(key), (53000, 4));
+        assert_eq!(ports("another"), (0, 0));
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

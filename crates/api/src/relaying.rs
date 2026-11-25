@@ -1,7 +1,8 @@
 //! RELAY=1: be reached through branchr ID's gateway, like a Plex server through plex.tv. The
 //! hub dials out (no domain or open web ports), proves who it is with a pass from branchr ID,
-//! and is reachable at `https://<branchr ID>/h/<its key>/`. Voice and video still go to the
-//! hub directly (see the sfu's SFU_PUBLIC_IP=auto).
+//! and is reachable at `https://<branchr ID>/h/<its key>/`. Voice and video go to the hub
+//! directly (the sfu's SFU_PUBLIC_IP=auto) unless the gateway carries them: then
+//! RELAY_SFU_UDP is where this connector delivers them to the sfu.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -60,7 +61,16 @@ pub async fn run(state: AppState) {
     // The local api and voice server, which the gateway's visitors reach through us.
     let api = format!("http://127.0.0.1:{}", state.config.bind.port());
     let sfu = state.config.sfu_urls.first().map(|u| u.replacen("ws", "http", 1).trim_end_matches("/ws").to_string()).unwrap_or_else(|| "http://127.0.0.1:8090".into());
-    let targets = Targets { api, sfu, sfu_udp: "127.0.0.1:9".parse().expect("addr") };
+    // Without RELAY_SFU_UDP, media the gateway sends is discarded (port 9).
+    let sfu_udp = std::env::var("RELAY_SFU_UDP").ok().filter(|v| !v.is_empty()).unwrap_or_else(|| "127.0.0.1:9".into());
+    let sfu_udp = match sfu_udp.parse() {
+        Ok(a) => a,
+        Err(e) => {
+            tracing::error!("RELAY_SFU_UDP {sfu_udp:?} isn't an address and port: {e}");
+            return;
+        }
+    };
+    let targets = Targets { api, sfu, sfu_udp };
     let connect = Connect { relay: info.quic, fp: info.fp, auth: Auth::Pass(pass), on_welcome: Some(on_welcome) };
     if let Err(e) = relay::agent::run(connect, targets).await {
         tracing::warn!("relay: {e:#}");
