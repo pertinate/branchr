@@ -1,10 +1,5 @@
-# Tests every push/PR (unit + browser e2e). On main, also publishes the server image to GHCR and deploys it.
-#
-# Deployment needs these secrets on the `production` environment (Settings → Environments),
-# which only `main` may deploy to; without them the deploy job is skipped:
-#   DEPLOY_HOST         user@host of a server provisioned with scripts/deploy-vps.sh
-#   DEPLOY_SSH_KEY      private key authorized on that host
-#   DEPLOY_KNOWN_HOSTS  output of `ssh-keyscan <host>`
+# Tests every push/PR (unit + browser e2e). On main, also publishes the server image to GHCR.
+# Nothing deploys it from here: servers pull it themselves.
 name: CI
 
 on:
@@ -59,8 +54,9 @@ jobs:
           pnpm --filter web build
           node apps/site/scripts/copy-app.mjs
           pnpm --filter site build
-          cargo build -p api
-          BRANCHR_API_BIN="$PWD/target/debug/api" pnpm --filter site test
+          cargo build -p api -p sfu -p relay
+          BRANCHR_BIN_DIR="$PWD/target/debug" pnpm --filter site test
+          RELAY_DOMAIN=relay.example.com docker compose -f deploy/docker-compose.relay.yml config -q
       - name: Compose files are valid
         env:
           DOMAIN: chat.example.com
@@ -142,8 +138,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-    outputs:
-      image: ${{ steps.name.outputs.image }}
     steps:
       - uses: actions/checkout@v4
       - id: name
@@ -163,46 +157,3 @@ jobs:
             ${{ steps.name.outputs.image }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-  deploy:
-    needs: image
-    runs-on: ubuntu-24.04
-    environment: production
-    concurrency:
-      group: deploy-production
-      cancel-in-progress: false
-    permissions:
-      contents: read
-      packages: read
-    env:
-      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-    steps:
-      - id: check
-        run: |
-          # Logs of public repos are public: also mask the bare host, which would otherwise
-          # show up unmasked in ssh errors (only the full user@host secret is masked).
-          [ -n "$DEPLOY_HOST" ] && echo "::add-mask::${DEPLOY_HOST#*@}"
-          if [ -z "$DEPLOY_HOST" ]; then
-            echo "::notice::DEPLOY_HOST secret not set; skipping deploy"
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-          fi
-      - if: steps.check.outputs.enabled == 'true'
-        uses: actions/checkout@v4
-      - name: SSH setup
-        if: steps.check.outputs.enabled == 'true'
-        env:
-          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
-        run: |
-          install -m 700 -d ~/.ssh
-          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
-          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
-      - name: Deploy
-        if: steps.check.outputs.enabled == 'true'
-        env:
-          IMAGE: ${{ needs.image.outputs.image }}:${{ github.sha }}
-          REGISTRY_USER: ${{ github.actor }}
-          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: scripts/deploy-image.sh "$DEPLOY_HOST"

@@ -80,7 +80,6 @@ pub fn spawn(index: usize, config: &Config, shared: Arc<Shared>, rx: mpsc::Unbou
     socket.bind(&bind.into())?;
     let std_socket: std::net::UdpSocket = socket.into();
 
-    let public_port = config.public_udp_port + index as u16;
     // Same port at the LAN address (no router in between).
     let lan = config.lan_ip.filter(|ip| *ip != config.public_ip || config.public_auto).map(|ip| SocketAddr::new(ip, port));
     let initial_bwe = config.initial_bwe_bps;
@@ -88,7 +87,7 @@ pub fn spawn(index: usize, config: &Config, shared: Arc<Shared>, rx: mpsc::Unbou
         let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().expect("worker runtime");
         rt.block_on(async move {
             let socket = UdpSocket::from_std(std_socket).expect("tokio udp socket");
-            Worker::new(index, shared, socket, public_port, lan, initial_bwe).run(rx).await;
+            Worker::new(index, shared, socket, lan, initial_bwe).run(rx).await;
         });
     })?;
     Ok(())
@@ -288,7 +287,6 @@ struct Worker {
     shared: Arc<Shared>,
     socket: UdpSocket,
     /// Advertised port at the (current) public IP.
-    public_port: u16,
     /// Also advertised: this machine's LAN address, for clients on the same network.
     lan: Option<SocketAddr>,
     initial_bwe: u64,
@@ -317,7 +315,8 @@ fn local_network(ip: std::net::IpAddr) -> bool {
 impl Worker {
     /// The address clients reach us at from the internet (its IP can change).
     fn public(&self) -> SocketAddr {
-        SocketAddr::new(*self.shared.public_ip.read(), self.public_port)
+        let port = self.shared.public_port.load(Ordering::Relaxed) + self.index as u16;
+        SocketAddr::new(*self.shared.public_ip.read(), port)
     }
 
     /// Which of our addresses a packet from `source` was sent to (we're bound to all of them).
@@ -328,12 +327,11 @@ impl Worker {
         }
     }
 
-    fn new(index: usize, shared: Arc<Shared>, socket: UdpSocket, public_port: u16, lan: Option<SocketAddr>, initial_bwe: u64) -> Self {
+    fn new(index: usize, shared: Arc<Shared>, socket: UdpSocket, lan: Option<SocketAddr>, initial_bwe: u64) -> Self {
         Self {
             index,
             shared,
             socket,
-            public_port,
             lan,
             initial_bwe,
             peers: HashMap::new(),

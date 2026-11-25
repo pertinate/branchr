@@ -33,6 +33,7 @@ async fn main() -> anyhow::Result<()> {
     let (txs, rxs): (Vec<_>, Vec<_>) = (0..config.workers).map(|_| tokio::sync::mpsc::unbounded_channel()).unzip();
     let shared = Arc::new(shared::Shared::new(txs));
     *shared.public_ip.write() = config.public_ip;
+    shared.public_port.store(config.public_udp_port, std::sync::atomic::Ordering::Relaxed);
     let status = addrs::initial(&config);
     if config.public_auto {
         tokio::spawn(addrs::keep_current(config.clone(), shared.clone(), status.clone()));

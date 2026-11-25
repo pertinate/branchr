@@ -21,7 +21,9 @@ pub struct Status {
     pub public_ip: Option<String>,
     pub lan_ip: Option<String>,
     pub ports: Vec<u16>,
-    /// How the public address was found: "fixed", "upnp" or "echo".
+    /// The first port we listen on, which a relay's connector delivers media to.
+    pub udp_port: u16,
+    /// How the public address was found: "fixed", "upnp", "echo" or "relay".
     pub via: String,
     /// The router forwarded our ports (UPnP).
     pub forwarded: bool,
@@ -38,7 +40,8 @@ pub fn initial(config: &Config) -> SharedStatus {
         public_ip: Some(config.public_ip.to_string()),
         lan_ip: config.lan_ip.map(|ip| ip.to_string()),
         ports,
-        via: if config.public_auto { "pending".into() } else { "fixed".into() },
+        udp_port: config.udp_port,
+        via: if config.public_auto || config.relay { "pending".into() } else { "fixed".into() },
         ..Default::default()
     }))
 }

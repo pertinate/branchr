@@ -1,0 +1,49 @@
+# Your own relay, on any server with a public address: it carries your hubs, so they need no
+# domain, open ports or public address. Point RELAY_DOMAIN's A record at this server (DNS
+# only, not proxied), open TCP 80 and 443, UDP 7443 and the media ports, then:
+#
+#   RELAY_DOMAIN=relay.example.com docker compose -f deploy/docker-compose.relay.yml up -d
+#   docker compose -f deploy/docker-compose.relay.yml logs relay | grep "claim this relay"
+#
+# Claim it on branchr's account page, then pick it for each of your hubs. A hub needs one
+# media port per voice server worker (8 by default).
+name: branchr-relay
+services:
+  relay:
+    image: ${IMAGE:-ghcr.io/pertinate/branchr:latest}
+    command: ["branchr-relay", "serve"]
+    restart: unless-stopped
+    environment:
+      RELAY_MANAGED: "1"
+      RELAY_ID_URL: ${BRANCHR_URL:-https://branchr.us}
+      RELAY_NAME: ${RELAY_NAME:-My relay}
+      RELAY_DIR: /data/relay
+      RELAY_QUIC: 0.0.0.0:7443
+      RELAY_HTTP: 0.0.0.0:8800
+      RELAY_PUBLIC: ${RELAY_DOMAIN:?set RELAY_DOMAIN}:7443
+      RELAY_WEB: https://${RELAY_DOMAIN}
+      # Where voice clients send media; branchr uses the address the relay calls from if unset.
+      RELAY_PUBLIC_IP: ${RELAY_PUBLIC_IP:-}
+      RELAY_UDP_START: ${RELAY_UDP_START:-53000}
+      RELAY_UDP_END: ${RELAY_UDP_END:-53031}
+    volumes:
+      - relay-data:/data/relay
+    ports:
+      - "7443:7443/udp"
+      - "${RELAY_UDP_START:-53000}-${RELAY_UDP_END:-53031}:${RELAY_UDP_START:-53000}-${RELAY_UDP_END:-53031}/udp"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on: [relay]
+    command: ["caddy", "reverse-proxy", "--from", "${RELAY_DOMAIN}", "--to", "relay:8800"]
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy-data:/data
+
+volumes:
+  relay-data:
+  caddy-data:

@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU16, AtomicU32, AtomicUsize, Ordering};
 
 use parking_lot::Mutex;
 use proto::Id;
@@ -26,6 +26,8 @@ pub struct Shared {
     pub load: Vec<AtomicUsize>,
     /// The address advertised to clients; it can change (a home connection's IP).
     pub public_ip: parking_lot::RwLock<std::net::IpAddr>,
+    /// The first port advertised (worker `i` advertises this + `i`); a relay can move it.
+    pub public_port: AtomicU16,
 }
 
 #[derive(Default)]
@@ -84,7 +86,7 @@ impl Track {
 impl Shared {
     pub fn new(workers: Vec<mpsc::UnboundedSender<Cmd>>) -> Self {
         let load = workers.iter().map(|_| AtomicUsize::new(0)).collect();
-        Self { rooms: Mutex::new(HashMap::new()), workers, load, public_ip: parking_lot::RwLock::new([127, 0, 0, 1].into()) }
+        Self { rooms: Mutex::new(HashMap::new()), workers, load, public_ip: parking_lot::RwLock::new([127, 0, 0, 1].into()), public_port: AtomicU16::new(0) }
     }
 
     pub fn least_loaded(&self) -> usize {
