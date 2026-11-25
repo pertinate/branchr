@@ -213,7 +213,7 @@ To host it, add `deploy/docker-compose.id.yml`: it runs branchr ID and its own P
 
 Like Plex: a Hub at home (no public IP, no port forwarding) is reached through the gateway at `https://branchr.us/h/<name>/`. The connector next to the Hub dials out to the gateway over QUIC and keeps the connection open. Visitors' HTTPS and WebSockets come back over QUIC streams (with the `/h/<name>` prefix removed), and voice/video over QUIC datagrams, so a lost packet never holds up the others.
 
-branchr.us is the front door: branchr ID serves the product site at `/` and the app at `/app/` (`SITE_DIR`/`WEB_DIR`, both in the image), and the app opens `DEFAULT_HUB` unless you pick another. `deploy/docker-compose.id.yml` has the gateway as the `relay` profile (UDP 7443, plus media ports `RELAY_UDP_START`..`RELAY_UDP_END`), and Caddy sends `/h/*` to it. Allow a Hub there:
+branchr.us is the front door: the product site is at `/` and the app at `/app/`. Both are deployed to Vercel (project root directory `apps/site`; its `vercel.json` builds the two), and Caddy on the gateway proxies those paths to `WEB_HOST`. Everything else on the domain goes to branchr ID, including `/app/config.js`, so the app opens `DEFAULT_HUB` unless you pick another. A new site page needs its path added to `deploy/Caddyfile.id`. `deploy/docker-compose.id.yml` has the gateway as the `relay` profile (UDP 7443, plus media ports `RELAY_UDP_START`..`RELAY_UDP_END`), and Caddy sends `/h/*` to it. Allow a Hub there:
 
 ```sh
 docker compose exec relay branchr-relay add home - 53000 2   # prints its token; media on UDP 53000-53001

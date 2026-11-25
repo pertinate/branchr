@@ -95,6 +95,8 @@ services:
   caddy:
     environment:
       ID_DOMAIN: ${ID_DOMAIN}
+      # Where the site and web app are deployed (apps/site/vercel.json builds both).
+      WEB_HOST: ${WEB_HOST:-branchr-topaz.vercel.app}
     volumes:
       - ./deploy/Caddyfile.id:/etc/caddy/sites/id.caddy:ro
 

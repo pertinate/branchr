@@ -9,5 +9,19 @@
 	handle /h/* {
 		reverse_proxy relay:8800
 	}
-	reverse_proxy id:8070
+	# The product site and web app are on Vercel; everything else is branchr ID. The app's
+	# config.js is branchr ID's too, since it names the default hub (DEFAULT_HUB).
+	handle /app/config.js {
+		reverse_proxy id:8070
+	}
+	@web path / /app /app/* /assets/* /icon.svg /features /performance /how-it-works /self-host
+	handle @web {
+		redir /app /app/ 308
+		reverse_proxy https://{$WEB_HOST} {
+			header_up Host {upstream_hostport}
+		}
+	}
+	handle {
+		reverse_proxy id:8070
+	}
 }

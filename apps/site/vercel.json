@@ -1,0 +1,12 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "pnpm install --frozen-lockfile --filter web... --filter site...",
+  "buildCommand": "pnpm build && pnpm --filter web build && rm -rf dist/app && cp -r ../web/dist dist/app",
+  "outputDirectory": "dist",
+  "redirects": [{ "source": "/app", "destination": "/app/", "permanent": true }],
+  "rewrites": [{ "source": "/((?!app/|assets/).*)", "destination": "/index.html" }],
+  "headers": [
+    { "source": "/(app/)?assets/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }] }
+  ]
+}
