@@ -14,7 +14,7 @@
 	handle /app/config.js {
 		reverse_proxy id:8070
 	}
-	@web path / /app /app/* /assets/* /icon.svg /features /performance /how-it-works /self-host
+	@web path / /app /app/* /_next/* /icon.svg /account /features /performance /how-it-works /self-host
 	handle @web {
 		redir /app /app/ 308
 		reverse_proxy https://{$WEB_HOST} {

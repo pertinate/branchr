@@ -1,9 +1,9 @@
-import { Link } from "@tanstack/react-router";
+import Link from "next/link";
 import { ArrowRight, Download, Gauge, GitBranch, Hash, KeyRound, MessagesSquare, MonitorPlay, Volume2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { RELEASES } from "@/layout";
+import { RELEASES } from "@/components/site";
 
 export function HomePage() {
   return (
@@ -27,7 +27,7 @@ export function HomePage() {
                 </a>
               </Button>
               <Button size="lg" variant="secondary" asChild>
-                <Link to="/self-host">Run your own Hub</Link>
+                <Link href="/self-host">Run your own Hub</Link>
               </Button>
               <Button size="lg" variant="ghost" asChild>
                 <a href={RELEASES}>
@@ -47,7 +47,7 @@ export function HomePage() {
             { to: "/performance", icon: Gauge, title: "Measured, not promised", body: "300 viewers of a 60 fps stream, 5,000 sessions on a small VPS: the numbers and how they were taken." },
             { to: "/how-it-works", icon: GitBranch, title: "Yours, wherever it runs", body: "Hubs, one branchr account (sign in with Discord), and reaching a Hub at home." },
           ].map((c) => (
-            <Link key={c.to} to={c.to} className="group rounded-xl border border-white/5 bg-card p-5 transition-colors hover:border-primary/40">
+            <Link key={c.to} href={c.to} className="group rounded-xl border border-white/5 bg-card p-5 transition-colors hover:border-primary/40">
               <c.icon className="size-6 text-primary" />
               <h2 className="mt-3 font-semibold">{c.title}</h2>
               <p className="mt-1.5 text-sm text-muted-foreground">{c.body}</p>

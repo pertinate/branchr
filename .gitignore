@@ -14,3 +14,9 @@ apps/desktop/release
 tests/e2e/test-results
 tests/e2e/playwright-report
 *.tsbuildinfo
+
+# Next.js
+apps/site/.next
+apps/site/public/app
+apps/site/next-env.d.ts
+.env*.local

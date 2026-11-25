@@ -1,4 +1,4 @@
-import { PageHead, REPO } from "@/layout";
+import { PageHead, REPO } from "@/components/site";
 
 type Row = string[];
 
