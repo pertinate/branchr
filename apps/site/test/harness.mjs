@@ -11,7 +11,7 @@ export const skip = !base && "needs TEST_DATABASE_URL (Postgres)";
 const site = fileURLToPath(new URL("..", import.meta.url));
 
 /** Starts everything on `port` (the Discord stand-in on the next one). */
-export async function start(port) {
+export async function start(port, over = {}) {
   const url_ = `http://localhost:${port}`;
   const mock = port + 1;
   const name = `branchr_site_${process.pid}_${port}`;
@@ -32,6 +32,7 @@ export async function start(port) {
     DISCORD_API: `http://127.0.0.1:${mock}/api`,
     DISCORD_AUTHORIZE: `http://127.0.0.1:${mock}/oauth2/authorize`,
     DEFAULT_HUB: "https://hub.example.com",
+    ...over,
   };
   // Twice: applying again changes nothing.
   for (let i = 0; i < 2; i++) assert.equal(spawnSync("node", ["scripts/migrate.mjs"], { cwd: site, env, stdio: "inherit" }).status, 0);

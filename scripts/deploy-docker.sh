@@ -32,6 +32,7 @@ cd "$(dirname "$0")/.."
 ssh "$HOST" "mkdir -p $APPDIR/src $APPDIR/data"
 rsync -az --delete --exclude target --exclude node_modules --exclude 'apps/*/dist' \
   --exclude apps/desktop/release --exclude apps/desktop/web --exclude .git --exclude 'tests/e2e/test-results' \
+  --exclude '.env*' --exclude .vercel --exclude .next --exclude apps/site/public/app \
   ./ "$HOST:$APPDIR/src/"
 
 ssh "$HOST" bash -s <<REMOTE

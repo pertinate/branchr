@@ -19,7 +19,11 @@ interface Relay {
   lastSeen: number | null;
 }
 
-const seen = (at: number | null) => (at ? `last seen ${new Date(at).toLocaleString()}` : "not seen yet");
+// The time is only noted about hourly, so anything newer than that reads as recent.
+const seen = (at: number | null) => {
+  if (!at) return "not seen yet";
+  return Date.now() - at < 70 * 60_000 ? "seen in the last hour" : `last seen ${new Date(at).toLocaleString()}`;
+};
 
 /** The hubs and relays you own, claiming more, and which relay carries each hub. */
 export function Hubs({ accessToken }: { accessToken: string }) {

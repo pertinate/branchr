@@ -24,7 +24,8 @@ describe("hubs", { skip }, () => {
   const register = async (name = "Home") => (await call("POST", "/instances", { body: { name, publicUrl: "" } })).json();
 
   before(async () => {
-    s = await start(18092);
+    // Deleting a hub behind the site's back is only noticed once its cached check-ins lapse.
+    s = await start(18092, { CHECKIN_CACHE_SECS: "2" });
     alice = await signIn({ id: "1", username: "alice", global_name: "Alice" });
     bob = await signIn({ id: "2", username: "bob", global_name: "Bob" });
   });
@@ -93,7 +94,7 @@ describe("hubs", { skip }, () => {
   });
 
   const bin = process.env.BRANCHR_BIN_DIR && path.join(process.env.BRANCHR_BIN_DIR, "api");
-  it("signs people in to a real hub", { skip: !bin && "needs BRANCHR_BIN_DIR" }, async () => {
+  it("signs people in to a real hub, its owner even with sign-ups closed", { skip: !bin && "needs BRANCHR_BIN_DIR" }, async () => {
     const dir = mkdtempSync(path.join(tmpdir(), "branchr-hub-"));
     const hubUrl = "http://127.0.0.1:18094";
     const claimFile = path.join(dir, "claim.txt");
@@ -101,7 +102,7 @@ describe("hubs", { skip }, () => {
       cwd: dir,
       stdio: ["ignore", "ignore", "inherit"],
       env: { PATH: process.env.PATH, DATABASE_URL: `sqlite://${dir}/hub.db`, UPLOAD_DIR: `${dir}/up`, API_BIND: "127.0.0.1:18094", VOICE_SECRET: "test",
-        AUTH_MODE: "both", BRANCHR_ID_URL: s.url, INSTANCE_NAME: "Real hub", CLAIM_FILE: claimFile, BRANCHR_POLL_SECS: "1" },
+        AUTH_MODE: "both", BRANCHR_ID_URL: s.url, INSTANCE_NAME: "Real hub", CLAIM_FILE: claimFile, BRANCHR_POLL_SECS: "1", OPEN_REGISTRATION: "false" },
     });
     try {
       const info = async () => (await fetch(`${hubUrl}/api/instance`)).json();
@@ -110,8 +111,12 @@ describe("hubs", { skip }, () => {
       const claim = () => call("POST", "/claims", { token: alice.access_token, body: { code: readFileSync(claimFile, "utf8") } });
       assert.equal((await claim()).status, 200);
       await until(async () => (await info()).claimed, "the hub didn't notice its claim");
-      const { token } = await (await call("POST", `/instances/${first}/token`, { token: alice.access_token })).json();
-      const login = await fetch(`${hubUrl}/api/auth/federated`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token }) });
+      const signInAs = async (who) => {
+        const { token } = await (await call("POST", `/instances/${first}/token`, { token: who.access_token })).json();
+        return fetch(`${hubUrl}/api/auth/federated`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token }) });
+      };
+      assert.equal((await signInAs(bob)).status, 403, "sign-ups are closed");
+      const login = await signInAs(alice);
       assert.equal(login.status, 200);
       assert.equal((await login.json()).user.username, "alice");
     } finally {

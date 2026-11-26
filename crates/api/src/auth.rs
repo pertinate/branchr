@@ -200,7 +200,9 @@ pub async fn federated(State(state): State<AppState>, Json(body): Json<Federated
             Id(id)
         }
         None => {
-            if !state.open_registration.load(std::sync::atomic::Ordering::Relaxed) {
+            // Whoever claimed this hub gets in even with sign-ups closed.
+            let owner = fed.identity().is_some_and(|i| i.owner.as_deref() == Some(pass.sub.as_str()));
+            if !owner && !state.open_registration.load(std::sync::atomic::Ordering::Relaxed) {
                 return Err(AppError::Forbidden);
             }
             let id = state.ids.next();

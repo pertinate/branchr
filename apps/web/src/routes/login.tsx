@@ -2,6 +2,7 @@ import type { AuthResponse, InstanceInfo } from "@app/protocol";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
+import { MyHubs } from "@/components/my-hubs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -67,11 +68,12 @@ function Login() {
   const [expanded, setExpanded] = useState(adding || !!wanted);
   const full = expanded || (!!info && info.authMode === "local");
 
-  const withBranchr = async () => {
+  /** Signs in to `address` (by default the hub named in the form) with Discord. */
+  const withBranchr = async (address = server) => {
     setBusy(true);
     setError(null);
     try {
-      const base = server.trim().replace(/\/+$/, "");
+      const base = address.trim().replace(/\/+$/, "");
       // No hub to log in to: just sign in to branchr.
       if (!base) return await startSignIn();
       const to = await loginWithBranchr(base, invite);
@@ -121,6 +123,7 @@ function Login() {
                 : "Join your self-hosted community."}
           </p>
         </div>
+        {account && !wanted && <MyHubs busy={busy} onPick={(url) => void withBranchr(url)} />}
         {!full && !server && account ? (
           <div className="space-y-3 text-center">
             <p>
