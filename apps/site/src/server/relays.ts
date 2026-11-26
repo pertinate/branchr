@@ -11,6 +11,7 @@ import "server-only";
 import { randomBytes, randomUUID } from "node:crypto";
 import { isIP } from "node:net";
 
+import { changed, checkIn } from "./checkins";
 import { claimCode, hash, normalizeClaimCode } from "./codes";
 import { query, transaction } from "./db";
 import { OAuthError, bad, body, empty, json, notFound, text } from "./http";
@@ -41,22 +42,34 @@ export async function register(req: Request): Promise<Response> {
   return json({ relayId: id, secret, claimCode: code });
 }
 
-/** The relay behind `Authorization: Bearer <relay secret>`; unknown ones are "not found". */
-async function relayAuth(req: Request, id: string): Promise<{ ownerId: string | null }> {
-  const secret = req.headers.get("authorization")?.match(/^Bearer (.+)$/)?.[1];
-  const [relay] = await query<{ ok: boolean; ownerId: string | null }>(
-    `SELECT secret_hash = $2 AS ok, owner_id AS "ownerId" FROM relays WHERE id = $1`,
-    [id, hash(secret ?? "")],
-  );
-  if (!relay) throw notFound();
-  if (!secret || !relay.ok) throw new OAuthError(401, "invalid_token", "unauthorized");
-  return relay;
+/** What a relay's check-ins are answered with. */
+interface RelayRecord {
+  secretHash: string;
+  ownerId: string | null;
+  /** What it last reported, as `[quic, fp, web, publicIp, udpStart, udpEnd]`. */
+  about: unknown[];
+  hubs: { id: string; udpBase: number; udpPorts: number }[];
+}
+
+/** The relay behind this request's secret (see `checkIn`). */
+function relayAuth(req: Request, id: string) {
+  return checkIn<RelayRecord>(req, `relay:${id}`, async () => {
+    const [row] = await query<RelayRecord>(
+      `SELECT encode(r.secret_hash, 'hex') AS "secretHash", r.owner_id AS "ownerId",
+         json_build_array(r.quic, r.fp, r.web, r.public_ip, r.udp_start, r.udp_end) AS about,
+         coalesce((SELECT json_agg(json_build_object('id', h.id, 'udpBase', h.relay_port_base, 'udpPorts', h.relay_port_count) ORDER BY h.relay_port_base)
+           FROM hubs h WHERE h.relay_id = r.id AND h.owner_id = r.owner_id AND h.relay_port_base IS NOT NULL), '[]') AS hubs
+       FROM relays r WHERE r.id = $1`,
+      [id],
+    );
+    return row ?? null;
+  });
 }
 
 /** The relay reports where it is, and learns its owner and linked hubs. */
 export async function heartbeat(req: Request, p: Params): Promise<Response> {
   const id = uuid(p.id);
-  const { ownerId } = await relayAuth(req, id);
+  const { record, fresh } = await relayAuth(req, id);
   const b = await body(req);
   const quic = text(b.quic);
   const fp = text(b.fp).toLowerCase();
@@ -70,18 +83,17 @@ export async function heartbeat(req: Request, p: Params): Promise<Response> {
   if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1024 || end > 65535 || start > end) {
     throw bad("invalid_request", "udpStart..udpEnd must be ports from 1024");
   }
-  await query(
-    "UPDATE relays SET quic = $2, fp = $3, web = $4, public_ip = $5, udp_start = $6, udp_end = $7, last_seen_at = now() WHERE id = $1",
-    [id, quic, fp, web, ip, start, end],
-  );
-  const hubs = ownerId
-    ? await query(
-        `SELECT id, relay_port_base AS "udpBase", relay_port_count AS "udpPorts" FROM hubs
-         WHERE relay_id = $1 AND owner_id = $2 AND relay_port_base IS NOT NULL`,
-        [id, ownerId],
-      )
-    : [];
-  return json({ ownerId, hubs });
+  const about = [quic, fp, web, ip, start, end];
+  const moved = JSON.stringify(about) !== JSON.stringify(record.about);
+  // `last_seen_at` is when we last looked it up, not every check-in.
+  if (fresh || moved) {
+    await query(
+      "UPDATE relays SET quic = $2, fp = $3, web = $4, public_ip = $5, udp_start = $6, udp_end = $7, last_seen_at = now() WHERE id = $1",
+      [id, ...about],
+    );
+  }
+  if (moved) await changed();
+  return json({ ownerId: record.ownerId, hubs: record.hubs });
 }
 
 /** For the relay itself: a fresh claim code. */
@@ -109,6 +121,7 @@ export async function claim(req: Request): Promise<Response> {
     [account, hash(normalizeClaimCode(text(b.code)))],
   );
   if (!relay) throw bad("invalid_grant", "that claim code is wrong or expired");
+  await changed();
   return json(relay);
 }
 
@@ -121,6 +134,7 @@ export async function release(req: Request, p: Params): Promise<Response> {
     if (!rowCount) throw notFound();
     await db.query("UPDATE hubs SET relay_id = NULL, relay_port_base = NULL, relay_port_count = NULL WHERE relay_id = $1", [id]);
   });
+  await changed();
   return empty(204);
 }
 
@@ -156,6 +170,7 @@ export async function link(req: Request, p: Params): Promise<Response> {
     );
     if (!rowCount) throw notFound();
   });
+  await changed();
   return empty(204);
 }
 
@@ -171,12 +186,24 @@ function freeBlock(start: number, end: number, count: number, taken: { base: num
 
 const noRelay = () => new OAuthError(404, "no_relay", "no relay is linked to this hub");
 
-/** For a hub: a pass to its relay, with `ports` media ports there. */
+/**
+ * For a hub: its relay and its `ports` media ports there, with a pass to connect. Polling
+ * hubs send `pass: false` until they need to connect, which keeps the database out of it.
+ */
 export async function relayPass(req: Request, p: Params): Promise<Response> {
   const id = uuid(p.id);
-  await hubAuth(req, id);
-  const ports = Number((await body(req)).ports);
+  const hub = await hubAuth(req, id);
+  const b = await body(req);
+  const ports = Number(b.ports);
   if (!Number.isInteger(ports) || ports < 1 || ports > MAX_PORTS) throw bad("invalid_request", `ports must be 1-${MAX_PORTS}`);
+  if (b.pass === false) {
+    const { relay, ports: mine } = hub;
+    if (!relay) throw noRelay();
+    if (mine?.count === ports && mine.base >= relay.udpStart && mine.base + ports - 1 <= relay.udpEnd) {
+      const { id: relayId, quic, fp, web, publicIp } = relay;
+      return json({ relay: { id: relayId, quic, fp, web, publicIp }, udpBase: mine.base, udpPorts: ports });
+    }
+  }
   const linked = await transaction(async (db) => {
     // The relay's row is locked while ports are handed out, so two hubs never get the same.
     const { rows } = await db.query<{
@@ -200,13 +227,17 @@ export async function relayPass(req: Request, p: Params): Promise<Response> {
     if (base === null) {
       throw new OAuthError(409, "no_ports", `the relay hasn't ${ports} free media ports; widen its range or give the voice server fewer workers`);
     }
-    await db.query("UPDATE hubs SET relay_port_base = $2, relay_port_count = $3 WHERE id = $1", [id, base, ports]);
-    return { relay, base };
+    const moved = mine?.base !== base || mine.count !== ports;
+    if (moved) await db.query("UPDATE hubs SET relay_port_base = $2, relay_port_count = $3 WHERE id = $1", [id, base, ports]);
+    return { relay, base, moved };
   });
-  const { relay, base } = linked;
+  const { relay, base, moved } = linked;
+  if (moved) await changed();
   return json({
-    token: await sign({ aud: relay.relay_id, sub: id, owner: relay.owner_id, udpBase: base, udpPorts: ports }, PASS_TTL_SECS),
-    expiresIn: PASS_TTL_SECS,
+    ...(b.pass !== false && {
+      token: await sign({ aud: relay.relay_id, sub: id, owner: relay.owner_id, udpBase: base, udpPorts: ports }, PASS_TTL_SECS),
+      expiresIn: PASS_TTL_SECS,
+    }),
     relay: { id: relay.relay_id, quic: relay.quic, fp: relay.fp, web: relay.web, publicIp: relay.public_ip },
     udpBase: base,
     udpPorts: ports,

@@ -104,7 +104,7 @@ async fn round(
 ) -> anyhow::Result<bool> {
     let sfu = local_sfu(state);
     let status: SfuStatus = http.get(format!("{sfu}/status")).send().await?.error_for_status()?.json().await?;
-    let Linked { relay, udp_base, .. } = match fed.relay_ticket(status.ports.len()).await? {
+    let Linked { relay, udp_base, .. } = match fed.relay_ticket(status.ports.len(), false).await? {
         Ticket::Linked(l) => l,
         Ticket::SharedGateway => return Ok(false),
         Ticket::Unlinked => {
@@ -142,8 +142,8 @@ async fn round(
         let pass: PassFn = Arc::new(move || {
             let fed = fed.clone();
             Box::pin(async move {
-                match fed.relay_ticket(ports).await? {
-                    Ticket::Linked(l) => Ok(l.token),
+                match fed.relay_ticket(ports, true).await? {
+                    Ticket::Linked(l) if !l.token.is_empty() => Ok(l.token),
                     _ => anyhow::bail!("this hub isn't linked to a relay"),
                 }
             })

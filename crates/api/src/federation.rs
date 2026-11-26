@@ -32,6 +32,8 @@ pub enum Ticket {
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Linked {
+    /// The pass to connect with; only there when asked for.
+    #[serde(default)]
     pub token: String,
     pub relay: RelayAt,
     /// The first of our media ports on the relay.
@@ -151,14 +153,15 @@ impl Federation {
         Ok(t.token)
     }
 
-    /// What branchr says about reaching us through a relay, asking for `ports` media ports.
-    pub async fn relay_ticket(&self, ports: usize) -> anyhow::Result<Ticket> {
+    /// What branchr says about reaching us through a relay, asking for `ports` media ports,
+    /// and for a pass to connect if `pass` (branchr answers without one far more cheaply).
+    pub async fn relay_ticket(&self, ports: usize, pass: bool) -> anyhow::Result<Ticket> {
         let id = self.identity().ok_or_else(|| anyhow::anyhow!("not registered with branchr yet"))?;
         let r = self
             .http
             .post(format!("{}/instances/{}/relay-pass", self.id_url, id.instance_id))
             .bearer_auth(&id.secret)
-            .json(&serde_json::json!({ "ports": ports }))
+            .json(&serde_json::json!({ "ports": ports, "pass": pass }))
             .send()
             .await?;
         let status = r.status();

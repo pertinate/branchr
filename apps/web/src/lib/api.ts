@@ -1,4 +1,4 @@
-import { type Instance, activeInstance } from "@/lib/instances";
+import { type Instance, activeInstance, hostOf } from "@/lib/instances";
 
 export class ApiError extends Error {
   constructor(
@@ -36,7 +36,9 @@ async function request<T>(inst: Instance, method: Method, path: string, body?: u
     inst.auth.getState().logout();
   }
   if (!res.ok) {
-    let msg = res.statusText;
+    // A hub explains itself in JSON; anything else is something in the way (HTTP/2 doesn't
+    // even send a status text).
+    let msg = `Couldn't reach the hub at ${hostOf(serverUrl)} (HTTP ${res.status})`;
     try {
       msg = (await res.json()).error ?? msg;
     } catch {

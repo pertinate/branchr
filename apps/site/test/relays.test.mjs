@@ -101,6 +101,43 @@ describe("relays", { skip }, () => {
     assert.equal((await pass(hub, 1)).status, 404);
   });
 
+  it("answers unchanged check-ins without the database, and notices changes at once", async () => {
+    const relay = await made("relay", alice);
+    const hub = await made("hub", alice);
+    const status = () => ok("GET", `/instances/${hub.instanceId}`, { token: hub.secret });
+    const poll = () => call("POST", `/instances/${hub.instanceId}/relay-pass`, { token: hub.secret, body: { ports: 2, pass: false } });
+    await beat(relay);
+    assert.equal((await poll()).status, 404, "unlinked");
+    await link(hub, relay, alice);
+    const first = await (await poll()).json();
+    assert.deepEqual([first.udpPorts, first.relay.id, "token" in first], [2, relay.relayId, false]);
+    assert.deepEqual((await beat(relay)).hubs, [{ id: hub.instanceId, udpBase: first.udpBase, udpPorts: 2 }], "the relay hears of new ports at once");
+    await poll();
+    await status();
+    const mine = async () => (await ok("GET", "/me/owned", { token: alice.access_token })).find((h) => h.instanceId === hub.instanceId);
+    assert.equal((await mine()).publicUrl, `https://relay.example.com/h/${hub.instanceId}`, "owners learn a relayed hub's address");
+    // From here every answer is cached: changes made behind the site's back stay unseen.
+    await s.db.query("ALTER TABLE hubs RENAME TO hubs_away");
+    await s.db.query("ALTER TABLE relays RENAME TO relays_away");
+    try {
+      assert.deepEqual(await (await poll()).json(), first);
+      assert.deepEqual(await status(), { claimed: true, ownerId: alice.account.id });
+      assert.equal((await beat(relay)).hubs.length, 1);
+      assert.equal((await call("GET", `/instances/${hub.instanceId}`, { token: relay.secret })).status, 401, "a cached hub still checks its secret");
+    } finally {
+      await s.db.query("ALTER TABLE hubs_away RENAME TO hubs");
+      await s.db.query("ALTER TABLE relays_away RENAME TO relays");
+    }
+    // A relay that moves is seen by its hubs straight away.
+    await beat(relay, { publicIp: "203.0.113.9" });
+    assert.equal((await (await poll()).json()).relay.publicIp, "203.0.113.9");
+    await link(hub, null, alice);
+    assert.equal((await poll()).status, 404);
+    assert.deepEqual((await beat(relay, { publicIp: "203.0.113.9" })).hubs, []);
+    await ok("DELETE", `/instances/${hub.instanceId}/claim`, { token: alice.access_token });
+    assert.deepEqual(await status(), { claimed: false, ownerId: null });
+  });
+
   const dir = process.env.BRANCHR_BIN_DIR;
   it("carries a real hub and its voice server, until unlinked", { skip: !dir && "needs BRANCHR_BIN_DIR", timeout: 90_000 }, async () => {
     const tmp = mkdtempSync(path.join(tmpdir(), "branchr-relay-"));

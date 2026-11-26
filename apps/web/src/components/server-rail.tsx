@@ -4,6 +4,7 @@ import { Compass, MessagesSquare, Plus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { MyHubs } from "@/components/my-hubs";
 import { RailList } from "@/components/rail-list";
 import { UserPanel } from "@/components/voice/user-panel";
 import { MentionBadge } from "@/components/mention-badge";
@@ -171,6 +172,12 @@ function AddServerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
           </TabsContent>
           <TabsContent value="connect">
             <form onSubmit={connect} className="space-y-3 pt-2">
+              <MyHubs
+                onPick={(server) => {
+                  onOpenChange(false);
+                  void navigate({ to: "/login", search: { redirect: undefined, server } });
+                }}
+              />
               <p className="text-sm text-muted-foreground">Another self-hosted branchr, alongside the ones you're on now.</p>
               <Input placeholder="chat.example.com" value={address} onChange={(e) => setAddress(e.target.value)} aria-label="Hub address" required />
               <Button type="submit" className="w-full" disabled={!address.trim()}>Continue</Button>

@@ -11,9 +11,10 @@ import "server-only";
 
 import { randomBytes, randomUUID } from "node:crypto";
 
+import { changed, checkIn } from "./checkins";
 import { claimCode, hash, normalizeClaimCode, setupCode } from "./codes";
 import { query, transaction } from "./db";
-import { OAuthError, bad, body, empty, json, notFound, text } from "./http";
+import { bad, body, empty, json, notFound, text } from "./http";
 import { sign } from "./keys";
 import { authed } from "./oauth";
 import { rateLimit } from "./ratelimit";
@@ -65,19 +66,33 @@ export async function register(req: Request): Promise<Response> {
   return json({ instanceId: id, secret, claimCode: code });
 }
 
-/** The hub behind `Authorization: Bearer <hub secret>`. A hub we don't know is "not found",
- *  which tells it to register again. */
-export async function hubAuth(req: Request, id: string): Promise<{ ownerId: string | null }> {
-  const secret = req.headers.get("authorization")?.match(/^Bearer (.+)$/)?.[1];
-  const [hub] = await query<{ ok: boolean; ownerId: string | null }>(
-    `SELECT secret_hash = $2 AS ok, owner_id AS "ownerId" FROM hubs WHERE id = $1`,
-    [id, hash(secret ?? "")],
-  );
-  if (!hub) throw notFound();
-  if (!secret || !hub.ok) throw new OAuthError(401, "invalid_token", "unauthorized");
-  // At most once a minute: it's a heartbeat, not a log.
-  await query("UPDATE hubs SET last_seen_at = now() WHERE id = $1 AND (last_seen_at IS NULL OR last_seen_at < now() - interval '1 minute')", [id]);
-  return hub;
+/** What a hub's check-ins are answered with. */
+export interface HubRecord {
+  secretHash: string;
+  ownerId: string | null;
+  /** Its relay, once that has reported where it is. */
+  relay: { id: string; quic: string; fp: string; web: string; publicIp: string; udpStart: number; udpEnd: number } | null;
+  /** The media ports it has there. */
+  ports: { base: number; count: number } | null;
+}
+
+/** The hub behind this request's secret (see `checkIn`). */
+export async function hubAuth(req: Request, id: string): Promise<HubRecord> {
+  const { record, fresh } = await checkIn<HubRecord>(req, `hub:${id}`, async () => {
+    const [row] = await query<HubRecord>(
+      `SELECT encode(h.secret_hash, 'hex') AS "secretHash", h.owner_id AS "ownerId",
+         CASE WHEN r.id IS NOT NULL THEN json_build_object('id', r.id, 'quic', r.quic, 'fp', r.fp, 'web', r.web,
+           'publicIp', r.public_ip, 'udpStart', r.udp_start, 'udpEnd', r.udp_end) END AS relay,
+         CASE WHEN h.relay_port_base IS NOT NULL THEN json_build_object('base', h.relay_port_base, 'count', h.relay_port_count) END AS ports
+       FROM hubs h LEFT JOIN relays r ON r.id = h.relay_id AND r.owner_id = h.owner_id AND r.quic IS NOT NULL
+       WHERE h.id = $1`,
+      [id],
+    );
+    return row ?? null;
+  });
+  // When we last looked it up, not every check-in: it's a heartbeat, not a log.
+  if (fresh) await query("UPDATE hubs SET last_seen_at = now() WHERE id = $1", [id]);
+  return record;
 }
 
 /** For the hub itself: has someone claimed it yet? */
@@ -113,6 +128,7 @@ export async function claim(req: Request): Promise<Response> {
     [account, hash(normalizeClaimCode(text(b.code)))],
   );
   if (!hub) throw bad("invalid_grant", "that claim code is wrong or expired");
+  await changed();
   return json(hub);
 }
 
@@ -137,8 +153,11 @@ export async function owned(req: Request): Promise<Response> {
   const account = await authed(req);
   return json(
     await query(
-      `SELECT id AS "instanceId", name, public_url AS "publicUrl", floor(extract(epoch FROM last_seen_at) * 1000)::float8 AS "lastSeen", relay_id AS "relayId"
-       FROM hubs WHERE owner_id = $1 ORDER BY created_at`,
+      // A relayed hub is reached through its relay, whatever it says its own address is.
+      `SELECT h.id AS "instanceId", h.name, coalesce(r.web || '/h/' || h.id, h.public_url) AS "publicUrl",
+         floor(extract(epoch FROM h.last_seen_at) * 1000)::float8 AS "lastSeen", h.relay_id AS "relayId"
+       FROM hubs h LEFT JOIN relays r ON r.id = h.relay_id AND r.owner_id = h.owner_id
+       WHERE h.owner_id = $1 ORDER BY h.created_at`,
       [account],
     ),
   );
@@ -154,6 +173,7 @@ export async function transfer(req: Request, p: Params): Promise<Response> {
   if (to.id === account) throw bad("invalid_request", "that's you");
   const rows = await query(`UPDATE hubs SET owner_id = $1, ${UNLINK} WHERE id = $2 AND owner_id = $3 RETURNING id`, [to.id, id, account]);
   if (!rows.length) throw notFound();
+  await changed();
   return empty(204);
 }
 
@@ -162,6 +182,7 @@ export async function release(req: Request, p: Params): Promise<Response> {
   const account = await authed(req);
   const rows = await query(`UPDATE hubs SET owner_id = NULL, ${UNLINK} WHERE id = $1 AND owner_id = $2 RETURNING id`, [hubId(p), account]);
   if (!rows.length) throw notFound();
+  await changed();
   return empty(204);
 }
 
